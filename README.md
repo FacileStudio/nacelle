@@ -90,32 +90,26 @@ until a second backend is actually being added for Atelier, and design it agains
 concrete second case rather than against an imagined third. A working single-provider SDK is
 worth more than a generic one that nobody has run.
 
-## What to take from `pi`
+## Not a port of `pi`
 
-`pi` ([`earendil-works/pi`](https://github.com/earendil-works/pi), MIT) is the Node coding
-agent this suite uses today, and Atelier already runs it inside its sandboxes as a harness
-class. Replacing it is one of nacelle's three jobs, so the obvious question is whether to fork
-it or port it. Neither, mostly.
+`pi` ([`earendil-works/pi`](https://github.com/earendil-works/pi), MIT) is the Node coding agent
+this suite runs today — Atelier already uses it as a harness class. The obvious shortcut is to
+fork it or port it to Go. **We are not doing either.**
 
-**Do not fork it.** It is a TypeScript monorepo — `tui`, `ai`, `agent`, `protocol`, `client`,
-`telemetry` — and nacelle has to embed inside a Go API. A fork means either nacelle becomes
-Node and Kori cannot import it, or the suite maintains a Node agent and a Go agent forever.
+Forking keeps us on Node, and Kori has to embed inside a Go API. Porting means months spent
+rebuilding provider plumbing and a streaming loop that `anthropic-sdk-go`'s tool runner already
+gives away — and it lands us with somebody else's tool surface.
 
-**Do not port it wholesale either.** 134 MB installed, 21 direct dependencies, and a large
-share of it is provider plumbing and a streaming loop that `anthropic-sdk-go`'s tool runner
-now gives away for free. Porting that is months spent rebuilding the parts nacelle explicitly
-does not need.
+That last part is the actual reason. **We are writing our own harness so it wires into our own
+tools.** A ported `pi` knows about files and shells. Ours has to reach Perception's MCP server,
+Opus, Sablier, Casier and Antenne as first-class citizens, run inside Atelier's boxes reporting
+cost per run, and be embeddable in a Go backend. That is not a fork of a coding agent with
+extra tools bolted on; it is a different shape, and building it from the SDK up is the shorter
+path to it.
 
-**Do read it, and take four things.** MIT means copying is fine; credit it where you do.
-
-| Take | Why |
-|---|---|
-| **The client/protocol split** (`rpc-entry` + the `client` package) | The agent runs as a process and the TUI talks to it over a protocol. That is exactly the shape that lets `tui/`, a backend and a sandbox consume one core. Copy the architecture, not the TypeScript. |
-| **`docs/containerization.md`** | pi already documents running itself in a box, and Atelier already runs it in one. Free spec for `sandbox/`, written by someone who hit the problems first. |
-| **The extension and config surface** (`pi install <source>`, `provider/id:thinking`) | Solved UX for tool discovery and model selection. Worth matching so a `pi` user is not retrained. |
-| **The local tool semantics** — read/write/edit/bash path safety, diff application, glob/grep | Small, high value, and the place a naive reimplementation is subtly wrong. This is the one part worth porting close to line-for-line. |
-
-The short version: pi is the **specification** for the TUI consumer, not the codebase for it.
+Read pi where it has already solved a problem — its client/protocol split is a good answer to
+"how does one core serve a TUI and a backend", and `docs/containerization.md` is written by
+someone who put an agent in a box before us. Take ideas, cite them, write our own code.
 
 ## Next steps
 
