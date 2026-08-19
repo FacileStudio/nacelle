@@ -63,7 +63,7 @@ func (t sdkTool) InputSchema() sdk.BetaToolInputSchemaParam {
 }
 
 func (t sdkTool) Execute(ctx context.Context, input json.RawMessage) ([]sdk.BetaToolResultBlockParamContentUnion, error) {
-	result, err := nacelle.RunTool(ctx, t.tool, "", input, t.sink)
+	result, err := nacelle.RunTool(ctx, t.tool, nacelle.Invocation{}, input, t.sink)
 	if err != nil {
 		return nil, err
 	}

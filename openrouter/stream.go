@@ -114,7 +114,7 @@ func runCalls(ctx context.Context, calls []toolCall, call callContext) ([]openai
 			continue
 		}
 
-		result, err := nacelle.RunTool(ctx, tool, invocation.id, json.RawMessage(invocation.arguments), call.sink)
+		result, err := nacelle.RunTool(ctx, tool, nacelle.Invocation{ID: invocation.id}, json.RawMessage(invocation.arguments), call.sink)
 		if err != nil {
 			result = "the tool failed: " + err.Error()
 		}

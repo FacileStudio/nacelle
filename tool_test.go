@@ -68,7 +68,7 @@ func TestRunToolReportsThroughTheSink(t *testing.T) {
 	}
 
 	sink := &nacelle.ToolSink{}
-	result, err := nacelle.RunTool(context.Background(), tool, "call_1", json.RawMessage(`{"query":"x"}`), sink)
+	result, err := nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "call_1"}, json.RawMessage(`{"query":"x"}`), sink)
 	if err != nil || result != "found x" {
 		t.Fatalf("RunTool = %q, %v", result, err)
 	}
@@ -100,7 +100,7 @@ func TestRunToolReportsAFailure(t *testing.T) {
 	}
 
 	sink := &nacelle.ToolSink{}
-	if _, err := nacelle.RunTool(context.Background(), tool, "c", json.RawMessage(`{"query":"x"}`), sink); err == nil {
+	if _, err := nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink); err == nil {
 		t.Fatal("RunTool swallowed the error")
 	}
 	if events := sink.Drain(); len(events) != 1 || !errors.Is(events[0].Tool.Err, boom) {
