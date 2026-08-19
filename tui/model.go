@@ -30,7 +30,10 @@ type model struct {
 	busy    bool
 }
 
-func newModel(agent *nacelle.Agent) *model {
+// newModel builds the client. The banner names the backend and model, so which
+// provider is about to be billed is visible before anything is typed rather
+// than after the first question fails.
+func newModel(agent *nacelle.Agent, banner string) *model {
 	prompt := textinput.New()
 	prompt.Placeholder = "Ask something. Ctrl+C to stop or quit."
 	prompt.Prompt = "> "
@@ -40,10 +43,11 @@ func newModel(agent *nacelle.Agent) *model {
 	view := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 
 	return &model{
-		agent:    agent,
-		viewport: view,
-		prompt:   prompt,
-		cancel:   func() {},
+		agent:      agent,
+		viewport:   view,
+		prompt:     prompt,
+		cancel:     func() {},
+		transcript: []string{banner},
 	}
 }
 
@@ -131,19 +135,28 @@ func (m *model) consume(next result) tea.Cmd {
 	return waitFor(m.results)
 }
 
-// settle ends a run: the streamed answer joins the conversation so the next
-// question carries it, and the prompt opens again.
+// settle ends a run: the streamed answer is committed to the transcript and to
+// the conversation, and the prompt opens again.
 //
-// Only the text is kept. A nacelle.Message holds text and nothing else today,
-// so a tool call the model made cannot be replayed to it — which is a gap in
-// the core, not something a client can paper over.
+// Committing it to the transcript is not bookkeeping. The answer streams into a
+// buffer that render draws only while it is filling, so clearing that buffer
+// without moving the text somewhere permanent erases the answer from the screen
+// at the exact moment it finished — which is what this did until it was used.
+//
+// Only the text is kept in the conversation. A nacelle.Message holds text and
+// nothing else today, so a tool call the model made cannot be replayed to it —
+// a gap in the core, not something a client can paper over.
 func (m *model) settle() tea.Cmd {
 	m.cancel()
 	m.busy = false
-	if answer := m.answer.String(); answer != "" {
-		m.conversation = append(m.conversation, nacelle.Message{Assistant: true, Text: answer})
-	}
+
+	answer := m.answer.String()
 	m.answer.Reset()
+	if answer != "" {
+		m.conversation = append(m.conversation, nacelle.Message{Assistant: true, Text: answer})
+		m.say("nacelle", answer)
+	}
+
 	m.render()
 	return nil
 }

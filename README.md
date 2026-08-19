@@ -154,6 +154,37 @@ Backends classify their own provider's vocabulary and mark what is worth another
 with `nacelle.Transient`; the core knows only `Retryable(error) bool`. Your own error
 type joins the scheme by implementing `Retryable() bool`.
 
+### Settings
+
+```yaml
+# ~/.nacelle.yml
+backend: openrouter
+model: deepseek/deepseek-v4-flash-0731
+bash: false
+max_iterations: 40
+```
+
+**Precedence is flag > `NACELLE_*` env var > file > default, resolved in one
+function.** A sibling CLI in this suite read its environment inside a branch that
+ignored its config file, which turned what the README called overrides into two
+mutually exclusive modes — four copies of a precedence chain are four chances to
+disagree.
+
+Two details that are load-bearing rather than fussy:
+
+- **Only the flags you actually typed count.** Go's `flag` package cannot tell a
+  flag left alone from one passed its own default afterwards, so `flag.Visit` is
+  what stops a default silently outranking the file it is meant to sit beneath.
+- **Toggles are pointers.** A layer saying nothing and a layer saying `false` are
+  different answers, and a `bool` cannot tell them apart. Strings use empty for
+  the same purpose, which is safe because no setting here has a meaningful empty
+  value.
+
+**No credentials in it, deliberately.** They already have homes — the environment,
+and the Anthropic SDK's own profile from `ant auth login`. A file with a key in it
+is a file that can never be committed to a dotfiles repo, which is the only reason
+to want one of these on two machines.
+
 ## The local tool set
 
 ```go

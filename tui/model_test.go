@@ -12,9 +12,13 @@ import (
 	"github.com/FacileStudio/nacelle"
 )
 
+// spoken is the transcript without the opening banner, which every model has
+// and no test about what was said cares about.
+func spoken(m *model) []string { return m.transcript[1:] }
+
 // sized is a model with a window, because everything that renders needs one.
 func sized() *model {
-	m := newModel(nil)
+	m := newModel(nil, "test · model")
 	m.resize(tea.WindowSizeMsg{Width: 80, Height: 24})
 	return m
 }
@@ -30,8 +34,8 @@ func TestStreamedTextAccumulatesIntoOneAnswer(t *testing.T) {
 	if got := m.answer.String(); got != "the whole answer" {
 		t.Errorf("answer = %q, want the deltas joined", got)
 	}
-	if len(m.transcript) != 0 {
-		t.Errorf("transcript = %v, want the deltas kept out of it", m.transcript)
+	if lines := spoken(m); len(lines) != 0 {
+		t.Errorf("transcript = %v, want the deltas kept out of it", lines)
 	}
 }
 
@@ -69,14 +73,15 @@ func TestToolCallsAndResultsBothReachTheTranscript(t *testing.T) {
 		Tool: &nacelle.ToolEvent{Name: "read_file", Duration: 3 * time.Millisecond},
 	})
 
-	if len(m.transcript) != 2 {
-		t.Fatalf("transcript = %v, want the call and the result", m.transcript)
+	lines := spoken(m)
+	if len(lines) != 2 {
+		t.Fatalf("transcript = %v, want the call and the result", lines)
 	}
-	if !strings.Contains(m.transcript[0], "read_file") {
-		t.Errorf("call line = %q, want the tool named", m.transcript[0])
+	if !strings.Contains(lines[0], "read_file") {
+		t.Errorf("call line = %q, want the tool named", lines[0])
 	}
-	if !strings.Contains(m.transcript[1], "3ms") {
-		t.Errorf("result line = %q, want how long it took", m.transcript[1])
+	if !strings.Contains(lines[1], "3ms") {
+		t.Errorf("result line = %q, want how long it took", lines[1])
 	}
 }
 
@@ -120,6 +125,30 @@ func TestCtrlCStopsTheRunBeforeItQuits(t *testing.T) {
 	m.busy = false
 	if _, cmd = m.key(press); cmd == nil {
 		t.Error("ctrl+c with nothing running did not quit")
+	}
+}
+
+// The answer streams into a buffer that render only draws while it is filling.
+// Clearing that buffer without moving the text somewhere permanent erases the
+// answer from the screen at the moment it finished, which is exactly what a
+// first real session found.
+func TestAFinishedAnswerStaysOnScreen(t *testing.T) {
+	m := sized()
+	m.busy = true
+	m.absorb(nacelle.Event{Kind: nacelle.KindText, Text: "the whole answer"})
+	m.settle()
+
+	if !strings.Contains(m.viewport.View(), "the whole answer") {
+		t.Errorf("viewport = %q, want the finished answer still visible", m.viewport.View())
+	}
+}
+
+// The banner names what is about to be billed, before anything is typed.
+func TestTheBackendAndModelAreShownBeforeTheFirstQuestion(t *testing.T) {
+	m := sized()
+
+	if !strings.Contains(m.viewport.View(), "test · model") {
+		t.Errorf("viewport = %q, want the backend and model named", m.viewport.View())
 	}
 }
 
