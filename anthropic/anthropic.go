@@ -56,11 +56,12 @@ func New(cfg Config) *Backend {
 // Name identifies the backend.
 func (b *Backend) Name() string { return "anthropic" }
 
-// Capabilities reports everything: this is the backend the others are measured
-// against. Cost is absent because the API prices nothing in its responses — it
-// returns tokens, and the caller multiplies.
+// Capabilities reports everything but Cost: this is the backend the others
+// are measured against. Cost is absent because the API prices nothing in its
+// responses — it returns tokens, and the caller multiplies. TokenCounting is
+// present because the API ships a dedicated endpoint for it — see tokens.go.
 func (b *Backend) Capabilities() nacelle.Capabilities {
-	return nacelle.Capabilities{MCP: true, Thinking: true, Effort: true}
+	return nacelle.Capabilities{MCP: true, Thinking: true, Effort: true, TokenCounting: true}
 }
 
 // Model is the model id this backend was built for.
