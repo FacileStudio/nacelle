@@ -104,6 +104,11 @@ func (m *model) paint(e entry) entry {
 // What is still streaming is drawn plainly, not as markdown. Half a fenced code
 // block is not a document, and a parser run over the answer again on every
 // arriving character is the cost this whole file exists to avoid.
+//
+// The spinner is drawn here rather than committed as an entry of its own,
+// because it never has one: waiting ends on the same event that gives the
+// transcript something real to show instead, so the frame drawn one tick ago
+// is already stale and is never worth keeping.
 func (m *model) render() {
 	follow := m.viewport.AtBottom()
 	width := max(m.viewport.Width(), 1)
@@ -111,6 +116,9 @@ func (m *model) render() {
 	body := make([]string, 0, len(m.transcript)+2)
 	for _, e := range m.transcript {
 		body = append(body, e.drawn)
+	}
+	if m.run.waiting {
+		body = append(body, m.theme.waiting.Width(width).Render(m.spin.View()+" waiting for a response"))
 	}
 	if reasoning := m.run.reasoning.String(); reasoning != "" {
 		body = append(body, m.theme.thinking.Width(width).Render(reasoning))

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -37,6 +38,7 @@ type model struct {
 
 	theme  palette
 	pretty *glamour.TermRenderer
+	spin   spinner.Model
 
 	run inflight
 }
@@ -54,6 +56,12 @@ type model struct {
 // a single counter carrying over from the last run reads as that run's total
 // plus this run's turns, and then drops to this run's total the moment it
 // finishes.
+//
+// waiting is true from the moment a question is sent until the first event of
+// any kind comes back, success or error. Nothing tells the reader that gap is
+// still the model and not a hung client — a request can sit a full second or
+// more before the first token, and a screen that has not moved since the
+// question was echoed looks exactly like one that stopped responding.
 type inflight struct {
 	results     <-chan result
 	cancel      context.CancelFunc
@@ -63,6 +71,7 @@ type inflight struct {
 	stop        nacelle.Stop
 	interrupted time.Time
 	busy        bool
+	waiting     bool
 	asked       []nacelle.Part
 	answered    []nacelle.Part
 }
@@ -84,6 +93,7 @@ func newModel(agent *nacelle.Agent, banner string) *model {
 		viewport: view,
 		prompt:   prompt,
 		theme:    themed(true),
+		spin:     spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		run:      inflight{cancel: func() {}},
 	}
 	m.pretty = prettier(m.theme.markdown, m.viewport.Width())
@@ -108,6 +118,8 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.theme = themed(message.IsDark())
 		m.restyle()
 		return m, nil
+	case spinner.TickMsg:
+		return m, m.spun(message)
 	case result:
 		return m, m.consume(message)
 	case finished:
@@ -117,29 +129,6 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.prompt, cmd = m.prompt.Update(message)
 	return m, cmd
-}
-
-// resize gives the prompt one line and the status one, and the transcript the
-// rest.
-//
-// restyle only runs when the width actually changed. It rebuilds the markdown
-// renderer and re-renders every entry in the transcript, which a resize that
-// only touches height does not need — and a resize-drag burst sends many of
-// those. render() still runs either way, which is the cheap half and the one
-// that keeps the pinned-to-bottom state correct.
-func (m *model) resize(size tea.WindowSizeMsg) tea.Cmd {
-	widthChanged := size.Width != m.viewport.Width()
-
-	m.viewport.SetWidth(size.Width)
-	m.prompt.SetWidth(size.Width)
-	m.viewport.SetHeight(max(size.Height-2, 1))
-
-	if widthChanged {
-		m.restyle()
-	} else {
-		m.render()
-	}
-	return nil
 }
 
 // key handles this client's bindings, reporting whether it consumed the press.
@@ -191,6 +180,7 @@ func (m *model) ask() tea.Cmd {
 	m.run.usage = nacelle.Usage{}
 	m.run.interrupted = time.Time{}
 	m.run.asked, m.run.answered = nil, nil
+	m.run.waiting = true
 	m.say(fromReader, question)
 	m.conversation = append(m.conversation, nacelle.UserText(question))
 
@@ -198,7 +188,7 @@ func (m *model) ask() tea.Cmd {
 	m.run.cancel = cancel
 	m.run.busy = true
 	m.run.results = start(ctx, m.agent, m.conversation)
-	return waitFor(m.run.results)
+	return tea.Batch(waitFor(m.run.results), m.spin.Tick)
 }
 
 // consume folds one result into the transcript and waits for the next.
@@ -206,7 +196,13 @@ func (m *model) ask() tea.Cmd {
 // The answer is committed before the error is, because an error line printed
 // first tells the reader the request failed and only then shows them the half
 // sentence it interrupted, which is the wrong order to read a failure in.
+//
+// waiting ends here, on the very first result of the run, whatever kind it
+// is. An error is still an answer to "is anything happening" — the spinner's
+// job was only ever to cover the silence before the first response, not to
+// promise that response will be good news.
 func (m *model) consume(next result) tea.Cmd {
+	m.run.waiting = false
 	if next.err != nil {
 		m.flush()
 		m.say(fromFailure, next.err.Error())
@@ -224,9 +220,15 @@ func (m *model) consume(next result) tea.Cmd {
 // The run's usage is folded into spent here rather than left standing, so the
 // next question starts from a clean per-run counter and the status line keeps
 // showing a session total that only grows.
+//
+// waiting is cleared here too, not only on the first event: a run whose
+// stream closes without yielding anything at all — an immediate cancel, or a
+// backend that errors before its first yield — never reaches consume, and the
+// spinner it started would otherwise spin for a question already abandoned.
 func (m *model) settle() tea.Cmd {
 	m.run.cancel()
 	m.run.busy = false
+	m.run.waiting = false
 
 	m.closeResults()
 	m.dropUnanswered()
