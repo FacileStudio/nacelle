@@ -65,6 +65,10 @@ func (m *model) status() string {
 			state = "stopping · ctrl+c again, or ctrl+\\, to quit now"
 		}
 	}
+	if m.run.pending != nil {
+		state = fmt.Sprintf("approve %s(%s)? y = once · a = always this session · n = deny",
+			m.run.pending.name, truncate(string(m.run.pending.input), 60))
+	}
 
 	total := m.spent.Add(m.run.usage)
 	line := fmt.Sprintf("%s · %d tokens", state, total.Total())
