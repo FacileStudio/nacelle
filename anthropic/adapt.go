@@ -21,7 +21,7 @@ import (
 // makes them the front of every cached prefix. Left in the caller's order, two
 // agents configured with the same tools in a different order would share no
 // cache at all, and nothing in the result would say why.
-func adapt(tools []nacelle.Tool, sink *nacelle.ToolSink) []sdk.BetaTool {
+func adapt(tools []nacelle.Tool, sink *nacelle.ToolSink, pending *invocations) []sdk.BetaTool {
 	if len(tools) == 0 {
 		return nil
 	}
@@ -30,15 +30,16 @@ func adapt(tools []nacelle.Tool, sink *nacelle.ToolSink) []sdk.BetaTool {
 	})
 	adapted := make([]sdk.BetaTool, 0, len(ordered))
 	for _, tool := range ordered {
-		adapted = append(adapted, sdkTool{tool: tool, sink: sink})
+		adapted = append(adapted, sdkTool{tool: tool, sink: sink, pending: pending})
 	}
 	return adapted
 }
 
 // sdkTool presents a nacelle.Tool to the SDK's runner.
 type sdkTool struct {
-	tool nacelle.Tool
-	sink *nacelle.ToolSink
+	tool    nacelle.Tool
+	sink    *nacelle.ToolSink
+	pending *invocations
 }
 
 func (t sdkTool) Name() string        { return t.tool.Name() }
@@ -62,8 +63,16 @@ func (t sdkTool) InputSchema() sdk.BetaToolInputSchemaParam {
 	return input
 }
 
+// Execute runs the tool and reports it, having first looked up which call it
+// is answering.
+//
+// The lookup is here because the runner does not tell a handler which
+// tool_use block it was started for, and a result that cannot name its call
+// cannot be paired with it by anyone downstream. It runs on one of the
+// runner's parallel goroutines, which is why the registry it reads is locked.
 func (t sdkTool) Execute(ctx context.Context, input json.RawMessage) ([]sdk.BetaToolResultBlockParamContentUnion, error) {
-	result, err := nacelle.RunTool(ctx, t.tool, nacelle.Invocation{}, input, t.sink)
+	call := t.pending.take(t.tool.Name(), input)
+	result, err := nacelle.RunTool(ctx, t.tool, call, input, t.sink)
 	if err != nil {
 		return nil, err
 	}

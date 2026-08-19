@@ -3,6 +3,7 @@ package nacelle
 import (
 	"context"
 	"iter"
+	"log/slog"
 	"time"
 )
 
@@ -25,6 +26,12 @@ type RetryOptions struct {
 
 	// Max caps the delay however many attempts have failed.
 	Max time.Duration
+
+	// Logger records the attempts nobody else can see. Defaults to
+	// slog.Default(), matching Config.Logger, because a retry that says
+	// nothing makes a run that limped through three attempts look exactly
+	// like one that sailed through on the first.
+	Logger *slog.Logger
 }
 
 // Retry wraps a backend so a run that fails before producing anything is
@@ -69,6 +76,9 @@ func (o RetryOptions) withDefaults() RetryOptions {
 	if o.Max <= 0 {
 		o.Max = DefaultRetryMax
 	}
+	if o.Logger == nil {
+		o.Logger = slog.Default()
+	}
 	return o
 }
 
@@ -82,9 +92,11 @@ func (r retrying) Stream(ctx context.Context, request Request) iter.Seq2[Event, 
 				return
 			}
 			if !r.again(attempt, produced, err) || !pause(ctx, r.options.backoff(attempt)) {
-				yield(Event{}, err)
+				r.gaveUp(attempt, err)
+				yield(Event{}, onAttempt(err, attempt))
 				return
 			}
+			r.willRetry(attempt, err)
 		}
 	}
 }
@@ -109,4 +121,31 @@ func (r retrying) once(ctx context.Context, request Request, yield func(Event, e
 // again reports whether a failed attempt may be started over.
 func (r retrying) again(attempt int, produced bool, err error) bool {
 	return !produced && attempt < r.options.Attempts && Retryable(err)
+}
+
+// willRetry records an attempt that is about to be started over.
+//
+// It is a warning and not an error because the run has not failed yet: a
+// provider that is briefly overloaded costs a few hundred milliseconds and
+// nothing else. A stream that goes red every time a backend hiccups is one
+// people learn to scroll past, and then miss the outage.
+func (r retrying) willRetry(attempt int, err error) {
+	r.options.Logger.Warn("nacelle: retrying a transient failure",
+		"backend", r.Name(), "attempt", attempt, "attempts", r.options.Attempts, "error", err)
+}
+
+// gaveUp records the failure that ended the run, and only when it ended one we
+// had been retrying.
+//
+// A permanent refusal is not logged here at all: it was never a retry, the
+// caller receives it unchanged, and reporting it twice teaches the reader that
+// this package double-counts. Neither is a first attempt that could not be
+// started over — nothing was retried, so this decorator has nothing to add to
+// the error the consumer is already holding.
+func (r retrying) gaveUp(attempt int, err error) {
+	if attempt == 1 || !Retryable(err) {
+		return
+	}
+	r.options.Logger.Error("nacelle: giving up after a transient failure",
+		"backend", r.Name(), "attempt", attempt, "attempts", r.options.Attempts, "error", err)
 }

@@ -143,3 +143,55 @@ func TestAnUnknownToolIsAnsweredNotDropped(t *testing.T) {
 		t.Errorf("answered %d calls, want both", answered)
 	}
 }
+
+// assertCallsPrecedeResults checks every result answers a call the consumer
+// was already told about, by ID.
+func assertCallsPrecedeResults(t *testing.T, events []nacelle.Event) {
+	t.Helper()
+	announced := map[string]int{}
+	for position, event := range events {
+		switch event.Kind {
+		case nacelle.KindToolCall:
+			announced[event.Tool.ID] = position
+		case nacelle.KindToolResult:
+			if _, seen := announced[event.Tool.ID]; !seen {
+				t.Errorf("the result for %q arrived with no call announced first", event.Tool.ID)
+			}
+		}
+	}
+	if len(announced) != 2 {
+		t.Errorf("announced %d distinct calls, want 2", len(announced))
+	}
+}
+
+// A tool running with no event to show it is the difference between a UI that
+// says what the agent is doing and one that freezes. This backend drives the
+// tool loop itself, so nothing else can announce the call: it has to emit
+// KindToolCall before the work starts, with the ID that pairs it to its result
+// and the index that carries the model's own ordering.
+func TestEveryToolCallIsAnnouncedBeforeTheToolRuns(t *testing.T) {
+	tool, err := nacelle.NewTool("search", "Find things", func(_ context.Context, in searchInput) (string, error) {
+		return "result for " + in.Query, nil
+	})
+	if err != nil {
+		t.Fatalf("NewTool: %v", err)
+	}
+
+	backend, _ := serve(t, withToolCalls, finalAnswer)
+	events := collect(t, backend, nacelle.Request{System: "s", Tools: []nacelle.Tool{tool}})
+
+	calls := kinds(events, nacelle.KindToolCall)
+	if len(calls) != 2 {
+		t.Fatalf("announced %d calls, want 2", len(calls))
+	}
+	for wanted, event := range calls {
+		if event.Tool.Index != wanted {
+			t.Errorf("call %d carries index %d, want the model's own ordering", wanted, event.Tool.Index)
+		}
+		if event.Tool.ID == "" || event.Tool.Name != "search" || event.Tool.Input == "" {
+			t.Errorf("call %d = %+v, want an id, a name and the raw arguments", wanted, *event.Tool)
+		}
+	}
+
+	assertCallsPrecedeResults(t, events)
+}

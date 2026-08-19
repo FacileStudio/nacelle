@@ -109,7 +109,7 @@ func TestToolSchemaSurvivesTheAdaptation(t *testing.T) {
 		t.Fatalf("NewTool: %v", err)
 	}
 
-	adapted := adapt([]nacelle.Tool{tool}, &nacelle.ToolSink{})
+	adapted := adapt([]nacelle.Tool{tool}, &nacelle.ToolSink{}, newInvocations())
 	if len(adapted) != 1 {
 		t.Fatalf("adapted %d tools, want 1", len(adapted))
 	}
@@ -129,7 +129,7 @@ func TestToolSchemaSurvivesTheAdaptation(t *testing.T) {
 // A tool call arrives in pieces and must be reported whole: emitting it at
 // content_block_start would report a call whose arguments are still empty.
 func TestToolCallIsReportedOnceItsInputIsComplete(t *testing.T) {
-	tracker := newCallTracker()
+	tracker := newCallTracker(newInvocations())
 
 	if got := tracker.consume(raw(t, `{"type":"content_block_start","index":0,
 		"content_block":{"type":"tool_use","id":"toolu_1","name":"search_events"}}`)); len(got) != 0 {
@@ -151,7 +151,7 @@ func TestToolCallIsReportedOnceItsInputIsComplete(t *testing.T) {
 // A tool this process runs and one the API runs over MCP are the same event to
 // a consumer.
 func TestMCPToolCallsAreTrackedToo(t *testing.T) {
-	tracker := newCallTracker()
+	tracker := newCallTracker(newInvocations())
 	tracker.consume(raw(t, `{"type":"content_block_start","index":0,
 		"content_block":{"type":"mcp_tool_use","id":"mcp_1","name":"get_entity"}}`))
 
@@ -164,7 +164,7 @@ func TestMCPToolCallsAreTrackedToo(t *testing.T) {
 // Two tools requested in one turn interleave on the wire, so the index is what
 // keeps their arguments apart.
 func TestConcurrentToolCallsDoNotMixTheirInput(t *testing.T) {
-	tracker := newCallTracker()
+	tracker := newCallTracker(newInvocations())
 	tracker.consume(raw(t, `{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"a","name":"first"}}`))
 	tracker.consume(raw(t, `{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"b","name":"second"}}`))
 	tracker.consume(argumentFragment(t, 0, `{"a":1}`))
@@ -182,7 +182,7 @@ func TestConcurrentToolCallsDoNotMixTheirInput(t *testing.T) {
 }
 
 func TestTextAndThinkingBecomeDeltas(t *testing.T) {
-	tracker := newCallTracker()
+	tracker := newCallTracker(newInvocations())
 
 	text := tracker.consume(raw(t, `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}`))
 	if len(text) != 1 || text[0].Kind != nacelle.KindText || text[0].Text != "hello" {

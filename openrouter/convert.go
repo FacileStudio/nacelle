@@ -107,3 +107,30 @@ func extra(fields map[string]respjson.Field, name string) (json.RawMessage, bool
 	}
 	return json.RawMessage(raw), true
 }
+
+// stopOf maps the OpenAI-schema finish_reason onto a reason nacelle names.
+//
+// The schema documents exactly five values — stop, length, tool_calls,
+// content_filter and the deprecated function_call — and the SDK types the
+// field as a bare string rather than an enum, so a provider behind OpenRouter
+// is free to invent a sixth. Everything unrecognised, the empty string
+// included, becomes StopOther: a reason this package cannot name is unfinished
+// work, and claiming StopEnd for it would tell a consumer the answer is whole
+// on exactly the runs where it is not.
+//
+// function_call folds into StopTools because it is the older spelling of the
+// same event, and StopContext has no source here at all: OpenRouter reports a
+// conversation that outgrew the window as an error, not as a finish_reason.
+func stopOf(reason string) nacelle.Stop {
+	switch reason {
+	case "stop":
+		return nacelle.StopEnd
+	case "length":
+		return nacelle.StopMaxTokens
+	case "tool_calls", "function_call":
+		return nacelle.StopTools
+	case "content_filter":
+		return nacelle.StopRefusal
+	}
+	return nacelle.StopOther
+}

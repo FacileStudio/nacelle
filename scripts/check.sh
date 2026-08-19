@@ -70,10 +70,14 @@ for module in $NESTED; do
   ("$GO" -C "$module" vet ./...) || status=1
 done
 
+# -race, not as a nicety. Tool handlers run concurrently on the SDK runner's
+# goroutines and park their results in a mutex-guarded sink, which is the exact
+# shape the detector exists for. It also earns its runtime: a poll of
+# cmd.ProcessState raced with cmd.Wait in tools/ for as long as nothing looked.
 echo "==> go test"
-"$GO" test ./... || status=1
+"$GO" test -race ./... || status=1
 for module in $NESTED; do
-  ("$GO" -C "$module" test ./...) || status=1
+  ("$GO" -C "$module" test -race ./...) || status=1
 done
 
 if [ "$status" -ne 0 ]; then

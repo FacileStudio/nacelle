@@ -30,7 +30,7 @@ func (m *model) View() tea.View {
 }
 
 // status is the one line that is always true: what the run has cost so far,
-// and whether it is still going.
+// whether it is still going, and whether the answer above it is whole.
 //
 // Cost is only shown when a backend reports one. Anthropic returns tokens and
 // nothing else, and a zero next to a currency symbol reads as free rather than
@@ -39,6 +39,9 @@ func (m *model) status() string {
 	state := "ready"
 	if m.busy {
 		state = "working"
+	}
+	if cut := cutShort(m.stop); !m.busy && cut != "" {
+		state = cut
 	}
 
 	line := fmt.Sprintf("%s · %d tokens", state, m.usage.Total())
@@ -70,7 +73,33 @@ func (m *model) absorb(event nacelle.Event) {
 		m.usage = m.usage.Add(event.Usage)
 	case nacelle.KindDone:
 		m.usage = event.Usage
+		m.stop = event.Stop
 	}
+}
+
+// cutShort is how a run that stopped short reads, and the empty string for one
+// that finished.
+//
+// A truncated, refused or abandoned answer arrives as a well-formed stream
+// that simply ends, so the screen shows a paragraph stopping mid-sentence and
+// a status line saying "ready". Saying which of them happened, in words rather
+// than in the wire's vocabulary, is the whole point: the person reading has to
+// know whether to ask again or to ask differently.
+func cutShort(stop nacelle.Stop) string {
+	if stop == "" || stop.Complete() {
+		return ""
+	}
+	switch stop {
+	case nacelle.StopMaxTokens:
+		return "cut off at the token limit"
+	case nacelle.StopContext:
+		return "cut off: out of context"
+	case nacelle.StopRefusal:
+		return "refused by the model"
+	case nacelle.StopIterations:
+		return "stopped at the iteration limit"
+	}
+	return "stopped early"
 }
 
 // describe is what a finished tool call reads as. A failure is reported rather

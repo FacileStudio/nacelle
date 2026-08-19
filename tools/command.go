@@ -46,6 +46,13 @@ func (s *Set) commandTool() (nacelle.Tool, error) {
 // signalled. Killing the shell alone leaves its children running, and a test
 // runner or a dev server orphaned by a timeout goes on holding the port the
 // next command needs.
+//
+// Reaping is announced by closing a channel rather than by sending the wait
+// error down it, because two goroutines need to hear it: this one, and the
+// escalation in killGroup. A close is a broadcast, a send is consumed once, and
+// the version that sent it invited exactly the kind of who-drains-what bug that
+// deadlocks a timeout path nobody exercises. The error rides alongside in a
+// plain variable, published by the same close and read only after it.
 func (s *Set) run(ctx context.Context, command string, timeout time.Duration) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -63,14 +70,18 @@ func (s *Set) run(ctx context.Context, command string, timeout time.Duration) (s
 		return "", err
 	}
 
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	var waitErr error
+	done := make(chan struct{})
+	go func() {
+		waitErr = cmd.Wait()
+		close(done)
+	}()
 
 	select {
-	case err := <-done:
-		return report(out.String(), err, s.maxOutput), nil
+	case <-done:
+		return report(out.String(), waitErr, s.maxOutput), nil
 	case <-ctx.Done():
-		killGroup(cmd)
+		killGroup(cmd, done)
 		<-done
 		return report(out.String(), errTimedOut{after: timeout}, s.maxOutput), nil
 	}
@@ -82,7 +93,14 @@ func (s *Set) run(ctx context.Context, command string, timeout time.Duration) (s
 // where kill(pid) reaches only the shell that spawned the work. A signal that
 // fails to send means the group is already gone, so there is nothing left to
 // escalate to.
-func killGroup(cmd *exec.Cmd) {
+//
+// Whether the group went quietly on SIGTERM is read from the caller's done
+// channel, closed when cmd.Wait returns. The obvious-looking alternative is to
+// poll cmd.ProcessState, and it is a data race: Wait writes that field from
+// another goroutine and nothing publishes it to this one. Two seconds is the
+// grace a well-behaved process gets to flush and exit before SIGKILL, which it
+// does not get to refuse.
+func killGroup(cmd *exec.Cmd, done <-chan struct{}) {
 	if cmd.Process == nil {
 		return
 	}
@@ -96,23 +114,8 @@ func killGroup(cmd *exec.Cmd) {
 		if err := syscall.Kill(pgid, syscall.SIGKILL); err != nil {
 			return
 		}
-	case <-processGone(cmd):
+	case <-done:
 	}
-}
-
-// processGone closes once the process has been reaped.
-func processGone(cmd *exec.Cmd) <-chan struct{} {
-	gone := make(chan struct{})
-	go func() {
-		defer close(gone)
-		for range 20 {
-			if cmd.ProcessState != nil {
-				return
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-	}()
-	return gone
 }
 
 // errTimedOut is a command killed for running too long.
