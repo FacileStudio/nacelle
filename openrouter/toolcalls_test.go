@@ -78,7 +78,7 @@ func TestParallelToolCallsAreRunAndFedBack(t *testing.T) {
 	backend, handler := serve(t, withToolCalls, finalAnswer)
 	events := collect(t, backend, nacelle.Request{
 		System:   "s",
-		Messages: []nacelle.Message{{Text: "search twice"}},
+		Messages: []nacelle.Message{nacelle.UserText("search twice")},
 		Tools:    []nacelle.Tool{tool},
 	})
 

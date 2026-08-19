@@ -84,8 +84,8 @@ func TestNoMCPLeavesTheRequestUntouched(t *testing.T) {
 
 func TestConversationRolesSurvive(t *testing.T) {
 	params := toParams([]nacelle.Message{
-		{Text: "what happened?"},
-		{Assistant: true, Text: "a deploy"},
+		nacelle.UserText("what happened?"),
+		nacelle.AssistantText("a deploy"),
 	})
 	if len(params) != 2 {
 		t.Fatalf("converted %d messages, want 2", len(params))

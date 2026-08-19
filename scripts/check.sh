@@ -2,14 +2,17 @@
 #
 # The repository quality gate. Reports, never rewrites (except --format).
 #
-#   sh scripts/check.sh          gofmt + vet + test
-#   sh scripts/check.sh --format rewrite Go sources in place
+#   sh scripts/check.sh           gofmt + vet + test + lint
+#   sh scripts/check.sh --no-lint skip the lint pass
+#   sh scripts/check.sh --format  rewrite Go sources in place
 #
-# There is no client half to build, so this is the whole gate. It deliberately
-# depends on nothing but a `go`, and is NOT invoked through
-# mise: `mise run` resolves every tool in the merged config before running any
-# task body, so one broken tool in a global config would take the gate down
-# with it.
+# There is no client half to build, so this is the whole gate. Everything but
+# the lint pass depends on nothing more than a `go`, and the lint pass is
+# skipped rather than fatal when golangci-lint is missing, because CI runs it
+# either way and a contributor without the tool should still be able to check
+# their work. It is NOT invoked through mise: `mise run` resolves every tool in
+# the merged config before running any task body, so one broken tool in a
+# global config would take the gate down with it.
 
 set -eu
 
@@ -22,10 +25,11 @@ NESTED="tui"
 
 mode="all"
 case "${1:-}" in
+--no-lint) mode="nolint" ;;
 --format) mode="format" ;;
 "") ;;
 *)
-  echo "usage: $0 [--format]" >&2
+  echo "usage: $0 [--no-lint|--format]" >&2
   exit 2
   ;;
 esac
@@ -91,6 +95,27 @@ echo "==> go test"
 for module in $NESTED; do
   ("$GO" -C "$module" test -race ./...) || status=1
 done
+
+# The linter is guarded on the binary running rather than on it being on PATH.
+# A mise shim for a version that was never installed resolves under
+# `command -v` and then fails on every invocation, which reads as a repository
+# that does not lint rather than as a machine that cannot.
+if [ "$mode" != "nolint" ]; then
+  echo "==> golangci-lint"
+  if golangci-lint version >/dev/null 2>&1; then
+    golangci-lint run ./... || status=1
+    # Naming a nested module as a second pattern instead — `golangci-lint run
+    # ./... ./tui/...` — prints "directory prefix tui does not contain main
+    # module" to stderr and still exits 0, so a broken nested module would pass
+    # silently. cd, and pass the config explicitly rather than trusting the
+    # upward search to find it from in there.
+    for module in $NESTED; do
+      (cd "$module" && golangci-lint run --config "$root/.golangci.yml" ./...) || status=1
+    done
+  else
+    echo "check: no usable 'golangci-lint', skipping the lint pass (CI still runs it)" >&2
+  fi
+fi
 
 if [ "$status" -ne 0 ]; then
   echo "check failed"

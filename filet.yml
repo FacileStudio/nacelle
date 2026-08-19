@@ -5,4 +5,32 @@ extensions: [.go]
 disabled:
   - gen.line.long # gofmt owns line width
 
-failOn: error
+# The layering, stated where it can be enforced rather than in a README nobody
+# diffs. Two rules matter and the rest are shape.
+#
+# The backends must not import each other: they exist because the two APIs have
+# nothing in common but this package's vocabulary, and the first import between
+# them is the moment one starts speaking the other's schema.
+#
+# tools/ and mcp/ must not import a provider SDK at all. A tool has to be
+# callable by every backend, which is why nacelle.Tool is this package's own
+# interface and not an SDK's — an Anthropic-shaped type in there would mean the
+# OpenRouter backend converting from a vocabulary that has nothing to do with
+# it. The same goes for tui/, which picks a backend by name and never sees a
+# provider's wire types.
+architecture:
+  fileNamePattern: '^[a-z0-9_]+\.go$'
+  maxDepth: 3
+  forbiddenImports:
+    anthropic: [github.com/FacileStudio/nacelle/openrouter]
+    openrouter: [github.com/FacileStudio/nacelle/anthropic]
+    tools: [github.com/anthropics/anthropic-sdk-go, github.com/openai/openai-go/v3]
+    mcp: [github.com/anthropics/anthropic-sdk-go, github.com/openai/openai-go/v3]
+    tui: [github.com/anthropics/anthropic-sdk-go, github.com/openai/openai-go/v3]
+
+# info, not error. Every style rule filet has is info severity, so failing on
+# error alone can only fire on a Go file that does not parse or on a forbidden
+# import — a gate that agrees with whatever is already committed. Measured: the
+# repository has zero findings at this level, so the cost of holding it here is
+# nothing and the cost of not doing so is a gate with no opinion.
+failOn: info

@@ -70,10 +70,10 @@ func (s *Set) grepTool() (nacelle.Tool, error) {
 
 			var matches []string
 			err = s.walk(func(name string, _ fs.DirEntry) error {
-				if glob != "" && !matchGlob(glob, name) {
-					return nil
+				if glob == "" || matchGlob(glob, name) {
+					s.grepFile(name, expression, &matches)
 				}
-				return s.grepFile(name, expression, &matches)
+				return nil
 			})
 			if err != nil {
 				return "", err
@@ -89,21 +89,23 @@ func (s *Set) grepTool() (nacelle.Tool, error) {
 //
 // It reads whole files and skips anything that is not text, which is what
 // keeps a binary out of the model's context: a match inside a compiled object
-// is never the answer to the question that was asked.
-func (s *Set) grepFile(name string, expression *regexp.Regexp, matches *[]string) error {
+// is never the answer to the question that was asked. A file it cannot read is
+// skipped on the same terms — one unreadable file is not a reason to fail a
+// search across the rest of the tree.
+//
+// It reports nothing because there is nothing to report: neither of those is
+// an error, and a search that cannot fail should not oblige every caller to
+// check whether it did.
+func (s *Set) grepFile(name string, expression *regexp.Regexp, matches *[]string) {
 	raw, err := s.root.ReadFile(name)
-	if err != nil {
-		return nil
-	}
-	if isBinary(raw) {
-		return nil
+	if err != nil || isBinary(raw) {
+		return
 	}
 	for number, line := range strings.Split(string(raw), "\n") {
 		if expression.MatchString(line) {
 			*matches = append(*matches, fmt.Sprintf("%s:%d: %s", name, number+1, strings.TrimSpace(line)))
 		}
 	}
-	return nil
 }
 
 // walk visits every file under the root, skipping generated directories.
@@ -113,7 +115,7 @@ func (s *Set) grepFile(name string, expression *regexp.Regexp, matches *[]string
 func (s *Set) walk(visit func(name string, entry fs.DirEntry) error) error {
 	return fs.WalkDir(s.root.FS(), ".", func(name string, entry fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return nil //nolint:nilerr // an entry the walk cannot open is skipped, not fatal
 		}
 		if entry.IsDir() {
 			if name != "." && (skipped[entry.Name()] || strings.HasPrefix(entry.Name(), ".")) {

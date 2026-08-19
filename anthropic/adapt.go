@@ -88,19 +88,3 @@ func (t sdkTool) Execute(ctx context.Context, input json.RawMessage) ([]sdk.Beta
 		{OfText: &sdk.BetaTextBlockParam{Text: result}},
 	}, nil
 }
-
-// toParams converts a conversation into the SDK's message shape.
-func toParams(conversation []nacelle.Message) []sdk.BetaMessageParam {
-	params := make([]sdk.BetaMessageParam, 0, len(conversation))
-	for _, message := range conversation {
-		role := sdk.BetaMessageParamRoleUser
-		if message.Assistant {
-			role = sdk.BetaMessageParamRoleAssistant
-		}
-		params = append(params, sdk.BetaMessageParam{
-			Role:    role,
-			Content: []sdk.BetaContentBlockParamUnion{sdk.NewBetaTextBlock(message.Text)},
-		})
-	}
-	return params
-}

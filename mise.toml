@@ -5,7 +5,7 @@
 go = "1.26.4"
 
 [tasks.check]
-description = "Run the full quality gate: gofmt, vet, test"
+description = "Run the full quality gate: gofmt, vet, test, lint"
 run = "sh ./scripts/check.sh"
 
 [tasks.test]

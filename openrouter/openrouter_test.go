@@ -98,7 +98,7 @@ data: [DONE]
 
 func TestKeepaliveCommentsDoNotBreakTheStream(t *testing.T) {
 	backend, _ := serve(t, withKeepalive)
-	events := collect(t, backend, nacelle.Request{System: "s", Messages: []nacelle.Message{{Text: "hi"}}})
+	events := collect(t, backend, nacelle.Request{System: "s", Messages: []nacelle.Message{nacelle.UserText("hi")}})
 
 	var text strings.Builder
 	for _, event := range kinds(events, nacelle.KindText) {

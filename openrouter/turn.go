@@ -66,7 +66,7 @@ func (b *Backend) turn(
 	}
 
 	stream := b.client.Chat.Completions.NewStreaming(ctx, params, b.requestOptions(request)...)
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	state := &turnStream{stop: nacelle.StopOther, total: total}
 	for stream.Next() {

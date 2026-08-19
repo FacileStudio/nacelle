@@ -121,10 +121,23 @@ func (s *Set) run(ctx context.Context, command string, timeout time.Duration) (s
 	}
 }
 
-// signalGroup sends one signal to the command and everything it started.
+// killGroup sends one signal to the command and everything it started,
+// reporting whether there was still a group there to receive it.
 //
 // The negative pid is the whole point: kill(-pgid) reaches the process group,
 // where kill(pid) reaches only the shell that spawned the work.
+//
+// It answers with a bool rather than an error because the answer is advisory
+// at both call sites and only one of them can act on it. A group that is
+// already gone is the ordinary ending, not a failure worth propagating.
+func killGroup(cmd *exec.Cmd, signal syscall.Signal) bool {
+	if cmd.Process == nil {
+		return false
+	}
+	return syscall.Kill(-cmd.Process.Pid, signal) == nil
+}
+
+// signalGroup is killGroup in the shape os/exec's Cancel field asks for.
 //
 // A signal that cannot be sent comes back as os.ErrProcessDone, which is what
 // os/exec reads as "there was nothing left to interrupt" and so declines to
@@ -132,13 +145,10 @@ func (s *Set) run(ctx context.Context, command string, timeout time.Duration) (s
 // os/exec starts its WaitDelay timer either way, so a group that refuses the
 // signal is still released on a clock rather than on optimism.
 func signalGroup(cmd *exec.Cmd, signal syscall.Signal) error {
-	if cmd.Process == nil {
-		return os.ErrProcessDone
+	if killGroup(cmd, signal) {
+		return nil
 	}
-	if err := syscall.Kill(-cmd.Process.Pid, signal); err != nil {
-		return os.ErrProcessDone
-	}
-	return nil
+	return os.ErrProcessDone
 }
 
 // escalate is the SIGKILL that a command ignoring SIGTERM does not get to
@@ -162,7 +172,7 @@ func escalate(cmd *exec.Cmd, expired <-chan struct{}, reaped <-chan struct{}) {
 	select {
 	case <-reaped:
 	case <-time.After(grace):
-		signalGroup(cmd, syscall.SIGKILL)
+		killGroup(cmd, syscall.SIGKILL)
 	}
 }
 

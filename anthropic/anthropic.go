@@ -77,7 +77,7 @@ func (b *Backend) Model() string { return b.model }
 func (b *Backend) params(request nacelle.Request) sdk.BetaToolRunnerParams {
 	params := sdk.BetaToolRunnerParams{
 		BetaMessageNewParams: sdk.BetaMessageNewParams{
-			Model:     sdk.Model(b.model),
+			Model:     b.model,
 			MaxTokens: request.MaxTokens,
 			System:    []sdk.BetaTextBlockParam{{Text: request.System}},
 			Thinking:  thinkingConfig(request.Thinking),

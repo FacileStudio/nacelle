@@ -11,25 +11,6 @@ import (
 	"github.com/openai/openai-go/v3/packages/respjson"
 )
 
-// messages builds the conversation, with the system prompt at the front.
-//
-// The OpenAI schema has no separate system field: the prompt is the first
-// message, which is why it is prepended here on every run rather than carried
-// in the conversation the caller owns.
-func (b *Backend) messages(request nacelle.Request) []openai.ChatCompletionMessageParamUnion {
-	messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(request.Messages)+1)
-	messages = append(messages, openai.SystemMessage(request.System))
-
-	for _, message := range request.Messages {
-		if message.Assistant {
-			messages = append(messages, openai.AssistantMessage(message.Text))
-			continue
-		}
-		messages = append(messages, openai.UserMessage(message.Text))
-	}
-	return messages
-}
-
 // toolParams renders nacelle tools as OpenAI function definitions, sorted by
 // name.
 //
