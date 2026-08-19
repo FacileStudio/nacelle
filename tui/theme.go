@@ -23,6 +23,7 @@ type palette struct {
 	failure  lipgloss.Style
 	client   lipgloss.Style
 	plain    lipgloss.Style
+	waiting  lipgloss.Style
 	markdown string
 }
 
@@ -52,6 +53,7 @@ func themed(dark bool) palette {
 		failure:  lipgloss.NewStyle().Foreground(pick(lipgloss.Color("#B3261E"), lipgloss.Color("#F2827F"))),
 		client:   lipgloss.NewStyle().Foreground(quiet),
 		plain:    lipgloss.NewStyle(),
+		waiting:  lipgloss.NewStyle().Foreground(quiet),
 		markdown: style,
 	}
 }
