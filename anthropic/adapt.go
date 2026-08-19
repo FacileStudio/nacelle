@@ -25,14 +25,24 @@ func adapt(tools []nacelle.Tool, sink *nacelle.ToolSink, pending *invocations) [
 	if len(tools) == 0 {
 		return nil
 	}
-	ordered := slices.SortedFunc(slices.Values(tools), func(a, b nacelle.Tool) int {
-		return strings.Compare(a.Name(), b.Name())
-	})
-	adapted := make([]sdk.BetaTool, 0, len(ordered))
-	for _, tool := range ordered {
+	adapted := make([]sdk.BetaTool, 0, len(tools))
+	for _, tool := range sortedByName(tools) {
 		adapted = append(adapted, sdkTool{tool: tool, sink: sink, pending: pending})
 	}
 	return adapted
+}
+
+// sortedByName is tools in the one order every caller of this package's tool
+// schema must agree on. Tools render first in the request, which makes them
+// the front of every cached prefix — two agents configured with the same
+// tools in a different order would share no cache at all, and nothing in the
+// result would say why. tokens.go's count has to sort them the same way, or a
+// count taken in a different order counts a different prefix than the one the
+// run that follows it will actually send.
+func sortedByName(tools []nacelle.Tool) []nacelle.Tool {
+	return slices.SortedFunc(slices.Values(tools), func(a, b nacelle.Tool) int {
+		return strings.Compare(a.Name(), b.Name())
+	})
 }
 
 // sdkTool presents a nacelle.Tool to the SDK's runner.
@@ -45,8 +55,14 @@ type sdkTool struct {
 func (t sdkTool) Name() string        { return t.tool.Name() }
 func (t sdkTool) Description() string { return t.tool.Description() }
 
-func (t sdkTool) InputSchema() sdk.BetaToolInputSchemaParam {
-	schema := t.tool.Schema()
+func (t sdkTool) InputSchema() sdk.BetaToolInputSchemaParam { return toolInputSchema(t.tool) }
+
+// toolInputSchema renders a tool's schema in the shape the SDK wants, whether
+// the caller is the runner that is about to execute it or tokens.go asking
+// what it would cost to declare it — neither reads anything on the tool but
+// its name, description and schema, so the same conversion serves both.
+func toolInputSchema(tool nacelle.Tool) sdk.BetaToolInputSchemaParam {
+	schema := tool.Schema()
 	input := sdk.BetaToolInputSchemaParam{}
 	if properties, ok := schema["properties"]; ok {
 		input.Properties = properties

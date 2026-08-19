@@ -30,6 +30,8 @@ type run struct {
 func (f *flaky) Name() string                       { return "flaky" }
 func (f *flaky) Capabilities() nacelle.Capabilities { return nacelle.Capabilities{} }
 
+func (f *flaky) CountTokens(context.Context, nacelle.Request) (int64, error) { return 0, nil }
+
 func (f *flaky) Stream(context.Context, nacelle.Request) iter.Seq2[nacelle.Event, error] {
 	scripted := f.runs[min(f.calls, len(f.runs)-1)]
 	f.calls++

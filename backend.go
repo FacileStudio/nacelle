@@ -31,6 +31,13 @@ type Backend interface {
 	// RunTool and a ToolSink so that every backend's stream looks the same
 	// to a consumer.
 	Stream(ctx context.Context, request Request) iter.Seq2[Event, error]
+
+	// CountTokens reports how many tokens this request would use if sent as
+	// it is, without sending it. A backend that cannot support it — see
+	// Capabilities.TokenCounting — returns an *Unsupported error rather than
+	// a guess: an estimate from a tokenizer this package does not own is not
+	// a number anyone should budget against.
+	CountTokens(ctx context.Context, request Request) (int64, error)
 }
 
 // Capabilities is what a backend supports.
@@ -57,6 +64,13 @@ type Capabilities struct {
 	// A backend that prices requests itself can fill it; one that does not
 	// leaves Usage.Cost at zero and the caller prices the tokens.
 	Cost bool
+
+	// TokenCounting reports whether CountTokens is real rather than an
+	// unconditional refusal. It takes a real request to a provider to know
+	// exactly how many tokens a tokenizer nobody outside that provider owns
+	// will produce, so a backend without an endpoint for it has nothing
+	// honest to estimate with.
+	TokenCounting bool
 }
 
 // Request is one run, fully described. A backend receives it already

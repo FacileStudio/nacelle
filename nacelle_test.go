@@ -33,6 +33,12 @@ func (s *stub) Stream(_ context.Context, request nacelle.Request) iter.Seq2[nace
 	}
 }
 
+func (s *stub) CountTokens(_ context.Context, request nacelle.Request) (int64, error) {
+	s.called = true
+	s.received = request
+	return 0, nil
+}
+
 func full() *stub {
 	return &stub{can: nacelle.Capabilities{MCP: true, Thinking: true, Effort: true}}
 }
