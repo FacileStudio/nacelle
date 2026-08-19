@@ -130,6 +130,15 @@ type ToolEvent struct {
 
 	// Duration is how long the tool took, on KindToolResult only.
 	Duration time.Duration
+
+	// Discarded reports that this call never ran: an attempt that produced
+	// it was superseded before it could be executed. It arrives as a
+	// KindToolResult only because the consumer's pairing contract still
+	// applies — a call started must be closed — not because there is
+	// anything here worth believing. A consumer replaying its conversation
+	// should drop a discarded call and its close entirely, the same way the
+	// backend that discarded it never replays it either.
+	Discarded bool
 }
 
 // Usage is what a turn or a run cost.

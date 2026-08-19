@@ -16,10 +16,14 @@ import (
 // not say the answer has to be good. So the call is closed with everything
 // known about it and an error saying why there is no result, which is strictly
 // more than the consumer had before.
-func closed(call *nacelle.ToolEvent, err error) nacelle.Event {
+//
+// discarded marks the closes on the discard path, and only that path: a call
+// that never ran at all is not history a consumer should replay, where an
+// orphaned one really was issued and only its answer went missing.
+func closed(call *nacelle.ToolEvent, err error, discarded bool) nacelle.Event {
 	return nacelle.Event{Kind: nacelle.KindToolResult, Tool: &nacelle.ToolEvent{
 		ID: call.ID, Index: call.Index, Name: call.Name, Input: call.Input,
-		Result: err.Error(), Err: err,
+		Result: err.Error(), Err: err, Discarded: discarded,
 	}}
 }
 
@@ -29,12 +33,15 @@ func closed(call *nacelle.ToolEvent, err error) nacelle.Event {
 // belong to the attempt that refused, and the fallback middleware strips them
 // from the replayed history, so answering them would orphan the result. They
 // were still streamed and still reported, which is why they are closed here
-// rather than quietly forgotten.
+// rather than quietly forgotten — and closed as Discarded, so a consumer
+// rebuilding a conversation from the stream drops them the same way the
+// runner already does, instead of replaying a call and an error that never
+// really happened.
 func (c *callTracker) discard() []nacelle.Event {
 	events := make([]nacelle.Event, 0, len(c.queued))
 	for _, call := range c.queued {
 		events = append(events, closed(call, fmt.Errorf(
-			"nacelle/anthropic: %q was asked for by an attempt that was refused and retried", call.Name)))
+			"nacelle/anthropic: %q was asked for by an attempt that was refused and retried", call.Name), true))
 	}
 	c.queued = nil
 	return events
@@ -45,7 +52,9 @@ func (c *callTracker) discard() []nacelle.Event {
 // A result block that never arrives is not hypothetical: a server can fail in
 // a way the API reports as nothing at all. Sorted by index so the batch reads
 // in the order the model asked, which is the order everything else is sorted
-// in.
+// in. Unlike discard, these calls really were issued — only the answer is
+// missing — so they are closed but not Discarded, and stay in a replayed
+// conversation as a call the model made that came back with an error.
 func (c *callTracker) orphans() []nacelle.Event {
 	waiting := slices.SortedFunc(maps.Values(c.remote), func(a, b *nacelle.ToolEvent) int {
 		return a.Index - b.Index
@@ -55,7 +64,7 @@ func (c *callTracker) orphans() []nacelle.Event {
 	events := make([]nacelle.Event, 0, len(waiting))
 	for _, call := range waiting {
 		events = append(events, closed(call, fmt.Errorf(
-			"nacelle/anthropic: the MCP server returned no result for %q", call.Name)))
+			"nacelle/anthropic: the MCP server returned no result for %q", call.Name), false))
 	}
 	return events
 }

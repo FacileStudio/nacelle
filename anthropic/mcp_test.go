@@ -52,6 +52,9 @@ func TestAnMCPCallWithNoResultIsStillClosed(t *testing.T) {
 	if result.Err == nil {
 		t.Errorf("result = %+v, want an error saying no result arrived", result)
 	}
+	if result.Discarded {
+		t.Errorf("result = %+v, want it kept in a replayed conversation — the call really was made, only its answer went missing", result)
+	}
 }
 
 // A server reporting a failure is reported as one, so a consumer does not
