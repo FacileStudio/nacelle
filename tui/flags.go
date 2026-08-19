@@ -5,10 +5,22 @@ import "flag"
 // declared is every flag this command accepts, holding the pointer `flag`
 // fills each one in through — kept together so fromFlags can hand the whole
 // set to typedSetters rather than threading ten variables through it by hand.
+//
+// discoveryFlags is embedded for the same reason Config embeds Discovery:
+// every field on it is still reached as f.jardin, not f.discoveryFlags.jardin,
+// and grouping it only keeps this struct's own field count from growing by
+// one every time that list does.
 type declared struct {
-	backend, model, effort, root, system                        *string
-	bash, thinking, jardin, projectContext, skills, trustSkills *bool
-	iterations                                                  *int
+	backend, model, effort, root, system *string
+	bash, thinking, approveTools         *bool
+	iterations                           *int
+	discoveryFlags
+}
+
+// discoveryFlags is declared's half of Discovery — one flag pointer per
+// field there.
+type discoveryFlags struct {
+	jardin, projectContext, skills, trustSkills *bool
 }
 
 // declareFlags registers every flag against fallback's values and returns
@@ -22,15 +34,19 @@ func declareFlags(fallback Config) declared {
 		system:   flag.String("system", fallback.System, "system prompt"),
 		bash:     flag.Bool("bash", *fallback.Bash, "let the model run commands"),
 		thinking: flag.Bool("thinking", *fallback.Thinking, "stream the model's reasoning"),
-		jardin: flag.Bool("jardin", *fallback.Jardin,
-			"let the model run jardin flows and search its memory, when jardin is installed"),
-		projectContext: flag.Bool("project-context", *fallback.ProjectContext,
-			"read CLAUDE.md and AGENTS.md from root upward into the system prompt"),
-		skills: flag.Bool("skills", *fallback.Skills,
-			"tell the model about skills found in ~/.agents/skills and trusted .agents/skills directories"),
-		trustSkills: flag.Bool("trust-skills", *fallback.TrustSkills,
-			"trust every .agents/skills directory found under root this run, and remember the decision"),
+		approveTools: flag.Bool("approve-tools", *fallback.ApproveTools,
+			"ask before every tool call runs, y/a/n; off by default, every call runs unasked"),
 		iterations: flag.Int("max-iterations", *fallback.MaxIterations, "how many times the model may be asked"),
+		discoveryFlags: discoveryFlags{
+			jardin: flag.Bool("jardin", *fallback.Jardin,
+				"let the model run jardin flows and search its memory, when jardin is installed"),
+			projectContext: flag.Bool("project-context", *fallback.ProjectContext,
+				"read CLAUDE.md and AGENTS.md from root upward into the system prompt"),
+			skills: flag.Bool("skills", *fallback.Skills,
+				"tell the model about skills found in ~/.agents/skills and trusted .agents/skills directories"),
+			trustSkills: flag.Bool("trust-skills", *fallback.TrustSkills,
+				"trust every .agents/skills directory found under root this run, and remember the decision"),
+		},
 	}
 }
 
@@ -50,6 +66,7 @@ func typedSetters(f declared) map[string]func(*Config) {
 		"project-context": func(c *Config) { c.ProjectContext = f.projectContext },
 		"skills":          func(c *Config) { c.Skills = f.skills },
 		"trust-skills":    func(c *Config) { c.TrustSkills = f.trustSkills },
+		"approve-tools":   func(c *Config) { c.ApproveTools = f.approveTools },
 		"max-iterations":  func(c *Config) { c.MaxIterations = f.iterations },
 	}
 }

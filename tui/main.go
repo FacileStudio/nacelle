@@ -46,7 +46,9 @@ func run() error {
 
 	notice := augmentSystem(&config)
 
-	agent, backend, err := build(config, local)
+	approvalGate, approve := buildApprovals(config)
+
+	agent, backend, err := build(config, local, approve)
 	if err != nil {
 		return err
 	}
@@ -55,7 +57,10 @@ func run() error {
 	if notice != "" {
 		client.say(fromClient, notice)
 	}
-	_, err = tea.NewProgram(client).Run()
+
+	program := tea.NewProgram(client)
+	wireApprovals(approvalGate, program)
+	_, err = program.Run()
 	return err
 }
 
@@ -97,8 +102,10 @@ func augmentSystem(config *Config) string {
 }
 
 // build assembles the agent the settings describe, and hands the backend back
-// so the caller can say which one answered.
-func build(config Config, local []nacelle.Tool) (*nacelle.Agent, nacelle.Backend, error) {
+// so the caller can say which one answered. approve is nil unless
+// -approve-tools was asked for — see nacelle.Approve's own doc comment for
+// why nil, not a rubber-stamp function, is what "off" means here.
+func build(config Config, local []nacelle.Tool, approve nacelle.Approve) (*nacelle.Agent, nacelle.Backend, error) {
 	backend, err := chosen(config)
 	if err != nil {
 		return nil, nil, err
@@ -111,6 +118,7 @@ func build(config Config, local []nacelle.Tool) (*nacelle.Agent, nacelle.Backend
 		Thinking:      *config.Thinking,
 		Tools:         local,
 		MaxIterations: *config.MaxIterations,
+		Approve:       approve,
 	})
 	if err != nil {
 		return nil, nil, err

@@ -46,22 +46,22 @@ type model struct {
 // inflight is the one run this client allows at a time: how to hear from it,
 // how to abandon it, what it has produced, and what it has cost.
 //
-// Reasoning gets a buffer of its own rather than sharing the answer's. Sharing
-// one concatenated the two, which put the last thought against the first word
-// with no separator on screen and, worse, committed the reasoning to the
-// conversation — so every later turn re-sent a chain of thought the provider
-// bills for and does not want replayed.
+// Reasoning gets a buffer of its own: sharing the answer's put the last
+// thought against the first word with no separator, and worse, committed the
+// reasoning to the conversation — re-sending a chain of thought every later
+// turn that the provider bills for and does not want replayed.
 //
-// usage is this run alone, because KindTurn accumulates and KindDone replaces:
-// a single counter carrying over from the last run reads as that run's total
-// plus this run's turns, and then drops to this run's total the moment it
-// finishes.
+// usage is this run alone, because KindTurn accumulates and KindDone
+// replaces: a counter carried over from the last run would double-count its
+// total against this run's turns.
 //
-// waiting is true from the moment a question is sent until the first event of
-// any kind comes back, success or error. Nothing tells the reader that gap is
-// still the model and not a hung client — a request can sit a full second or
-// more before the first token, and a screen that has not moved since the
-// question was echoed looks exactly like one that stopped responding.
+// waiting is true from the moment a question is sent until the first event
+// comes back, success or error — otherwise a screen that has not moved since
+// the question was echoed looks exactly like a hung client, not a slow one.
+//
+// pending is set only when -approve-tools is on and a call is waiting on a
+// decision — nil otherwise, so status() and key() only change behaviour for
+// someone who asked for a gate at all.
 type inflight struct {
 	results     <-chan result
 	cancel      context.CancelFunc
@@ -74,6 +74,7 @@ type inflight struct {
 	waiting     bool
 	asked       []nacelle.Part
 	answered    []nacelle.Part
+	pending     *approvalRequest
 }
 
 // newModel builds the client. The banner names the backend and model, so which
@@ -120,6 +121,10 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case spinner.TickMsg:
 		return m, m.spun(message)
+	case approvalRequest:
+		m.run.pending = &message
+		m.render()
+		return m, nil
 	case result:
 		return m, m.consume(message)
 	case finished:
@@ -131,20 +136,20 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// key handles this client's bindings, reporting whether it consumed the press.
-// Anything the scroller does not claim either belongs to the prompt.
+// key handles this client's bindings, reporting whether it consumed the
+// press. Anything the scroller does not claim belongs to the prompt.
 //
-// Ctrl+C cancels a run in flight and only quits when there is nothing to
-// cancel, so a long answer can be abandoned without losing the session. The
-// terminal is in raw mode, which means nothing quits on Ctrl+C unless this
-// says so.
+// Ctrl+C cancels a run in flight and only quits when nothing is running, so
+// a long answer can be abandoned without losing the session — the terminal
+// is in raw mode, so nothing quits on Ctrl+C unless this says so. That needs
+// an escape hatch: busy only clears once settle sees the results channel
+// close, and a tool wedged on a subprocess never closes it. A second ctrl+c
+// inside forceQuit, or ctrl+\ at any time, quits regardless — otherwise the
+// only way out of an alt-screen raw-mode terminal is kill -9 from elsewhere.
 //
-// That courtesy needs an escape hatch, because it depends on the very thing
-// that may be stuck: busy is cleared by settle, settle waits for the results
-// channel to close, and a tool wedged on a subprocess never closes it. A
-// second ctrl+c inside forceQuit, or ctrl+\ at any time, quits whatever the
-// run is doing — otherwise the only way out of an alt-screen raw-mode terminal
-// is kill -9 from somewhere else.
+// Both stay live while a tool approval is pending too: a question nobody
+// answers must not be a second way to get stuck. See decide's doc comment
+// for why cancelling clears run.pending directly instead.
 func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 	switch press.String() {
 	case "ctrl+\\":
@@ -155,9 +160,15 @@ func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 		}
 		m.run.interrupted = time.Now()
 		m.run.stop = abandoned
+		m.run.pending = nil
 		m.run.cancel()
 		m.render()
 		return true, nil
+	}
+	if m.run.pending != nil {
+		return true, m.decide(press)
+	}
+	switch press.String() {
 	case "enter":
 		return true, m.ask()
 	}
@@ -166,10 +177,9 @@ func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 
 // ask sends whatever is in the prompt, unless a run is already going.
 //
-// Everything that belonged to the last run is cleared here and nowhere else: a
-// stop reason left standing would accuse this answer of being truncated, a
-// usage left standing would be counted twice, and an interruption left standing
-// would make the first ctrl+c of a fresh run quit the client outright.
+// Everything from the last run is cleared here, nowhere else: a leftover
+// stop reason mislabels this answer truncated, a leftover usage
+// double-counts, and a leftover interruption quits a fresh run outright.
 func (m *model) ask() tea.Cmd {
 	question := strings.TrimSpace(m.prompt.Value())
 	if question == "" || m.run.busy {
@@ -193,14 +203,13 @@ func (m *model) ask() tea.Cmd {
 
 // consume folds one result into the transcript and waits for the next.
 //
-// The answer is committed before the error is, because an error line printed
-// first tells the reader the request failed and only then shows them the half
-// sentence it interrupted, which is the wrong order to read a failure in.
+// The answer is committed before the error is — an error printed first would
+// tell the reader the request failed, then show the half sentence it
+// interrupted, the wrong order to read a failure in.
 //
-// waiting ends here, on the very first result of the run, whatever kind it
-// is. An error is still an answer to "is anything happening" — the spinner's
-// job was only ever to cover the silence before the first response, not to
-// promise that response will be good news.
+// waiting ends here, on the very first result whatever kind it is: an error
+// is still an answer to "is anything happening," and the spinner's job was
+// only ever to cover the silence before that first response.
 func (m *model) consume(next result) tea.Cmd {
 	m.run.waiting = false
 	if next.err != nil {
@@ -221,14 +230,14 @@ func (m *model) consume(next result) tea.Cmd {
 // next question starts from a clean per-run counter and the status line keeps
 // showing a session total that only grows.
 //
-// waiting is cleared here too, not only on the first event: a run whose
-// stream closes without yielding anything at all — an immediate cancel, or a
-// backend that errors before its first yield — never reaches consume, and the
-// spinner it started would otherwise spin for a question already abandoned.
+// waiting and pending are cleared here too, not only on their own paths: a
+// stream that closes without yielding anything never reaches either one, and
+// nothing should be left spinning, or asking a question, about a dead run.
 func (m *model) settle() tea.Cmd {
 	m.run.cancel()
 	m.run.busy = false
 	m.run.waiting = false
+	m.run.pending = nil
 
 	m.closeResults()
 	m.dropUnanswered()

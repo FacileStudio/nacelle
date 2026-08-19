@@ -23,18 +23,35 @@ const ConfigFile = ".nacelle.yml"
 // it is a file that can never be committed to a dotfiles repo, which is the
 // only reason to want one of these on two machines.
 type Config struct {
-	Backend        string `yaml:"backend"`
-	Model          string `yaml:"model"`
-	Effort         string `yaml:"effort"`
-	Root           string `yaml:"root"`
-	System         string `yaml:"system"`
-	Bash           *bool  `yaml:"bash"`
-	Thinking       *bool  `yaml:"thinking"`
-	Jardin         *bool  `yaml:"jardin"`
-	ProjectContext *bool  `yaml:"project_context"`
-	Skills         *bool  `yaml:"skills"`
-	TrustSkills    *bool  `yaml:"trust_skills"`
-	MaxIterations  *int   `yaml:"max_iterations"`
+	Backend       string `yaml:"backend"`
+	Model         string `yaml:"model"`
+	Effort        string `yaml:"effort"`
+	Root          string `yaml:"root"`
+	System        string `yaml:"system"`
+	Bash          *bool  `yaml:"bash"`
+	Thinking      *bool  `yaml:"thinking"`
+	ApproveTools  *bool  `yaml:"approve_tools"`
+	MaxIterations *int   `yaml:"max_iterations"`
+
+	// Discovery is embedded rather than named so every field on it is still
+	// reached as config.Jardin, not config.Discovery.Jardin — the grouping
+	// exists only to keep this struct's own field count from growing by one
+	// every time that list does, not to change how anything reads it.
+	// yaml:",inline" is load-bearing for the same reason on the file side:
+	// every key stays at ~/.nacelle.yml's top level, exactly where it was
+	// before this existed.
+	Discovery `yaml:",inline"`
+}
+
+// Discovery is every toggle for something this client finds on its own
+// rather than being told: jardin's tools, project and global context,
+// skills. See Config's own doc comment for why it is a separate type at
+// all.
+type Discovery struct {
+	Jardin         *bool `yaml:"jardin"`
+	ProjectContext *bool `yaml:"project_context"`
+	Skills         *bool `yaml:"skills"`
+	TrustSkills    *bool `yaml:"trust_skills"`
 }
 
 // defaults is the bottom layer, and the only one that answers everything.
@@ -46,25 +63,35 @@ type Config struct {
 // asking, and a machine with them gets the benefit without a flag to
 // discover first.
 //
-// TrustSkills defaults off, and that is not the same reasoning. Loading
-// skills found globally or already trusted is one thing; a project's own
-// .agents/skills/ can carry instructions to run arbitrary scripts, and
-// blanket-trusting whatever a directory happens to contain is a decision
-// only the person running this should make, not a default.
+// TrustSkills and ApproveTools default off, and neither is the reasoning
+// above. Loading skills found globally or already trusted is one thing; a
+// project's own .agents/skills/ can carry instructions to run arbitrary
+// scripts, and blanket-trusting whatever a directory happens to contain is a
+// decision only the person running this should make, not a default.
+// ApproveTools is off for a plainer reason: every tool this client has ever
+// run, it has run unasked, and a gate that started asking by default would
+// change that for everyone who never asked for one. Most consumers of an
+// agent loop — a script, a CI job, someone who trusts the model to just get
+// on with it — have nobody to ask and want none of this; the interactive
+// human who does is the one who turns it on.
 func defaults() Config {
-	bash, thinking, jardin, projectContext, skills, trustSkills := false, false, true, true, true, false
+	bash, thinking, jardin, projectContext, skills, trustSkills, approveTools :=
+		false, false, true, true, true, false, false
 	iterations := 40
 	return Config{
-		Backend:        "anthropic",
-		Root:           ".",
-		System:         defaultSystem,
-		Bash:           &bash,
-		Thinking:       &thinking,
-		Jardin:         &jardin,
-		ProjectContext: &projectContext,
-		Skills:         &skills,
-		TrustSkills:    &trustSkills,
-		MaxIterations:  &iterations,
+		Backend:       "anthropic",
+		Root:          ".",
+		System:        defaultSystem,
+		Bash:          &bash,
+		Thinking:      &thinking,
+		ApproveTools:  &approveTools,
+		MaxIterations: &iterations,
+		Discovery: Discovery{
+			Jardin:         &jardin,
+			ProjectContext: &projectContext,
+			Skills:         &skills,
+			TrustSkills:    &trustSkills,
+		},
 	}
 }
 
@@ -121,6 +148,9 @@ func (c *Config) mergeToggles(over Config) {
 	}
 	if over.TrustSkills != nil {
 		c.TrustSkills = over.TrustSkills
+	}
+	if over.ApproveTools != nil {
+		c.ApproveTools = over.ApproveTools
 	}
 }
 
