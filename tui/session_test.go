@@ -47,7 +47,7 @@ func TestAStreamErrorIsCommittedAfterTheAnswerItInterrupted(t *testing.T) {
 	m.absorb(nacelle.Event{Kind: nacelle.KindText, Text: "half an answer"})
 	m.consume(result{err: errors.New("the stream fell over")})
 
-	screen := m.viewport.View()
+	screen := visible(m.viewport.View())
 	answer, failure := strings.Index(screen, "half an answer"), strings.Index(screen, "fell over")
 	if answer < 0 || failure < 0 {
 		t.Fatalf("screen = %q, want both the answer and the error on it", screen)
@@ -67,7 +67,7 @@ func TestReasoningIsShownApartAndKeptOutOfTheConversation(t *testing.T) {
 	m.absorb(nacelle.Event{Kind: nacelle.KindText, Text: "the answer"})
 	m.settle()
 
-	screen := m.viewport.View()
+	screen := visible(m.viewport.View())
 	if !strings.Contains(screen, "let me think") || !strings.Contains(screen, "the answer") {
 		t.Fatalf("screen = %q, want the reasoning and the answer both visible", screen)
 	}
@@ -75,7 +75,7 @@ func TestReasoningIsShownApartAndKeptOutOfTheConversation(t *testing.T) {
 		t.Errorf("screen = %q, want the reasoning not run into the first word", screen)
 	}
 
-	if len(m.conversation) != 1 || m.conversation[0].Text != "the answer" {
+	if len(m.conversation) != 1 || said(m.conversation[0]) != "the answer" {
 		t.Errorf("conversation = %+v, want the answer alone", m.conversation)
 	}
 }

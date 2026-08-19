@@ -43,7 +43,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("opening %s: %w", config.Root, err)
 	}
-	defer set.Close()
+	defer func() { _ = set.Close() }()
 
 	local, err := set.Tools()
 	if err != nil {

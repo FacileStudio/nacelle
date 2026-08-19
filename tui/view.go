@@ -39,7 +39,12 @@ func (m *model) View() tea.View {
 const abandoned nacelle.Stop = "abandoned"
 
 // status is the one line that is always true: what the session has cost so
-// far, whether a run is still going, and whether the answer above it is whole.
+// far, whether a run is still going, whether the answer above it is whole, and
+// whether the reader is looking at the end of it.
+//
+// The last of those is what scrolling costs. A reader parked halfway up while
+// a run streams sees a screen that has stopped moving, which is exactly what a
+// client that hung looks like, so the line says which of the two it is.
 //
 // The count is spent plus the run in flight, which is the session total.
 // Anything else jumps around: a per-run counter that survives into the next
@@ -69,6 +74,9 @@ func (m *model) status() string {
 	if total.Cost > 0 {
 		line += fmt.Sprintf(" · $%.4f", total.Cost)
 	}
+	if !m.viewport.AtBottom() {
+		line += " · scrolled back, pgdn to catch up"
+	}
 	return lipgloss.NewStyle().Faint(true).Render(line)
 }
 
@@ -90,9 +98,9 @@ func (m *model) absorb(event nacelle.Event) {
 	case nacelle.KindThinking:
 		m.run.reasoning.WriteString(event.Text)
 	case nacelle.KindToolCall:
-		m.say("tool", fmt.Sprintf("%s %s", event.Tool.Name, event.Tool.Input))
+		m.say(fromTool, fmt.Sprintf("%s %s", event.Tool.Name, event.Tool.Input))
 	case nacelle.KindToolResult:
-		m.say("tool", describe(event.Tool))
+		m.say(fromResult, describe(event.Tool))
 	case nacelle.KindTurn:
 		m.run.usage = m.run.usage.Add(event.Usage)
 	case nacelle.KindDone:
@@ -138,50 +146,29 @@ func describe(tool *nacelle.ToolEvent) string {
 	return fmt.Sprintf("%s done in %s", tool.Name, tool.Duration.Round(time.Millisecond))
 }
 
-// flush moves whatever is still streaming into the transcript, and the answer
-// into the conversation.
+// flush moves whatever is still streaming into the transcript, and reports the
+// answer it committed so the caller can put that same text in the conversation.
 //
 // It is not bookkeeping. Both buffers are drawn by render only while they are
 // filling, so clearing one without moving its text somewhere permanent erases
 // it from the screen at the exact moment it finished — which is what this did
 // until it was used.
 //
-// Only the answer joins the conversation. Reasoning is shown and then dropped,
-// and a nacelle.Message holds text and nothing else today, so a tool call the
-// model made cannot be replayed to it either — a gap in the core, not
-// something a client can paper over.
-func (m *model) flush() {
+// Reasoning is shown and then dropped rather than reported. nacelle.Reasoning
+// exists and would hold it, but neither backend will send one back — Anthropic
+// wants the signature the stream never carries, and OpenRouter is asked to
+// exclude reasoning outright — so recording it would fill the conversation with
+// a part that is only ever skipped on the way out.
+func (m *model) flush() string {
 	if reasoning := m.run.reasoning.String(); reasoning != "" {
 		m.run.reasoning.Reset()
-		m.say("thinking", reasoning)
+		m.say(fromThinking, reasoning)
 	}
 
 	answer := m.run.answer.String()
 	m.run.answer.Reset()
-	if answer == "" {
-		return
+	if answer != "" {
+		m.say(fromModel, answer)
 	}
-	m.conversation = append(m.conversation, nacelle.Message{Assistant: true, Text: answer})
-	m.say("nacelle", answer)
-}
-
-// say commits one labelled line to the transcript.
-func (m *model) say(role, text string) {
-	m.transcript = append(m.transcript, fmt.Sprintf("%s: %s", role, text))
-	m.render()
-}
-
-// render redraws the transcript and pins it to the bottom. The viewport does
-// not follow new content on its own, so appending without this leaves the
-// stream scrolling out of sight.
-func (m *model) render() {
-	body := strings.Join(m.transcript, "\n\n")
-	if reasoning := m.run.reasoning.String(); reasoning != "" {
-		body += "\n\n" + lipgloss.NewStyle().Faint(true).Render("thinking: "+reasoning)
-	}
-	if streaming := m.run.answer.String(); streaming != "" {
-		body += "\n\n" + streaming
-	}
-	m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width()).Render(body))
-	m.viewport.GotoBottom()
+	return answer
 }
