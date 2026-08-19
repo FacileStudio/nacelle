@@ -1,6 +1,10 @@
-package nacelle
+package anthropic
 
-import "github.com/anthropics/anthropic-sdk-go"
+import (
+	"github.com/FacileStudio/nacelle"
+
+	sdk "github.com/anthropics/anthropic-sdk-go"
+)
 
 // callTracker assembles tool calls from the stream.
 //
@@ -9,15 +13,15 @@ import "github.com/anthropics/anthropic-sdk-go"
 // would mean reporting a call whose input is still empty, so it is held until
 // the block closes and emitted whole.
 type callTracker struct {
-	open map[int64]*ToolEvent
+	open map[int64]*nacelle.ToolEvent
 }
 
 func newCallTracker() *callTracker {
-	return &callTracker{open: map[int64]*ToolEvent{}}
+	return &callTracker{open: map[int64]*nacelle.ToolEvent{}}
 }
 
 // consume maps one raw stream event onto zero or more nacelle events.
-func (c *callTracker) consume(event anthropic.BetaRawMessageStreamEventUnion) []Event {
+func (c *callTracker) consume(event sdk.BetaRawMessageStreamEventUnion) []nacelle.Event {
 	switch event.Type {
 	case "content_block_start":
 		c.start(event)
@@ -30,11 +34,11 @@ func (c *callTracker) consume(event anthropic.BetaRawMessageStreamEventUnion) []
 }
 
 // start records a tool call whose arguments have not arrived yet.
-func (c *callTracker) start(event anthropic.BetaRawMessageStreamEventUnion) {
+func (c *callTracker) start(event sdk.BetaRawMessageStreamEventUnion) {
 	if !isToolUse(event.ContentBlock.Type) {
 		return
 	}
-	c.open[event.Index] = &ToolEvent{
+	c.open[event.Index] = &nacelle.ToolEvent{
 		ID:   event.ContentBlock.ID,
 		Name: event.ContentBlock.Name,
 	}
@@ -43,12 +47,12 @@ func (c *callTracker) start(event anthropic.BetaRawMessageStreamEventUnion) {
 // delta turns a content fragment into an event, or files it against the tool
 // call it belongs to. The index is what keeps two tools requested in the same
 // turn from mixing their arguments.
-func (c *callTracker) delta(event anthropic.BetaRawMessageStreamEventUnion) []Event {
+func (c *callTracker) delta(event sdk.BetaRawMessageStreamEventUnion) []nacelle.Event {
 	switch event.Delta.Type {
 	case "text_delta":
-		return []Event{{Kind: KindText, Text: event.Delta.Text}}
+		return []nacelle.Event{{Kind: nacelle.KindText, Text: event.Delta.Text}}
 	case "thinking_delta":
-		return []Event{{Kind: KindThinking, Text: event.Delta.Thinking}}
+		return []nacelle.Event{{Kind: nacelle.KindThinking, Text: event.Delta.Thinking}}
 	case "input_json_delta":
 		if call, ok := c.open[event.Index]; ok {
 			call.Input += event.Delta.PartialJSON
@@ -58,13 +62,13 @@ func (c *callTracker) delta(event anthropic.BetaRawMessageStreamEventUnion) []Ev
 }
 
 // stop closes a tool call and reports it whole.
-func (c *callTracker) stop(event anthropic.BetaRawMessageStreamEventUnion) []Event {
+func (c *callTracker) stop(event sdk.BetaRawMessageStreamEventUnion) []nacelle.Event {
 	call, ok := c.open[event.Index]
 	if !ok {
 		return nil
 	}
 	delete(c.open, event.Index)
-	return []Event{{Kind: KindToolCall, Tool: call}}
+	return []nacelle.Event{{Kind: nacelle.KindToolCall, Tool: call}}
 }
 
 // isToolUse reports whether a content block is the model calling a tool.
@@ -77,27 +81,11 @@ func isToolUse(blockType string) bool {
 }
 
 // usageOf converts the API's per-turn accounting into ours.
-func usageOf(usage anthropic.BetaMessageDeltaUsage) Usage {
-	return Usage{
+func usageOf(usage sdk.BetaMessageDeltaUsage) nacelle.Usage {
+	return nacelle.Usage{
 		InputTokens:         usage.InputTokens,
 		OutputTokens:        usage.OutputTokens,
 		CacheReadTokens:     usage.CacheReadInputTokens,
 		CacheCreationTokens: usage.CacheCreationInputTokens,
 	}
-}
-
-// toParams converts a conversation into the SDK's message shape.
-func toParams(conversation []Message) []anthropic.BetaMessageParam {
-	params := make([]anthropic.BetaMessageParam, 0, len(conversation))
-	for _, message := range conversation {
-		role := anthropic.BetaMessageParamRoleUser
-		if message.Assistant {
-			role = anthropic.BetaMessageParamRoleAssistant
-		}
-		params = append(params, anthropic.BetaMessageParam{
-			Role:    role,
-			Content: []anthropic.BetaContentBlockParamUnion{anthropic.NewBetaTextBlock(message.Text)},
-		})
-	}
-	return params
 }

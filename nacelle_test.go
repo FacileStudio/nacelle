@@ -1,145 +1,141 @@
-package nacelle
+package nacelle_test
 
 import (
+	"context"
 	"errors"
+	"iter"
 	"testing"
 
+	"github.com/FacileStudio/nacelle"
 	"github.com/FacileStudio/nacelle/mcp"
-	"github.com/anthropics/anthropic-sdk-go"
 )
 
-func TestNewRequiresASystemPrompt(t *testing.T) {
-	if _, err := New(Config{}); !errors.Is(err, ErrNoSystemPrompt) {
-		t.Fatalf("New with no system prompt = %v, want ErrNoSystemPrompt", err)
+// stub is a backend that records what it was asked and can be told what it
+// supports, so the capability rules are testable without a network.
+type stub struct {
+	can      nacelle.Capabilities
+	received nacelle.Request
+}
+
+func (s *stub) Name() string                       { return "stub" }
+func (s *stub) Capabilities() nacelle.Capabilities { return s.can }
+
+func (s *stub) Stream(_ context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error] {
+	s.received = request
+	return func(yield func(nacelle.Event, error) bool) {
+		yield(nacelle.Event{Kind: nacelle.KindDone}, nil)
 	}
 }
 
-func TestNewAppliesDefaults(t *testing.T) {
-	agent, err := New(Config{System: "be useful"})
-	if err != nil {
-		t.Fatalf("New: %v", err)
+func full() *stub {
+	return &stub{can: nacelle.Capabilities{MCP: true, Thinking: true, Effort: true}}
+}
+
+func TestNewRequiresABackendAndASystemPrompt(t *testing.T) {
+	if _, err := New(t, nacelle.Config{System: "s"}); !errors.Is(err, nacelle.ErrNoBackend) {
+		t.Errorf("no backend = %v, want ErrNoBackend", err)
 	}
-	if got := string(agent.params.Model); got != DefaultModel {
-		t.Errorf("model = %q, want %q", got, DefaultModel)
-	}
-	if agent.params.MaxTokens != DefaultMaxTokens {
-		t.Errorf("max tokens = %d, want %d", agent.params.MaxTokens, DefaultMaxTokens)
-	}
-	if agent.params.Thinking.OfAdaptive == nil {
-		t.Error("thinking is not adaptive; a fixed budget is rejected by current models")
+	if _, err := New(t, nacelle.Config{Backend: full()}); !errors.Is(err, nacelle.ErrNoSystemPrompt) {
+		t.Errorf("no system prompt = %v, want ErrNoSystemPrompt", err)
 	}
 }
 
-// A duplicate name makes the second server unreachable rather than failing
-// loudly, because the toolset entry in the request finds a server by name.
-func TestNewRejectsUnusableMCPServers(t *testing.T) {
-	cases := map[string][]mcp.Server{
-		"no name":        {{URL: "https://example.test/mcp"}},
-		"no url":         {{Name: "perception"}},
-		"duplicate name": {{Name: "perception", URL: "https://a.test"}, {Name: "perception", URL: "https://b.test"}},
+// New helper keeps the table tests readable.
+func New(_ *testing.T, cfg nacelle.Config) (*nacelle.Agent, error) { return nacelle.New(cfg) }
+
+// Losing MCP tools silently looks like a model that will not use them, which
+// is a bad afternoon. The refusal is the feature.
+func TestAskingForWhatABackendLacksIsRefused(t *testing.T) {
+	bare := &stub{}
+
+	cases := map[string]nacelle.Config{
+		"mcp":      {Backend: bare, System: "s", MCP: []mcp.Server{{Name: "p", URL: "https://p.test"}}},
+		"thinking": {Backend: bare, System: "s", Thinking: true},
+		"effort":   {Backend: bare, System: "s", Effort: nacelle.EffortHigh},
 	}
-	for name, servers := range cases {
+
+	for name, cfg := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := New(Config{System: "s", MCP: servers}); err == nil {
-				t.Fatal("New accepted an unusable MCP server list")
+			_, err := nacelle.New(cfg)
+			var unsupported *nacelle.Unsupported
+			if !errors.As(err, &unsupported) {
+				t.Fatalf("New = %v, want an *Unsupported error", err)
+			}
+			if unsupported.Backend != "stub" {
+				t.Errorf("backend = %q, want stub", unsupported.Backend)
 			}
 		})
 	}
 }
 
-// Both halves or the API rejects the request: mcp_servers alone is a
-// validation error, and it does not read like one.
-func TestMCPDeclaresServersAndToolsets(t *testing.T) {
-	agent, err := New(Config{
-		System: "s",
-		MCP: []mcp.Server{{
-			Name:         "perception",
-			URL:          "https://perception.facile.studio/api/mcp",
-			Token:        "secret",
-			AllowedTools: []string{"search_events"},
-		}},
+func TestACapableBackendAcceptsEverything(t *testing.T) {
+	agent, err := nacelle.New(nacelle.Config{
+		Backend:  full(),
+		System:   "s",
+		Thinking: true,
+		Effort:   nacelle.EffortMax,
+		MCP:      []mcp.Server{{Name: "p", URL: "https://p.test"}},
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-
-	if len(agent.params.MCPServers) != 1 {
-		t.Fatalf("declared %d servers, want 1", len(agent.params.MCPServers))
-	}
-	server := agent.params.MCPServers[0]
-	if server.Name != "perception" || server.URL != "https://perception.facile.studio/api/mcp" {
-		t.Errorf("server = %+v, want the configured name and URL", server)
-	}
-	if server.AuthorizationToken.Value != "secret" {
-		t.Error("the bearer token did not reach the server definition")
-	}
-	if len(server.ToolConfiguration.AllowedTools) != 1 {
-		t.Error("the allowed-tools restriction was dropped")
+	if agent.Backend().Name() != "stub" {
+		t.Errorf("backend = %q, want stub", agent.Backend().Name())
 	}
 }
 
-// mcp_servers on its own is rejected as a validation error, which does not
-// read like a missing toolset and is one.
-func TestMCPDeclaresTheToolsetAndTheBeta(t *testing.T) {
-	agent, err := New(Config{
-		System: "s",
-		MCP:    []mcp.Server{{Name: "perception", URL: "https://perception.facile.studio/api/mcp"}},
+// Two tools with one name means the model's choice is ambiguous and whichever
+// the backend indexes last wins.
+func TestDuplicateToolNamesAreRefused(t *testing.T) {
+	first, _ := nacelle.NewTool("same", "does a thing", func(context.Context, struct{}) (string, error) { return "", nil })
+	second, _ := nacelle.NewTool("same", "does another", func(context.Context, struct{}) (string, error) { return "", nil })
+
+	if _, err := nacelle.New(nacelle.Config{Backend: full(), System: "s", Tools: []nacelle.Tool{first, second}}); err == nil {
+		t.Fatal("two tools sharing a name were accepted")
+	}
+}
+
+func TestDuplicateMCPServerNamesAreRefused(t *testing.T) {
+	_, err := nacelle.New(nacelle.Config{
+		Backend: full(),
+		System:  "s",
+		MCP:     []mcp.Server{{Name: "p", URL: "https://a.test"}, {Name: "p", URL: "https://b.test"}},
 	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	if len(agent.params.Tools) != 1 || agent.params.Tools[0].OfMCPToolset == nil {
-		t.Fatal("no mcp_toolset entry; the request would be rejected as malformed")
-	}
-
-	var declared bool
-	for _, beta := range agent.params.Betas {
-		if beta == anthropic.AnthropicBetaMCPClient2025_11_20 {
-			declared = true
-		}
-	}
-	if !declared {
-		t.Error("the MCP client beta was not declared")
+	if err == nil {
+		t.Fatal("two MCP servers sharing a name were accepted")
 	}
 }
 
-func TestNoMCPLeavesTheRequestUntouched(t *testing.T) {
-	agent, err := New(Config{System: "s"})
+func TestTheRequestReachesTheBackendWithDefaultsFilled(t *testing.T) {
+	backend := full()
+	agent, err := nacelle.New(nacelle.Config{Backend: backend, System: "be useful"})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if len(agent.params.MCPServers) != 0 || len(agent.params.Tools) != 0 || len(agent.params.Betas) != 0 {
-		t.Error("an agent with no MCP servers still declared MCP")
+
+	for range agent.Stream(context.Background(), []nacelle.Message{{Text: "hi"}}) {
+	}
+
+	if backend.received.System != "be useful" {
+		t.Errorf("system = %q, want the configured prompt", backend.received.System)
+	}
+	if backend.received.MaxTokens != nacelle.DefaultMaxTokens {
+		t.Errorf("max tokens = %d, want the default filled in", backend.received.MaxTokens)
+	}
+	if len(backend.received.Messages) != 1 || backend.received.Messages[0].Text != "hi" {
+		t.Errorf("messages = %+v, want the conversation passed through", backend.received.Messages)
 	}
 }
 
 func TestUsageAccumulates(t *testing.T) {
-	first := Usage{InputTokens: 10, OutputTokens: 3, CacheReadTokens: 1}
-	second := Usage{InputTokens: 5, OutputTokens: 7, CacheCreationTokens: 2}
+	sum := nacelle.Usage{InputTokens: 10, OutputTokens: 3, CacheReadTokens: 1}.
+		Add(nacelle.Usage{InputTokens: 5, OutputTokens: 7, CacheCreationTokens: 2})
 
-	sum := first.Add(second)
-	want := Usage{InputTokens: 15, OutputTokens: 10, CacheReadTokens: 1, CacheCreationTokens: 2}
+	want := nacelle.Usage{InputTokens: 15, OutputTokens: 10, CacheReadTokens: 1, CacheCreationTokens: 2}
 	if sum != want {
 		t.Errorf("sum = %+v, want %+v", sum, want)
 	}
 	if sum.Total() != 28 {
 		t.Errorf("total = %d, want 28", sum.Total())
-	}
-}
-
-func TestConversationRolesSurvive(t *testing.T) {
-	params := toParams([]Message{
-		{Text: "what happened?"},
-		{Assistant: true, Text: "a deploy"},
-	})
-	if len(params) != 2 {
-		t.Fatalf("converted %d messages, want 2", len(params))
-	}
-	if params[0].Role != anthropic.BetaMessageParamRoleUser {
-		t.Errorf("first role = %q, want user", params[0].Role)
-	}
-	if params[1].Role != anthropic.BetaMessageParamRoleAssistant {
-		t.Errorf("second role = %q, want assistant", params[1].Role)
 	}
 }

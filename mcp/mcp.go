@@ -6,6 +6,8 @@
 // on the other side of the request.
 package mcp
 
+import "fmt"
+
 // Server is one MCP server the model may call tools on.
 type Server struct {
 	// Name is how the model refers to this server, and how the toolset
@@ -27,4 +29,25 @@ type Server struct {
 	// does the job is the one that survives the server growing a
 	// destructive tool later without anyone here noticing.
 	AllowedTools []string
+}
+
+// Validate refuses a server list that cannot work.
+//
+// Duplicate names are the interesting case: the toolset entry in a request
+// finds a server by name, so two servers sharing one makes the second
+// unreachable in a way that looks like the server being down.
+func Validate(servers []Server) error {
+	seen := make(map[string]bool, len(servers))
+	for _, server := range servers {
+		switch {
+		case server.Name == "":
+			return fmt.Errorf("nacelle/mcp: a server has no name")
+		case server.URL == "":
+			return fmt.Errorf("nacelle/mcp: server %q has no URL", server.Name)
+		case seen[server.Name]:
+			return fmt.Errorf("nacelle/mcp: two servers are named %q", server.Name)
+		}
+		seen[server.Name] = true
+	}
+	return nil
 }

@@ -1,95 +1,123 @@
-package nacelle
+package nacelle_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
+
+	"github.com/FacileStudio/nacelle"
 )
 
-type echoInput struct {
-	Say string `json:"say" jsonschema:"required,description=What to echo back"`
+type searchInput struct {
+	Query string `json:"query" jsonschema:"required,description=What to look for"`
+	Limit int    `json:"limit,omitempty" jsonschema:"description=How many results"`
 }
 
-func TestNewToolGeneratesItsSchemaFromTheStruct(t *testing.T) {
-	tool, err := NewTool("echo", "Echo a phrase back", func(_ context.Context, in echoInput) (string, error) {
-		return in.Say, nil
+func TestToolSchemaComesFromTheStructTags(t *testing.T) {
+	tool, err := nacelle.NewTool("search", "Find things", func(_ context.Context, in searchInput) (string, error) {
+		return in.Query, nil
 	})
 	if err != nil {
 		t.Fatalf("NewTool: %v", err)
 	}
 
-	if tool.Name() != "echo" || tool.Description() != "Echo a phrase back" {
-		t.Errorf("tool = %q/%q, want echo and its description", tool.Name(), tool.Description())
+	schema := tool.Schema()
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("schema has no properties: %#v", schema)
 	}
-	if _, ok := tool.InputSchema().Properties.(map[string]any)["say"]; !ok {
-		t.Errorf("schema properties = %#v, want a say field from the struct tag", tool.InputSchema().Properties)
+	if _, found := properties["query"]; !found {
+		t.Errorf("properties = %#v, want a query field", properties)
+	}
+
+	required, _ := schema["required"].([]any)
+	if len(required) != 1 || required[0] != "query" {
+		t.Errorf("required = %#v, want query alone", required)
+	}
+	if _, leaked := schema["$schema"]; leaked {
+		t.Error("the schema keyword survived; it is noise in a tool definition")
 	}
 }
 
-// The runner owns execution and appends the result block itself, so wrapping
-// is the only place a tool's answer is visible to a consumer.
-func TestObservedToolReportsItsResult(t *testing.T) {
-	tool, err := NewTool("echo", "Echo a phrase back", func(_ context.Context, in echoInput) (string, error) {
-		return "you said " + in.Say, nil
+// A model calls a tool by naming arguments, and a bare string has no names.
+func TestToolInputMustBeAStruct(t *testing.T) {
+	if _, err := nacelle.NewTool("bad", "takes a string", func(context.Context, string) (string, error) {
+		return "", nil
+	}); err == nil {
+		t.Fatal("a non-struct input was accepted")
+	}
+}
+
+func TestToolNeedsANameAndDescription(t *testing.T) {
+	run := func(context.Context, searchInput) (string, error) { return "", nil }
+	if _, err := nacelle.NewTool("", "described", run); err == nil {
+		t.Error("a nameless tool was accepted")
+	}
+	if _, err := nacelle.NewTool("named", "", run); err == nil {
+		t.Error("a tool with no description was accepted; the description is what the model chooses it by")
+	}
+}
+
+func TestRunToolReportsThroughTheSink(t *testing.T) {
+	tool, err := nacelle.NewTool("search", "Find things", func(_ context.Context, in searchInput) (string, error) {
+		return "found " + in.Query, nil
 	})
 	if err != nil {
 		t.Fatalf("NewTool: %v", err)
 	}
 
-	sink := &toolSink{}
-	wrapped := observe([]Tool{tool}, sink)
-	if _, err := wrapped[0].Execute(context.Background(), []byte(`{"say":"hi"}`)); err != nil {
-		t.Fatalf("Execute: %v", err)
+	sink := &nacelle.ToolSink{}
+	result, err := nacelle.RunTool(context.Background(), tool, "call_1", json.RawMessage(`{"query":"x"}`), sink)
+	if err != nil || result != "found x" {
+		t.Fatalf("RunTool = %q, %v", result, err)
 	}
 
-	events := sink.drain()
+	events := sink.Drain()
 	if len(events) != 1 {
-		t.Fatalf("running a tool reported %d events, want 1", len(events))
+		t.Fatalf("drained %d events, want 1", len(events))
 	}
-	reported := events[0]
-	if reported.Kind != KindToolResult {
-		t.Errorf("kind = %q, want %q", reported.Kind, KindToolResult)
+	reported := events[0].Tool
+	if reported.ID != "call_1" || reported.Name != "search" || reported.Result != "found x" {
+		t.Errorf("reported = %+v, want the call identified and its result", reported)
 	}
-	if reported.Tool.Name != "echo" || reported.Tool.Result != "you said hi" {
-		t.Errorf("tool = %+v, want echo returning its answer", reported.Tool)
-	}
-	if reported.Tool.Input != `{"say":"hi"}` {
-		t.Errorf("input = %q, want the raw arguments", reported.Tool.Input)
-	}
-	if reported.Tool.Duration <= 0 {
+	if reported.Duration <= 0 {
 		t.Error("no duration was recorded")
 	}
+	if len(sink.Drain()) != 0 {
+		t.Error("a second drain returned events")
+	}
 }
 
-// A failing tool is reported and handed back to the model rather than ending
-// the run: the model is usually better placed to decide whether the task can
-// still be finished.
-func TestObservedToolReportsAFailure(t *testing.T) {
+// A tool failure is handed back to the model rather than ending the run.
+func TestRunToolReportsAFailure(t *testing.T) {
 	boom := errors.New("no such entity")
-	tool, err := NewTool("lookup", "Look something up", func(_ context.Context, _ echoInput) (string, error) {
+	tool, err := nacelle.NewTool("lookup", "Look things up", func(context.Context, searchInput) (string, error) {
 		return "", boom
 	})
 	if err != nil {
 		t.Fatalf("NewTool: %v", err)
 	}
 
-	sink := &toolSink{}
-	wrapped := observe([]Tool{tool}, sink)
-	if _, err := wrapped[0].Execute(context.Background(), []byte(`{"say":"x"}`)); err == nil {
-		t.Fatal("Execute swallowed the tool's error")
+	sink := &nacelle.ToolSink{}
+	if _, err := nacelle.RunTool(context.Background(), tool, "c", json.RawMessage(`{"query":"x"}`), sink); err == nil {
+		t.Fatal("RunTool swallowed the error")
 	}
-
-	events := sink.drain()
-	if len(events) != 1 {
-		t.Fatalf("a failing tool reported %d events, want 1", len(events))
-	}
-	if !errors.Is(events[0].Tool.Err, boom) {
-		t.Errorf("reported error = %v, want %v", events[0].Tool.Err, boom)
+	if events := sink.Drain(); len(events) != 1 || !errors.Is(events[0].Tool.Err, boom) {
+		t.Errorf("the failure was not reported: %+v", events)
 	}
 }
 
-func TestObserveLeavesAnEmptyToolListAlone(t *testing.T) {
-	if got := observe(nil, &toolSink{}); got != nil {
-		t.Errorf("observe(nil) = %#v, want nil", got)
+// The model produced the arguments, so the model is who needs to hear they did
+// not fit — it can usually fix them next turn.
+func TestBadArgumentsAreReturnedNotPanicked(t *testing.T) {
+	tool, err := nacelle.NewTool("search", "Find things", func(context.Context, searchInput) (string, error) {
+		return "", nil
+	})
+	if err != nil {
+		t.Fatalf("NewTool: %v", err)
+	}
+	if _, err := tool.Run(context.Background(), json.RawMessage(`{"query": 12}`)); err == nil {
+		t.Fatal("arguments that do not match the schema were accepted")
 	}
 }

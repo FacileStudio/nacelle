@@ -8,9 +8,9 @@ An agent is a loop around a model with tools attached. That loop is about two hu
 and it gets rewritten in every project that needs one, slightly differently, with a slightly
 different bug in the tool-result handling. `nacelle` is the single version.
 
-> **Status: the core works, nothing consumes it yet.** The agent loop, the tool registry, the
-> MCP wiring and per-turn usage are implemented and tested. `tools/`, `tui/` and `sandbox/` are
-> not written. Untagged — the API moves until Kori has used it.
+> **Status: two backends and the local tool set work; nothing consumes them yet.** Anthropic,
+> OpenRouter, `tools/`, and per-turn usage are implemented and tested. `tui/` and `sandbox/`
+> are not written. Untagged — the API moves until Kori has used it.
 
 ## Who it is for
 
@@ -32,9 +32,11 @@ The tronc shape — flat packages at the root, one module, heavy dependencies pu
 separate submodules so they land only on the apps that want them.
 
 ```
-nacelle/                 core: agent loop, events, tools, usage          [built]
-  mcp/                   MCP server connections and credentials          [built]
-  tools/                 the built-in local tool set (read, write, edit, bash, glob, grep)
+nacelle/                 core: Agent, Backend seam, events, tools, usage   [built]
+  anthropic/             backend: SDK tool runner + server-side MCP        [built]
+  openrouter/            backend: hand-rolled loop, 400+ models, real cost [built]
+  mcp/                   MCP server connections and credentials            [built]
+  tools/                 local tool set: read, write, edit, find, search, run [built]
   tui/        (submodule) terminal client — Bubble Tea lands here and nowhere else
   sandbox/    (submodule) container and microVM execution for Atelier
 ```
@@ -47,10 +49,11 @@ are: an import should not cost you a dependency you will never call.
 
 ```go
 agent, err := nacelle.New(nacelle.Config{
-    System: "You are Kori…",
-    Effort: nacelle.EffortHigh,
-    Tools:  []nacelle.Tool{searchEvents},
-    MCP:    []mcp.Server{{Name: "perception", URL: "https://perception.facile.studio/api/mcp"}},
+    Backend: anthropic.New(anthropic.Config{}),
+    System:  "You are Kori…",
+    Effort:  nacelle.EffortHigh,
+    Tools:   []nacelle.Tool{searchEvents},
+    MCP:     []mcp.Server{{Name: "perception", URL: "https://perception.facile.studio/api/mcp"}},
 })
 
 for event, err := range agent.Stream(ctx, conversation) {
@@ -80,8 +83,64 @@ searchEvents, err := nacelle.NewTool("search_events", "Find events matching a qu
     func(ctx context.Context, in searchInput) (string, error) { … })
 ```
 
-Defaults: `claude-opus-5`, adaptive thinking, 32k output per turn. `Config.Client` is injectable
-for a shared client, a proxy, or a test transport.
+Defaults: `claude-opus-5`, adaptive thinking, 32k output per turn.
+
+## Backends, and the capability rule
+
+There is no default backend. A package that picks one for you hides the most consequential
+line in the configuration, and this is a multi-model SDK.
+
+| | `anthropic` | `openrouter` |
+|---|---|---|
+| Tool loop | the SDK's runner | hand-rolled here |
+| Remote MCP servers | ✅ the API calls them itself | ❌ no equivalent in the schema |
+| Streamed reasoning | ✅ | ✅ `delta.reasoning` |
+| Effort | ✅ | ✅ mapped to `reasoning.effort` |
+| **Reports cost in dollars** | ❌ tokens only | ✅ `usage.cost` |
+| Models | Anthropic's | 400+ behind one slug |
+
+**Asking for something a backend lacks is refused at construction**, not silently dropped:
+
+```go
+_, err := nacelle.New(nacelle.Config{Backend: openrouter.New(...), MCP: servers})
+// *nacelle.Unsupported: backend "openrouter" does not support MCP servers
+```
+
+That is the whole reason `Capabilities` exists. Losing MCP tools quietly looks like a model
+that will not use its tools, and you can spend an afternoon on that.
+
+## The local tool set
+
+```go
+set, err := tools.New(tools.Config{Root: repo, AllowBash: true})
+defer set.Close()
+local, err := set.Tools()   // or set.ReadOnly() for an agent that only answers questions
+```
+
+`read_file`, `write_file`, `edit_file`, `find_files`, `search_files`, and `run_command` when
+`AllowBash` is set. Every file operation goes through [`os.Root`], so a path resolving outside
+the root is refused by a kernel-backed check rather than a string comparison — which is what
+closes symlink escapes, `..` that survives normalisation, and the check-then-use window.
+
+Three rules it is worth knowing before extending it:
+
+- **The root comes from the host, never from a tool argument.** No tool takes a `cwd`, `dir`
+  or `root`, and a test enforces it. CVE-2025-59532 is why: Codex CLI accepted a
+  model-generated working directory as its sandbox root, so the output being confined was also
+  choosing the confinement.
+- **`edit_file` requires its target text to match exactly once.** Zero matches means the model
+  misremembered the file; more than one means it is about to change places it never looked at.
+  Both are caught for free, and the refusal teaches the fix — send more surrounding context.
+- **This is not a sandbox and does not pretend to be.** `os.Root` concedes bind mounts, `/proc`
+  and device files; `run_command` is not confined at all and no denylist survives contact with
+  a shell. `AllowBash` is opt-in so that choice is made on purpose, and real isolation is a
+  container's job — which is what `sandbox/` will be for.
+
+Commands run with a scrubbed environment (`PATH` and `HOME`, nothing else), in their own
+process group so a timeout kills the children too, with every output capped and truncation
+announced rather than silent.
+
+[`os.Root`]: https://pkg.go.dev/os#Root
 
 Three things that are not negotiable, because they are what makes the core embeddable:
 
@@ -100,34 +159,29 @@ Three things that are not negotiable, because they are what makes the core embed
 | The SDK's tool runner, not a hand-rolled loop | `anthropic-sdk-go` ships `toolrunner`; hand-rolling is strictly more code and more bugs |
 | The API's MCP connector for remote servers, not an MCP client | `mcp_servers` + `mcp_toolset` calls remote servers server-side; the client half is only needed for stdio servers |
 | `claude-opus-5`, adaptive thinking, no `budget_tokens` | `budget_tokens` is a 400 on Opus 5; `output_config.effort` replaces it |
-| Anthropic only, no provider interface yet | See OpenRouter below — the second backend is a rewrite, not a base URL |
+| The backend seam is the whole loop, not one request | Anthropic ships a runner and server-side MCP; a backend without them must drive the loop itself. A request-level seam would have forced the Anthropic path to give up a tested loop to look symmetrical with one that cannot have it |
+| Capabilities are named features, not tiers | A consumer needs to know MCP specifically is missing, not that a backend is "limited" |
+| `openai-go` for the OpenRouter transport | The SSE parsing is where the bugs live — its comment/blank-line handling is the fix for the exact `: OPENROUTER PROCESSING` crash. Module pruning keeps it to four indirect deps |
 | TUI and sandbox are separate modules | A backend must not inherit Bubble Tea or a container runtime |
 
-### OpenRouter, and what a second backend actually costs
+### Notes from building the OpenRouter backend
 
-Atelier already runs on OpenRouter, so it is the concrete second backend this design has to
-answer for. It is not a base-URL swap. **OpenRouter speaks the OpenAI chat-completions schema
-and exposes no `/v1/messages`**, verified against its API reference — so `anthropic-sdk-go`
-cannot reach it at all.
+Four things that cost time and are not obvious from the sample code:
 
-That matters more than it sounds, because the two things that make this package small are
-Anthropic-API features:
+- **`stream_options: {include_usage}` and `usage: {include: true}` are deprecated and inert.**
+  Usage is always returned now. Most tutorials and most training data still send them.
+- **Usage arrives in the final chunk, whose `choices` array is empty.** Indexing it unguarded
+  panics on every run, not occasionally.
+- **`: OPENROUTER PROCESSING`** is a real SSE keepalive; passing it to a JSON decoder throws.
+  The blank line after it is the second half of the same trap, and together they were a
+  filed-and-fixed crash in `openai-go` — which is a good argument for not writing your own
+  SSE parser.
+- **The tool schema must go on every request**, including the one carrying tool results.
+  OpenRouter validates it per call, and a follow-up without it is a different conversation.
 
-| | Anthropic | OpenRouter |
-|---|---|---|
-| Tool loop | `toolrunner` ships in the SDK | hand-rolled, per backend |
-| Remote MCP servers | the API connects to them itself | needs a real MCP client written here |
-| Adaptive thinking, effort | yes | no equivalent |
-
-So an OpenRouter backend is a second implementation of the whole loop, not an adapter. That is
-worth doing when Atelier needs to compare models through nacelle — and it is worth **not**
-doing before Kori has run on the Anthropic path, because building two backends before either
-has a consumer is how the interface ends up fitting neither.
-
-When it lands, the shape should be **capability-aware, not lowest-common-denominator**: a
-consumer that needs MCP should fail to start against a backend that has none, rather than
-silently losing its tools. Flattening the two into one interface that quietly supports less is
-the failure mode to avoid.
+`reasoning_details` is echoed back untouched on the assistant message, because reasoning
+models require the sequence to match what they produced — a tool loop that drops it loses the
+model's train of thought exactly when it is waiting on a tool result.
 
 ## Not a port of `pi`
 
@@ -152,13 +206,11 @@ someone who put an agent in a box before us. Take ideas, cite them, write our ow
 
 ## Next steps
 
-1. ~~`go mod init`, the suite quality gate, the core loop, `mcp/`.~~ Done.
-2. `tools/` — the local tool set, with the path and shell safety checks written once.
-3. Consume it from Kori. That is the first real test of the API, and the point at which it
+1. ~~The gate, the core loop, `mcp/`, `tools/`, and both backends.~~ Done.
+2. Consume it from Kori. That is the first real test of the API, and the point at which it
    gets tagged `v0.1.0`. Expect the API to move before then.
-4. `tui/` and `sandbox/`, driven by the `pi` replacement and Atelier respectively — and by
+3. `tui/` and `sandbox/`, driven by the `pi` replacement and Atelier respectively — and by
    what they actually turn out to need, not by this list.
-5. An OpenRouter backend, once Atelier asks for it and Kori has proven the Anthropic path.
 
 ## Gate
 

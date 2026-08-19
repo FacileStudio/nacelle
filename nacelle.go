@@ -7,13 +7,15 @@
 // slightly differently, with a slightly different bug in the tool-result
 // handling. This is the single version.
 //
-// Three properties are what make it embeddable, and none of them is
-// negotiable. The loop returns events and never prints, so a backend streaming
-// SSE, a terminal UI and a test are all consumers of one stream. Usage is
-// reported on every turn, because comparing runs on cost is a reason this
-// package exists. And the core knows nothing about any product: no documents,
-// no repositories, no citations. A consumer that needs its own vocabulary in
-// here has found a bug in the abstraction, not a missing feature.
+// Four properties are what make it embeddable, and none of them is negotiable.
+// The loop returns events and never prints, so a backend streaming SSE, a
+// terminal UI and a test are all consumers of one stream. Usage is reported on
+// every turn, because comparing runs on cost is a reason this package exists.
+// Backends declare what they support and an agent that asks for more is
+// refused at construction rather than quietly running with less. And the core
+// knows nothing about any product: no documents, no repositories, no
+// citations. A consumer that needs its own vocabulary in here has found a bug
+// in the abstraction, not a missing feature.
 package nacelle
 
 import (
@@ -22,15 +24,7 @@ import (
 	"log/slog"
 
 	"github.com/FacileStudio/nacelle/mcp"
-	"github.com/anthropics/anthropic-sdk-go"
 )
-
-// DefaultModel is what an agent runs on when Config leaves Model empty.
-//
-// It is a plain string rather than an SDK constant because the SDK has no
-// typed constant for Claude Opus 5, and anthropic.Model is an alias for string
-// precisely so a current model does not have to wait for one.
-const DefaultModel = "claude-opus-5"
 
 // DefaultMaxTokens is the per-turn output ceiling.
 //
@@ -41,8 +35,9 @@ const DefaultMaxTokens = 32000
 
 // Effort tunes how hard the model works, trading cost against quality.
 //
-// It replaces the fixed thinking budget older models took: budget_tokens is
-// rejected outright by Claude Opus 5, and this is what took its place.
+// It replaces the fixed thinking budget older models took: a token budget is
+// rejected outright by current Anthropic models, and this is what took its
+// place. A backend that does not support it says so in its Capabilities.
 type Effort string
 
 const (
@@ -53,45 +48,41 @@ const (
 	EffortMax    Effort = "max"
 )
 
-// Config describes an agent. Every field has a working default except System,
-// which is the one thing this package cannot guess.
+// Config describes an agent. Backend and System are required; everything else
+// has a working default.
 type Config struct {
-	// Client is the Anthropic client. Leave it nil to build one from the
-	// environment, which is what a service wants; set it to share a client,
-	// point at a proxy, or hand a test a stub transport.
-	Client *anthropic.Client
-
-	// Model defaults to DefaultModel.
-	Model string
+	// Backend is the model this agent runs on. There is no default: a
+	// package that picks one for you is a package that hides the most
+	// consequential decision in the configuration.
+	Backend Backend
 
 	// System is the system prompt.
 	System string
 
-	// Effort defaults to the model's own default, which is "high".
+	// Effort defaults to the backend's own default.
 	Effort Effort
 
-	// Thinking shows a readable summary of the model's reasoning in the
-	// stream as KindThinking events.
+	// Thinking streams the model's reasoning as KindThinking events.
 	//
-	// Off by default, which matches the API: on current models the raw
-	// chain of thought is never returned and the summary is opt-in. Turning
-	// it on changes what is displayed, never what is billed — the model
-	// thinks either way.
+	// Off by default, which matches the APIs: the raw chain of thought is
+	// never returned and a readable summary is opt-in. Turning it on
+	// changes what is displayed, never what is billed — the model thinks
+	// either way.
 	Thinking bool
 
 	// MaxTokens defaults to DefaultMaxTokens.
 	MaxTokens int64
 
 	// MaxIterations caps how many times the model may call tools and be
-	// asked again. Zero means no cap, which is the SDK's default and is
-	// only safe when every tool is read-only and cheap.
+	// asked again. Zero means no cap, which is only safe when every tool is
+	// read-only and cheap.
 	MaxIterations int
 
 	// Tools the model may call in this process.
 	Tools []Tool
 
-	// MCP servers the model may call tools on. These run on Anthropic's
-	// side of the request, not ours.
+	// MCP servers the model may call tools on. These run on the backend's
+	// side of the request, not ours, and only some backends can reach them.
 	MCP []mcp.Server
 
 	// Logger receives the few things worth recording that are not events.
@@ -102,144 +93,115 @@ type Config struct {
 // Agent runs a conversation to completion, streaming what happens.
 //
 // It is safe to reuse across conversations and safe to share between
-// goroutines: it holds configuration, not state. A single run is not — Stream
-// must be ranged from one goroutine.
+// goroutines: it holds configuration, not state. A single run is not — a
+// sequence returned by Stream must be ranged from one goroutine.
 type Agent struct {
-	client *anthropic.Client
-	params anthropic.BetaToolRunnerParams
-	tools  []Tool
-	logger *slog.Logger
+	backend Backend
+	request Request
+	logger  *slog.Logger
 }
 
-// ErrNoSystemPrompt is returned by New when Config.System is empty.
-//
-// It is an error rather than a default because an agent with no system prompt
-// is a general-purpose assistant wearing a product's name, and that is never
-// what the caller meant.
-var ErrNoSystemPrompt = errors.New("nacelle: a system prompt is required")
+var (
+	// ErrNoBackend is returned by New when Config.Backend is nil.
+	ErrNoBackend = errors.New("nacelle: a backend is required")
+
+	// ErrNoSystemPrompt is returned by New when Config.System is empty.
+	//
+	// It is an error rather than a default because an agent with no system
+	// prompt is a general-purpose assistant wearing a product's name, and
+	// that is never what the caller meant.
+	ErrNoSystemPrompt = errors.New("nacelle: a system prompt is required")
+)
+
+// Unsupported reports that the backend cannot do something the config asked
+// for. It is returned by New rather than swallowed, which is the whole point
+// of Capabilities: losing MCP tools silently looks like a model that will not
+// use them, and that is a bad afternoon.
+type Unsupported struct {
+	Backend string
+	Feature string
+}
+
+func (e *Unsupported) Error() string {
+	return fmt.Sprintf("nacelle: backend %q does not support %s", e.Backend, e.Feature)
+}
 
 // New builds an agent. It fails rather than degrading: a half-configured agent
 // that answers plausibly is worse than one that refuses to start.
 func New(cfg Config) (*Agent, error) {
+	if cfg.Backend == nil {
+		return nil, ErrNoBackend
+	}
 	if cfg.System == "" {
 		return nil, ErrNoSystemPrompt
 	}
-	if err := validateMCP(cfg.MCP); err != nil {
+	if err := validateTools(cfg.Tools); err != nil {
+		return nil, err
+	}
+	if err := mcp.Validate(cfg.MCP); err != nil {
+		return nil, err
+	}
+	if err := supports(cfg); err != nil {
 		return nil, err
 	}
 
-	cfg = cfg.resolved()
-	params := cfg.params()
-	applyMCP(&params.BetaMessageNewParams, cfg.MCP)
-
-	return &Agent{
-		client: cfg.Client,
-		params: params,
-		tools:  cfg.Tools,
-		logger: cfg.Logger,
-	}, nil
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Agent{backend: cfg.Backend, logger: logger, request: cfg.request()}, nil
 }
 
-// resolved fills in every default, so nothing downstream has to ask twice
-// whether a field was set.
-func (c Config) resolved() Config {
-	if c.Client == nil {
-		built := anthropic.NewClient()
-		c.Client = &built
+// request is the run this config describes, with every default filled, so a
+// backend never has to guess what an empty field meant.
+func (c Config) request() Request {
+	maxTokens := c.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = DefaultMaxTokens
 	}
-	if c.Logger == nil {
-		c.Logger = slog.Default()
-	}
-	if c.Model == "" {
-		c.Model = DefaultModel
-	}
-	if c.MaxTokens == 0 {
-		c.MaxTokens = DefaultMaxTokens
-	}
-	return c
-}
-
-// params is the request every turn of a run is made from. Only the messages
-// change between turns, and the runner owns those.
-func (c Config) params() anthropic.BetaToolRunnerParams {
-	params := anthropic.BetaToolRunnerParams{
-		BetaMessageNewParams: anthropic.BetaMessageNewParams{
-			Model:     anthropic.Model(c.Model),
-			MaxTokens: c.MaxTokens,
-			System:    []anthropic.BetaTextBlockParam{{Text: c.System}},
-			Thinking:  thinkingConfig(c.Thinking),
-		},
+	return Request{
+		System:        c.System,
+		Tools:         c.Tools,
+		MCP:           c.MCP,
+		Effort:        c.Effort,
+		Thinking:      c.Thinking,
+		MaxTokens:     maxTokens,
 		MaxIterations: c.MaxIterations,
 	}
-	if c.Effort != "" {
-		params.OutputConfig = anthropic.BetaOutputConfigParam{
-			Effort: anthropic.BetaOutputConfigEffort(c.Effort),
-		}
-	}
-	return params
 }
 
-// thinkingConfig asks for adaptive thinking, with the summary shown or not.
-//
-// Adaptive is the only mode current models accept — a fixed budget_tokens is a
-// 400 — and it is on by default on Claude Opus 5 whether or not it is named
-// here. Naming it makes the display setting reachable, which is the only part
-// a caller actually controls.
-func thinkingConfig(visible bool) anthropic.BetaThinkingConfigParamUnion {
-	adaptive := anthropic.BetaThinkingConfigAdaptiveParam{}
-	if visible {
-		adaptive.Display = anthropic.BetaThinkingConfigAdaptiveDisplaySummarized
-	}
-	return anthropic.BetaThinkingConfigParamUnion{OfAdaptive: &adaptive}
-}
+// Backend returns the backend this agent runs on, so a caller can report which
+// model answered without having kept the value it passed in.
+func (a *Agent) Backend() Backend { return a.backend }
 
-// validateMCP refuses a server list that cannot work.
-//
-// Duplicate names are the interesting case: the toolset entry in the request
-// finds a server by name, so two servers sharing one makes the second
-// unreachable in a way that looks like the server being down.
-func validateMCP(servers []mcp.Server) error {
-	seen := make(map[string]bool, len(servers))
-	for _, server := range servers {
-		switch {
-		case server.Name == "":
-			return fmt.Errorf("nacelle: an MCP server has no name")
-		case server.URL == "":
-			return fmt.Errorf("nacelle: MCP server %q has no URL", server.Name)
-		case seen[server.Name]:
-			return fmt.Errorf("nacelle: two MCP servers are named %q", server.Name)
-		}
-		seen[server.Name] = true
+// supports refuses a config the backend cannot honour.
+func supports(cfg Config) error {
+	can := cfg.Backend.Capabilities()
+	name := cfg.Backend.Name()
+
+	switch {
+	case len(cfg.MCP) > 0 && !can.MCP:
+		return &Unsupported{Backend: name, Feature: "MCP servers"}
+	case cfg.Thinking && !can.Thinking:
+		return &Unsupported{Backend: name, Feature: "streamed thinking"}
+	case cfg.Effort != "" && !can.Effort:
+		return &Unsupported{Backend: name, Feature: "effort levels"}
 	}
 	return nil
 }
 
-// applyMCP declares the servers and the toolsets that reach them.
-//
-// Both halves are required. A request carrying mcp_servers without a matching
-// mcp_toolset entry in tools is rejected as a validation error, which reads
-// like a malformed server definition and is not one.
-func applyMCP(params *anthropic.BetaMessageNewParams, servers []mcp.Server) {
-	if len(servers) == 0 {
-		return
+// validateTools refuses a tool set the model could not use unambiguously.
+func validateTools(tools []Tool) error {
+	seen := make(map[string]bool, len(tools))
+	for _, tool := range tools {
+		name := tool.Name()
+		if name == "" {
+			return fmt.Errorf("nacelle: a tool has no name")
+		}
+		if seen[name] {
+			return fmt.Errorf("nacelle: two tools are named %q", name)
+		}
+		seen[name] = true
 	}
-
-	params.Betas = append(params.Betas, anthropic.AnthropicBetaMCPClient2025_11_20)
-
-	for _, server := range servers {
-		definition := anthropic.BetaRequestMCPServerURLDefinitionParam{
-			Name: server.Name,
-			URL:  server.URL,
-		}
-		if server.Token != "" {
-			definition.AuthorizationToken = anthropic.String(server.Token)
-		}
-		if len(server.AllowedTools) > 0 {
-			definition.ToolConfiguration = anthropic.BetaRequestMCPServerToolConfigurationParam{
-				AllowedTools: server.AllowedTools,
-			}
-		}
-		params.MCPServers = append(params.MCPServers, definition)
-		params.Tools = append(params.Tools, anthropic.BetaToolUnionParamOfMCPToolset(server.Name))
-	}
+	return nil
 }

@@ -90,6 +90,22 @@ type Usage struct {
 	OutputTokens        int64
 	CacheReadTokens     int64
 	CacheCreationTokens int64
+
+	// Cost is what the run was charged, in US dollars.
+	//
+	// Only backends whose Capabilities report Cost fill it; the rest leave
+	// it zero and the caller prices the tokens itself. It is here rather
+	// than left to every consumer because a gateway that already knows the
+	// number is more trustworthy than a price table copied into an app and
+	// then not updated.
+	//
+	// It is a float64, which means adding two costs does not always give
+	// the decimal you expect — 0.0001 plus 0.0002 is 0.00030000000000000003.
+	// That is deliberate: the wire format is a JSON number, the error is
+	// around one part in 1e16, and the question this field answers is which
+	// of two runs cost more. Do not use it as a ledger; compare with a
+	// tolerance, and bill from the provider's own records.
+	Cost float64
 }
 
 // Add returns the sum of two usages.
@@ -99,6 +115,7 @@ func (u Usage) Add(other Usage) Usage {
 		OutputTokens:        u.OutputTokens + other.OutputTokens,
 		CacheReadTokens:     u.CacheReadTokens + other.CacheReadTokens,
 		CacheCreationTokens: u.CacheCreationTokens + other.CacheCreationTokens,
+		Cost:                u.Cost + other.Cost,
 	}
 }
 
