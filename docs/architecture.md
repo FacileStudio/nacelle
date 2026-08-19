@@ -214,3 +214,11 @@ back yet.
 No sandbox, no sessions, no auth, no persistence layer. `nacelle` is a flat library, like
 `tronc` — no database, no HTTP surface, no UI of its own. See [`ROADMAP.md`](../ROADMAP.md) at
 the repo root for what is scoped in and explicitly out.
+
+The one piece of trust-gating in this codebase lives outside it entirely, in `tui/`: a
+project's `.agents/skills/` is not read until something has trusted it, because a `SKILL.md`
+can instruct the model to run scripts it ships alongside itself. Plain instruction text
+(`AGENTS.md`, `CLAUDE.md`, global or project) is not gated the same way — the model reads
+arbitrary file content constantly as part of ordinary tool use, and gating one specific text
+file while every other one stays ungated would not close a real hole, only add friction. See
+[configuration.md](configuration.md#context-skills-and-jardin-tools).

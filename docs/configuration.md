@@ -71,10 +71,19 @@ could tell apart.
 
 | Layer | Source | Notes |
 |---|---|---|
-| Flags | `-backend`, `-model`, `-effort`, `-root`, `-system`, `-bash`, `-thinking`, `-max-iterations` | Only flags actually **typed** are collected, via `flag.Visit` — Go's `flag` package cannot otherwise tell a flag left alone from one passed its own default value |
-| Environment | `NACELLE_BACKEND`, `NACELLE_MODEL`, `NACELLE_EFFORT`, `NACELLE_ROOT`, `NACELLE_SYSTEM`, `NACELLE_BASH`, `NACELLE_THINKING`, `NACELLE_MAX_ITERATIONS` | A misspelt boolean (`NACELLE_BASH=yez`) is treated as unmentioned, not as `false`, and falls through to the layer below |
+| Flags | `-backend`, `-model`, `-effort`, `-root`, `-system`, `-bash`, `-thinking`, `-jardin`, `-project-context`, `-skills`, `-trust-skills`, `-max-iterations` | Only flags actually **typed** are collected, via `flag.Visit` — Go's `flag` package cannot otherwise tell a flag left alone from one passed its own default value |
+| Environment | `NACELLE_BACKEND`, `NACELLE_MODEL`, `NACELLE_EFFORT`, `NACELLE_ROOT`, `NACELLE_SYSTEM`, `NACELLE_BASH`, `NACELLE_THINKING`, `NACELLE_JARDIN`, `NACELLE_PROJECT_CONTEXT`, `NACELLE_SKILLS`, `NACELLE_TRUST_SKILLS`, `NACELLE_MAX_ITERATIONS` | A misspelt boolean (`NACELLE_BASH=yez`) is treated as unmentioned, not as `false`, and falls through to the layer below |
 | File | `~/.nacelle.yml` | Preferences only, **no credentials** — those already have two homes: the environment, and the Anthropic SDK's own profile. `KnownFields(true)`: an unrecognised key (`max_iteration:`, one letter short) is refused rather than silently ignored |
-| Defaults | — | `backend: anthropic`, `root: .`, `bash: false`, `thinking: false`, `max_iterations: 40` |
+| Defaults | — | `backend: anthropic`, `root: .`, `bash: false`, `thinking: false`, `jardin: true`, `project_context: true`, `skills: true`, `trust_skills: false`, `max_iterations: 40` |
+
+`jardin`, `project_context` and `skills` default **on**, unlike `bash`: each fails soft to
+nothing when there is nothing to find — no `jardin` on `PATH`, no `AGENTS.md`/`CLAUDE.md`
+anywhere above `root`, no `~/.agents/skills/` — so a machine without any of them is no worse
+off for asking. `trust_skills` defaults **off**, and that is a different kind of default: a
+project's own `.agents/skills/` can carry instructions to run arbitrary scripts, and
+blanket-trusting whatever a directory happens to contain is a decision only the person running
+this should make. See [Context, skills and jardin tools](#context-skills-and-jardin-tools)
+below.
 
 ### `~/.nacelle.yml`
 
@@ -86,6 +95,10 @@ root: .
 system: You are a terminal coding assistant.
 bash: true
 thinking: true
+jardin: true
+project_context: true
+skills: true
+trust_skills: false
 max_iterations: 40
 ```
 
@@ -95,3 +108,33 @@ setting carefully written is simply not in effect and nothing says so.
 
 **No per-project `./.nacelle.yml` yet.** A second precedence layer before the first has real
 users is a layer nobody has asked for the shape of.
+
+## Context, skills and jardin tools
+
+Three things the TUI reads beyond flags and the model's own tools, all in `tui/`, none of them
+in the core `nacelle` package — the same "the library must never read configuration from disk"
+rule above applies to these too, not only to settings.
+
+**Project and global context** (`-project-context`, `tui/context.go`). Every `CLAUDE.md` and
+`AGENTS.md` found walking up from `-root` to the filesystem root, plus `~/.agents/AGENTS.md` —
+the [AGENTS.md standard](https://agentsstandard.com)'s own global-base path, also read by
+Codex, Cursor, Copilot, Gemini and pi (at its own equivalent, `~/.pi/agent/AGENTS.md`) — all
+appended to the system prompt, most general first. A user's own `~/.claude/CLAUDE.md` is
+deliberately **not** read: it assumes Claude Code's own tools, hooks and slash commands, where
+an `AGENTS.md` at the standard's own path is written, by the convention's premise, to make
+sense to whichever agent finds it. None of this is trust-gated — see
+[architecture.md](architecture.md) for why a plain instruction file and a skill are not the
+same risk.
+
+**Skills** (`-skills`, `-trust-skills`, `tui/skills.go`), following the
+[Agent Skills specification](https://agentskills.io/specification): every `SKILL.md` under
+`~/.agents/skills/` (no trust needed, the user's own machine), plus every one under a
+**trusted** `.agents/skills/` found the same way the context walk works. Only a skill's `name`
+and `description` ever reach the system prompt; the model reads the rest with `read_file` once
+it decides a skill applies. `-trust-skills` trusts every project-local `.agents/skills/` found
+on that run and remembers the decision in `~/.nacelle/trust.json`, keyed by canonical
+directory — run it once per project, not on every launch.
+
+**Jardin tools** (`-jardin`, `tools.Jardin`, [api.md](api.md#tools)). `list_flows`, `run_flow`
+and `search_memory`, when the `jardin` binary is on `PATH`. Narrower and more legible than
+reaching the same commands through `run_command`, and available even with `-bash=false`.

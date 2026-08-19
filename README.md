@@ -293,12 +293,17 @@ consumers depend on it — and it has already found things:
   closed too.
 - ~~`anthropic` emits `KindToolResult` with an empty `Tool.ID`.~~ Fixed. The SDK never hands a
   tool its call id, so the pairing is rebuilt from the stream side; see `anthropic/invocation.go`.
-- **`Message` is text and a role, so a tool call cannot be replayed to the model.** Still open,
-  and the largest thing left — the client keeps the answer and drops the tool history, because
-  there is nowhere to put it. Tracked as A6 in [`ROADMAP.md`](ROADMAP.md).
+- ~~`Message` is text and a role, so a tool call cannot be replayed to the model.~~ Fixed
+  (tracked as A6 in [`ROADMAP.md`](ROADMAP.md)): `Message` is now a content-part union, and a
+  resumed conversation carries its real tool history instead of dropping it.
 
-Three problems for one week-old client, two of them now closed. That is what a first consumer
-is for.
+Three problems for one week-old client, all three now closed. That is what a first consumer is
+for. It has since grown a few things past floor scope, each because the client itself asked for
+them rather than because a product roadmap did: a spinner for the gap before the first token,
+markdown rendering, project- and global-scope `AGENTS.md`/`CLAUDE.md` discovery, skill loading
+(trust-gated for project-local skills, since a skill can carry scripts to run — plain context
+files are not gated the same way), and access to this machine's `jardin` flows and memory
+search when it is installed. See [configuration.md](docs/configuration.md) for all of it.
 
 ## Not a port of `pi`
 
@@ -330,8 +335,12 @@ The ordered version, with exact files and exit criteria, is in [`ROADMAP.md`](RO
 2. Consume it from Kori. That is the first real test of the API, and the point at which it
    gets tagged `v0.1.0`. Expect the API to move before then.
 3. ~~`tui/`, at floor scope.~~ Done, and it is already reporting API problems.
-4. Widen `Message` so a conversation can carry tool calls, then `sandbox/` for Atelier —
-   driven by what they actually turn out to need, not by this list.
+4. ~~Widen `Message` so a conversation can carry tool calls.~~ Done.
+5. `sandbox/` for Atelier — driven by what they actually turn out to need, not by this list.
+   Nothing else is currently ordered; see [`ROADMAP.md`](ROADMAP.md)'s "Where this is" for
+   what is real but not yet scoped (a global `~/.claude/CLAUDE.md`-equivalent layer, slash
+   commands) versus what is deliberately out (a provider interface beyond two backends,
+   sessions, panes).
 
 ## Gate
 
