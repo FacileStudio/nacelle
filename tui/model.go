@@ -14,20 +14,19 @@ import (
 	"github.com/FacileStudio/nacelle"
 )
 
-// forceQuit is how long the offer to quit outright stays open after the first
-// ctrl+c. Long enough to read the status line, short enough that a second
-// ctrl+c minutes later still means "stop this run" rather than "throw the
-// session away".
+// forceQuit is how long the offer to quit outright stays open after the
+// first ctrl+c — long enough to read the status line, short enough that a
+// second ctrl+c minutes later still means "stop this run", not "quit".
 const forceQuit = 3 * time.Second
 
 // model is the whole client: a transcript, a prompt, and at most one run in
 // flight.
 //
-// spent is what every finished run cost, and lives outside the run because it
-// outlives it. The status line adds the two, which is a session total that only
-// ever goes up.
+// spent outlives the run it came from — the status line adds the two into a
+// session total that only ever goes up.
 type model struct {
-	agent *nacelle.Agent
+	agent  *nacelle.Agent
+	banner string
 
 	viewport viewport.Model
 	prompt   textinput.Model
@@ -77,9 +76,8 @@ type inflight struct {
 	pending     *approvalRequest
 }
 
-// newModel builds the client. The banner names the backend and model, so which
-// provider is about to be billed is visible before anything is typed rather
-// than after the first question fails.
+// newModel builds the client. The banner names the backend and model, so
+// which provider is billed is visible before typing, not after it fails.
 func newModel(agent *nacelle.Agent, banner string) *model {
 	prompt := textinput.New()
 	prompt.Placeholder = "Ask something. Ctrl+C to stop or quit, Ctrl+\\ to force it."
@@ -91,6 +89,7 @@ func newModel(agent *nacelle.Agent, banner string) *model {
 
 	m := &model{
 		agent:    agent,
+		banner:   banner,
 		viewport: view,
 		prompt:   prompt,
 		theme:    themed(true),
@@ -186,6 +185,10 @@ func (m *model) ask() tea.Cmd {
 		return nil
 	}
 	m.prompt.Reset()
+	if cmd, ok := parseCommand(question); ok {
+		m.say(fromReader, question)
+		return cmd(m)
+	}
 	m.run.stop = ""
 	m.run.usage = nacelle.Usage{}
 	m.run.interrupted = time.Time{}
@@ -201,9 +204,8 @@ func (m *model) ask() tea.Cmd {
 	return tea.Batch(waitFor(m.run.results), m.spin.Tick)
 }
 
-// consume folds one result into the transcript and waits for the next.
-//
-// The answer is committed before the error is — an error printed first would
+// consume folds one result into the transcript and waits for the next. The
+// answer is committed before the error is — an error printed first would
 // tell the reader the request failed, then show the half sentence it
 // interrupted, the wrong order to read a failure in.
 //
@@ -224,11 +226,9 @@ func (m *model) consume(next result) tea.Cmd {
 }
 
 // settle ends a run: whatever streamed is committed, what it cost joins the
-// session total, and the prompt opens again.
-//
-// The run's usage is folded into spent here rather than left standing, so the
-// next question starts from a clean per-run counter and the status line keeps
-// showing a session total that only grows.
+// session total, and the prompt opens again. Usage is folded into spent
+// here, not left standing, so the next question starts from a clean counter
+// and the status line keeps showing a total that only grows.
 //
 // waiting and pending are cleared here too, not only on their own paths: a
 // stream that closes without yielding anything never reaches either one, and
