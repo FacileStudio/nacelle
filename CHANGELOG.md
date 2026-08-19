@@ -102,5 +102,16 @@ set, the TUI, and the gate, in the order they were built.
   remembers the decision in `~/.nacelle/trust.json`, keyed by canonical directory — the first
   thing to give `~/.nacelle/` a reason to be a directory rather than the flat `~/.nacelle.yml`
   file it had been.
+- **`Config.Approve`** — a per-call tool approval hook (`func(ctx, name, input) bool`), plumbed
+  through `Request` and `ToolSink` rather than added as a `RunTool` parameter. Nil, the default
+  on both `Config{}` and `tui/`'s `-approve-tools=false`, means every call runs unasked; a
+  refusal is reported on `ToolEvent.Refused` rather than as a tool failure. `tui/`'s
+  `-approve-tools` prompts y/a/n in the status line, serialized to one question at a time since
+  a backend can run tool calls concurrently within a turn, and unblocked by the same
+  ctrl+c/ctrl+\ that already gets a wedged run's way out.
+- **`tui/` slash commands** — `/clear` (reset the transcript, the conversation and the running
+  cost, same client), `/help` (list commands and keybindings) and `/quit`. A leading `/` never
+  reaches the model; an unrecognised command is reported rather than sent as a question, the
+  same trade-off every peer client with slash commands makes.
 
 [Unreleased]: https://github.com/FacileStudio/nacelle/commits/main

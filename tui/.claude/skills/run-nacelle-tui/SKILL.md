@@ -80,6 +80,15 @@ green as of this writing.
 
 ## Gotchas
 
+- **`driver.sh ask` cannot drive `/clear`.** `ask` confirms a round started
+  by polling the pane for the text you sent, but `/clear` wipes the
+  transcript (including its own just-echoed input) in the same synchronous
+  update that answers it, so that text is never actually drawn to the
+  screen — `ask "/clear"` times out after 10s. Drive it with raw tmux
+  instead: `tmux send-keys -t nacelle-driver "/clear" Enter`, `sleep 0.3`,
+  then `tmux capture-pane -t nacelle-driver -p` and look for `· cleared` in
+  the banner line. Every other command (`/help`, `/quit`, an unrecognised
+  one) echoes normally and works fine through `ask`.
 - **The default backend can prevent the TUI from ever appearing.**
   `~/.nacelle.yml` on this machine sets `backend: openrouter`, and
   OpenRouter's backend validates its API key at *construction* — with no
