@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -74,33 +76,55 @@ func (c *Config) merge(over Config) {
 }
 
 // configPath is where the file lives, honouring HOME so a test does not have to
-// write to the real one.
-func configPath() (string, error) {
+// write to the real one, and the empty string when there is no home to look in.
+//
+// No home is not a failure. Under systemd, cron or `env -i` there is no HOME
+// and there is no config file either, which is the ordinary case this client
+// already handles — refusing to start there meant nacelle could not run with
+// every setting passed on the command line, for want of a file it was never
+// going to read.
+func configPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("finding your home directory: %w", err)
+		return ""
 	}
-	return filepath.Join(home, ConfigFile), nil
+	return filepath.Join(home, ConfigFile)
 }
 
 // load reads the config file. A missing file is not an error — most people
 // never write one — but an unreadable or malformed one is, because a config
 // silently ignored is worse than no config at all: the setting you carefully
 // wrote is simply not in effect and nothing says so.
+//
+// KnownFields is that promise applied to the keys as well as to the syntax.
+// Unmarshal accepts anything it does not recognise, so `max_iteration: 3` — one
+// letter short — parses cleanly, leaves the ceiling at 40, and costs real money
+// on the next long run without a word about it. A refused key is a typo found
+// in one second instead of one invoice.
+//
+// An empty path means there is no home directory to hold a file, and an empty
+// file decodes to io.EOF; both are the same ordinary "no config" answer.
 func load(path string) (Config, error) {
-	body, err := os.ReadFile(path)
+	if path == "" {
+		return Config{}, nil
+	}
+	file, err := os.Open(path)
 	if os.IsNotExist(err) {
 		return Config{}, nil
 	}
 	if err != nil {
 		return Config{}, fmt.Errorf("reading %s: %w", path, err)
 	}
+	defer file.Close()
 
-	var file Config
-	if err := yaml.Unmarshal(body, &file); err != nil {
+	decoder := yaml.NewDecoder(file)
+	decoder.KnownFields(true)
+
+	var settings Config
+	if err := decoder.Decode(&settings); err != nil && !errors.Is(err, io.EOF) {
 		return Config{}, fmt.Errorf("parsing %s: %w", path, err)
 	}
-	return file, nil
+	return settings, nil
 }
 
 // settings resolves every layer in one place.
@@ -111,11 +135,7 @@ func load(path string) (Config, error) {
 // README called overrides into two mutually exclusive modes, and four copies of
 // a precedence chain are four chances to disagree.
 func settings(flags Config) (Config, error) {
-	path, err := configPath()
-	if err != nil {
-		return Config{}, err
-	}
-	file, err := load(path)
+	file, err := load(configPath())
 	if err != nil {
 		return Config{}, err
 	}

@@ -21,11 +21,7 @@ func TestEveryToolResultNamesTheCallItAnswers(t *testing.T) {
 			arguments(t, 1, `{"text":"second"}`),
 			`{"type":"content_block_stop","index":1}`,
 			messageDelta("tool_use"), `{"type":"message_stop"}`),
-		sse(t, messageStart(),
-			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
-			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"done"}}`,
-			`{"type":"content_block_stop","index":0}`,
-			messageDelta("end_turn"), `{"type":"message_stop"}`),
+		answeringTurn(t),
 	)})
 
 	events := collect(t, backend, nacelle.Request{
@@ -80,19 +76,82 @@ func toolsOf(events []nacelle.Event, kind nacelle.Kind) map[string]*nacelle.Tool
 	return found
 }
 
-// The runner re-encodes a decoded input before handing it to a tool, so the
-// bytes a handler sees are not the bytes the model streamed. Matching on them
-// raw would miss every call whose arguments the model did not write in sorted,
-// compact form.
-func TestArgumentsMatchWhateverSpellingTheyArriveIn(t *testing.T) {
-	pending := newInvocations()
-	pending.record(&nacelle.ToolEvent{ID: "toolu_1", Index: 3, Name: "echo", Input: `{ "b": 2, "a": 1 }`})
+// An MCP call the runner will never execute must not sit in the registry,
+// because nothing validates that a local tool and a remote one have different
+// names. Same name, same arguments, and the local call's result ships the
+// remote call's id and index — silently, and looking exactly like the swapped
+// result the id exists to prevent.
+func TestAnMCPCallCannotStealALocalCallsIdentity(t *testing.T) {
+	backend := New(Config{Client: stub(t,
+		sse(t, messageStart(),
+			`{"type":"content_block_start","index":0,"content_block":{"type":"mcp_tool_use","id":"mcptoolu_1","name":"echo","server_name":"perception","input":{}}}`,
+			arguments(t, 0, `{"text":"first"}`),
+			`{"type":"content_block_stop","index":0}`,
+			`{"type":"content_block_start","index":1,"content_block":{"type":"mcp_tool_result","tool_use_id":"mcptoolu_1","is_error":false,"content":"first"}}`,
+			`{"type":"content_block_stop","index":1}`,
+			`{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_1","name":"echo","input":{}}}`,
+			arguments(t, 2, `{"text":"first"}`),
+			`{"type":"content_block_stop","index":2}`,
+			messageDelta("tool_use"), `{"type":"message_stop"}`),
+		answeringTurn(t),
+	)})
 
-	call := pending.take("echo", []byte(`{"a":1,"b":2}`))
-	if call.ID != "toolu_1" || call.Index != 3 {
-		t.Errorf("call = %+v, want toolu_1 at 3; the re-encoded input did not match", call)
+	events := collect(t, backend, nacelle.Request{
+		Tools:         []nacelle.Tool{echoTool(t)},
+		MaxTokens:     1024,
+		MaxIterations: 4,
+	})
+
+	results := toolsOf(events, nacelle.KindToolResult)
+	if len(results) != 2 {
+		t.Fatalf("saw %d results, want one per call; the events were %s", len(results), kinds(events))
 	}
-	if again := pending.take("echo", []byte(`{"a":1,"b":2}`)); again.ID != "" {
-		t.Errorf("call = %+v, want nothing; a claimed invocation was handed out twice", again)
+	local, closed := results["toolu_1"]
+	if !closed {
+		t.Fatalf("the local call was answered under another id; results = %v", results)
 	}
+	if local.Index != 1 {
+		t.Errorf("the local result sits at %d, want 1; it took the MCP call's position", local.Index)
+	}
+}
+
+// The bytes a consumer sees on a call and on its result have to be one string.
+// The runner re-encodes what it decoded before handing it to a handler, so
+// reporting its bytes would show a change the model never made — and the
+// OpenRouter backend reports the model's own string on both.
+func TestACallAndItsResultReportOneSetOfArguments(t *testing.T) {
+	backend := New(Config{Client: stub(t,
+		sse(t, messageStart(),
+			`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"echo","input":{}}}`,
+			arguments(t, 0, `{ "text" : "spaced" }`),
+			`{"type":"content_block_stop","index":0}`,
+			messageDelta("tool_use"), `{"type":"message_stop"}`),
+		sse(t, messageStart(), messageDelta("end_turn"), `{"type":"message_stop"}`),
+	)})
+
+	events := collect(t, backend, nacelle.Request{
+		Tools:         []nacelle.Tool{echoTool(t)},
+		MaxTokens:     1024,
+		MaxIterations: 4,
+	})
+
+	call := toolsOf(events, nacelle.KindToolCall)["toolu_1"]
+	result := toolsOf(events, nacelle.KindToolResult)["toolu_1"]
+	if call == nil || result == nil {
+		t.Fatalf("saw call=%+v result=%+v, want both", call, result)
+	}
+	if result.Input != call.Input {
+		t.Errorf("call input = %q and result input = %q, want one string", call.Input, result.Input)
+	}
+}
+
+// answeringTurn is the turn after the tools ran: the model says what it found
+// and stops, which is what lets the runner finish rather than ask again.
+func answeringTurn(t *testing.T) string {
+	t.Helper()
+	return sse(t, messageStart(),
+		`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"done"}}`,
+		`{"type":"content_block_stop","index":0}`,
+		messageDelta("end_turn"), `{"type":"message_stop"}`)
 }

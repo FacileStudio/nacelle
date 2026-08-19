@@ -9,7 +9,8 @@
 //
 // What it gains in return is money. OpenRouter prices every generation and
 // returns the figure, so Usage.Cost is real here and zero on a backend that
-// only counts tokens.
+// only counts tokens — with one caveat worth reading before dividing by it,
+// under Capabilities.
 package openrouter
 
 import (
@@ -122,7 +123,17 @@ func (b *Backend) Model() string { return b.model }
 //
 // Cost is true because OpenRouter prices the generation and returns the
 // number, which is the reason to reach for this backend when runs are being
-// compared.
+// compared. It is a promise that the field is filled when the gateway reports
+// a price, not that a price always arrives: cost travels as an extra field
+// outside the OpenAI schema, and a provider that omits it, or sends it in a
+// shape this package cannot decode, leaves Usage.Cost at zero.
+//
+// A zero cost therefore means "not reported", never "free". Usage has no
+// third state to say which, so a consumer comparing runs on money should
+// treat a zero total as missing data — the tokens are still counted, and
+// pricing those is the fallback. It is only ever zero for a whole turn: the
+// figure covers the generation, so there is no partial cost to mistake for a
+// cheap one.
 func (b *Backend) Capabilities() nacelle.Capabilities {
 	return nacelle.Capabilities{MCP: false, Thinking: true, Effort: true, Cost: true}
 }

@@ -9,7 +9,6 @@ package anthropic
 
 import (
 	"github.com/FacileStudio/nacelle"
-	nmcp "github.com/FacileStudio/nacelle/mcp"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 )
@@ -75,25 +74,19 @@ func (b *Backend) Model() string { return b.model }
 // Doing it there rather than per block is not a shortcut: the runner owns the
 // message slice, so the individual blocks are not ours to annotate, and the
 // server-side placement is the pattern the documentation recommends anyway.
-//
-// It has no switch because there is no run this package makes where turning it
-// off pays. A cache write costs 1.25x a plain input token and a read costs
-// 0.1x, so it is ahead from the second request that shares a prefix — and the
-// tool runner resends the whole conversation on every iteration, so any run
-// that calls a tool has already made that second request. Over ten turns this
-// is the difference between paying for the system prompt and tool schemas once
-// and paying for them ten times.
 func (b *Backend) params(request nacelle.Request) sdk.BetaToolRunnerParams {
 	params := sdk.BetaToolRunnerParams{
 		BetaMessageNewParams: sdk.BetaMessageNewParams{
-			Model:        sdk.Model(b.model),
-			MaxTokens:    request.MaxTokens,
-			System:       []sdk.BetaTextBlockParam{{Text: request.System}},
-			Thinking:     thinkingConfig(request.Thinking),
-			Messages:     toParams(request.Messages),
-			CacheControl: sdk.NewBetaCacheControlEphemeralParam(),
+			Model:     sdk.Model(b.model),
+			MaxTokens: request.MaxTokens,
+			System:    []sdk.BetaTextBlockParam{{Text: request.System}},
+			Thinking:  thinkingConfig(request.Thinking),
+			Messages:  toParams(request.Messages),
 		},
 		MaxIterations: request.MaxIterations,
+	}
+	if amortises(request) {
+		params.CacheControl = sdk.NewBetaCacheControlEphemeralParam()
 	}
 	if request.Effort != "" {
 		params.OutputConfig = sdk.BetaOutputConfigParam{
@@ -102,6 +95,31 @@ func (b *Backend) params(request nacelle.Request) sdk.BetaToolRunnerParams {
 	}
 	applyMCP(&params.BetaMessageNewParams, request.MCP)
 	return params
+}
+
+// amortises reports whether this run will make a second request sharing a
+// prefix with the first, which is the only condition under which a cache
+// breakpoint pays for itself.
+//
+// A cache write costs 1.25x a plain input token and a read costs 0.1x, so a
+// prefix written once and read once is already ahead, and over ten turns it is
+// the difference between paying for the system prompt and every tool schema
+// once and paying for them ten times. That case is worth taking and it is not
+// every case. A Config with no tools and no conversation behind it makes
+// exactly one API call, and a breakpoint there buys a cache entry nothing will
+// ever read: a 5k-token one-shot pays 1.25x its input for nothing. Charging
+// every caller a quarter extra to spare this package a condition is not a
+// trade-off worth defending, so the condition is here.
+//
+// Two things predict the second request. Local tools mean the SDK's runner
+// resends the whole conversation on every iteration, so any run that calls one
+// has already made it. A conversation handed in means an earlier run wrote
+// this prefix and this one is the read. MCP servers deliberately do not count:
+// they run on Anthropic's side within a single response, so a run whose only
+// tools are remote still makes one request — and if it also has local tools,
+// those already said yes.
+func amortises(request nacelle.Request) bool {
+	return len(request.Tools) > 0 || len(request.Messages) > 0
 }
 
 // thinkingConfig asks for adaptive thinking, with the summary shown or not.
@@ -116,47 +134,4 @@ func thinkingConfig(visible bool) sdk.BetaThinkingConfigParamUnion {
 		adaptive.Display = sdk.BetaThinkingConfigAdaptiveDisplaySummarized
 	}
 	return sdk.BetaThinkingConfigParamUnion{OfAdaptive: &adaptive}
-}
-
-// applyMCP declares the servers and the toolsets that reach them.
-//
-// Both halves are required. A request carrying mcp_servers without a matching
-// mcp_toolset entry in tools is rejected as a validation error, which reads
-// like a malformed server definition and is not one.
-func applyMCP(params *sdk.BetaMessageNewParams, servers []nmcp.Server) {
-	if len(servers) == 0 {
-		return
-	}
-
-	params.Betas = append(params.Betas, sdk.AnthropicBetaMCPClient2025_11_20)
-
-	for _, server := range servers {
-		definition := sdk.BetaRequestMCPServerURLDefinitionParam{Name: server.Name, URL: server.URL}
-		if server.Token != "" {
-			definition.AuthorizationToken = sdk.String(server.Token)
-		}
-		if len(server.AllowedTools) > 0 {
-			definition.ToolConfiguration = sdk.BetaRequestMCPServerToolConfigurationParam{
-				AllowedTools: server.AllowedTools,
-			}
-		}
-		params.MCPServers = append(params.MCPServers, definition)
-		params.Tools = append(params.Tools, sdk.BetaToolUnionParamOfMCPToolset(server.Name))
-	}
-}
-
-// toParams converts a conversation into the SDK's message shape.
-func toParams(conversation []nacelle.Message) []sdk.BetaMessageParam {
-	params := make([]sdk.BetaMessageParam, 0, len(conversation))
-	for _, message := range conversation {
-		role := sdk.BetaMessageParamRoleUser
-		if message.Assistant {
-			role = sdk.BetaMessageParamRoleAssistant
-		}
-		params = append(params, sdk.BetaMessageParam{
-			Role:    role,
-			Content: []sdk.BetaContentBlockParamUnion{sdk.NewBetaTextBlock(message.Text)},
-		})
-	}
-	return params
 }

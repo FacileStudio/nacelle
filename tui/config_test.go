@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -123,5 +124,36 @@ func TestAnUnreadableEnvironmentValueFallsThroughRatherThanMeaningFalse(t *testi
 	}
 	if !*config.Bash {
 		t.Error("bash = false, want the file's true to survive an unreadable override")
+	}
+}
+
+// The whole promise of refusing a malformed file, applied to the keys. A file
+// saying max_iteration — one letter short — parsed cleanly, left the ceiling at
+// 40 and cost real money on the next long run without a word about it.
+func TestATypoInAKeyIsRefusedRatherThanIgnored(t *testing.T) {
+	written(t, "max_iteration: 3\n")
+
+	config, err := settings(Config{})
+	if err == nil {
+		t.Fatalf("settings = %+v, want a misspelt key refused", config)
+	}
+	if !strings.Contains(err.Error(), "max_iteration") {
+		t.Errorf("error = %v, want it to name the key it did not know", err)
+	}
+}
+
+// Under systemd, cron or `env -i` there is no HOME and no config file either,
+// which is the ordinary case this client already handles. Refusing to start
+// meant nacelle could not run with every setting passed on the command line,
+// for want of a file it was never going to read.
+func TestAnUnresolvableHomeMeansNoConfigFileRatherThanNoProgram(t *testing.T) {
+	t.Setenv("HOME", "")
+
+	config, err := settings(Config{Model: "from-the-flag"})
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	if config.Model != "from-the-flag" {
+		t.Errorf("model = %q, want the flag honoured with nowhere to read a file from", config.Model)
 	}
 }

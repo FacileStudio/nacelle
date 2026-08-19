@@ -3,6 +3,7 @@ package openrouter
 import (
 	"encoding/json"
 	"errors"
+	"strconv"
 
 	"github.com/FacileStudio/nacelle"
 
@@ -28,9 +29,16 @@ var transientCodes = map[int64]bool{
 // event it was carried in.
 //
 // The payload has to be parsed rather than the message matched, and the code
-// has to be read as a number: OpenRouter sends "code": 429, not "429", which
-// is enough to make a string-typed decoder drop it and every classification
-// keyed on it fail open.
+// cannot be typed at all. OpenRouter usually sends "code": 429 as a number,
+// but a provider behind it may pass its own string through — and a
+// number-typed field fails the whole Unmarshal on a string, which took the
+// error_type fallback down with it. That fallback exists precisely for the
+// payloads whose code is not a number, so it was dead in every case it was
+// written for. Code is therefore read as any and interpreted afterwards.
+//
+// What still fails closed is the shape: an error that is not a JSON object —
+// a bare string, an array, nothing at all — leaves the payload unreadable, and
+// an unreadable failure is treated as permanent rather than guessed at.
 func classify(err error) error {
 	var stream *ssestream.StreamError
 	if err == nil || !errors.As(err, &stream) {
@@ -39,7 +47,7 @@ func classify(err error) error {
 
 	var payload struct {
 		Error struct {
-			Code     json.Number `json:"code"`
+			Code     any `json:"code"`
 			Metadata struct {
 				ErrorType string `json:"error_type"`
 			} `json:"metadata"`
@@ -58,9 +66,23 @@ func classify(err error) error {
 // transientStatus reads the in-band code and reports whether it is worth
 // retrying. An unparseable code is not: guessing that an error we cannot read
 // is temporary is how a permanent failure becomes a slow permanent failure.
-func transientStatus(code json.Number) bool {
-	status, err := code.Int64()
-	if err != nil {
+//
+// A JSON number decodes to float64 and a quoted status to a string, and both
+// mean the same thing on the wire, so both are read. Anything else — a code
+// that is a word, an object, or absent — has no status in it and is left to
+// the error_type fallback.
+func transientStatus(code any) bool {
+	var status int64
+	switch value := code.(type) {
+	case float64:
+		status = int64(value)
+	case string:
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return false
+		}
+		status = parsed
+	default:
 		return false
 	}
 	return transientCodes[status] || status >= 500

@@ -28,15 +28,16 @@ type toolCall struct {
 // turnStream is everything one streamed turn accumulates before it can be
 // reported.
 //
-// It is a struct rather than four locals threaded through the chunk handler
+// It is a struct rather than five locals threaded through the chunk handler
 // because the handler needs all of them and a function taking six parameters
 // is a function nobody can call correctly. Keeping them together also makes
-// the ordering constraint visible: the finish reason has to be folded in
-// before the turn is emitted, since both can arrive on the same chunk.
+// the ordering constraint visible: the finish reason and the usage have to be
+// folded in before the turn is emitted, and any chunk can carry either.
 type turnStream struct {
 	accumulator      openai.ChatCompletionAccumulator
 	reasoningDetails json.RawMessage
 	stop             nacelle.Stop
+	usage            nacelle.Usage
 	total            *nacelle.Usage
 }
 
@@ -76,10 +77,10 @@ func (b *Backend) turn(
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return nil, classify(err)
+		return nil, err
 	}
 
-	return state.finish()
+	return state.finish(call.out)
 }
 
 // observe folds one chunk into the turn's running state, before any of it
@@ -89,10 +90,19 @@ func (b *Backend) turn(
 // which is the honest answer: the provider did not say why it stopped, so
 // neither can this package.
 //
+// Usage is latched rather than added, because the two providers that get this
+// wrong get it wrong in opposite directions: one sends the accounting once in
+// a chunk of its own, the other repeats a running total on every chunk. Adding
+// would triple the second one's numbers, so the last figure seen wins and the
+// turn is billed for it exactly once, in finish.
+//
 // The empty-choices guard is not defensive padding: the usage chunk carries no
 // choices at all, so indexing it would panic on every single run.
 func (t *turnStream) observe(chunk openai.ChatCompletionChunk) {
 	t.accumulator.AddChunk(chunk)
+	if usage, ok := usageOf(chunk); ok {
+		t.usage = usage
+	}
 	if len(chunk.Choices) == 0 {
 		return
 	}
@@ -105,20 +115,12 @@ func (t *turnStream) observe(chunk openai.ChatCompletionChunk) {
 }
 
 // emit reports one observed chunk, returning false when the consumer has
-// stopped ranging.
-//
-// The turn is ended by the usage chunk rather than by the finish_reason one,
-// because a KindTurn that carried no cost would break the promise that usage
-// is reported per turn, always.
+// stopped ranging. It carries the answer as it arrives and nothing else: what
+// the turn cost and why it ended are known only once the stream is over, so
+// they are reported by finish.
 func (t *turnStream) emit(chunk openai.ChatCompletionChunk, thinking bool, out *emitter) bool {
 	if !out.flushTools() {
 		return false
-	}
-	if usage, ok := usageOf(chunk); ok {
-		*t.total = t.total.Add(usage)
-		if !out.send(nacelle.Event{Kind: nacelle.KindTurn, Usage: usage, Stop: t.stop}) {
-			return false
-		}
 	}
 	if len(chunk.Choices) == 0 {
 		return true
@@ -126,8 +128,20 @@ func (t *turnStream) emit(chunk openai.ChatCompletionChunk, thinking bool, out *
 	return out.sendAll(deltaEvents(chunk.Choices[0].Delta, thinking))
 }
 
-// finish turns the accumulated message into the next turn's input.
-func (t *turnStream) finish() (*turnResult, error) {
+// finish ends the turn and turns the accumulated message into the next turn's
+// input.
+//
+// The KindTurn goes out here, unconditionally, because the promise is that
+// usage is reported per turn always — and a stream with no usage chunk at all
+// used to produce no KindTurn, which dropped the turn's stop reason with it. A
+// turn that cost nothing reportable is a turn with a zero usage, not a missing
+// event. It is emitted before the response is inspected for the same reason:
+// the generation was billed whether or not it came back usable.
+func (t *turnStream) finish(out *emitter) (*turnResult, error) {
+	*t.total = t.total.Add(t.usage)
+	if !out.send(nacelle.Event{Kind: nacelle.KindTurn, Usage: t.usage, Stop: t.stop}) {
+		return nil, errStopped
+	}
 	if len(t.accumulator.Choices) == 0 {
 		return nil, fmt.Errorf("nacelle/openrouter: the response carried no choices")
 	}

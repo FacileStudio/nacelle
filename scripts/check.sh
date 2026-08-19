@@ -64,6 +64,18 @@ if [ -n "$unformatted" ]; then
   status=1
 fi
 
+# Each nested module is also consumed on its own — `go install
+# github.com/FacileStudio/nacelle/tui@latest` resolves tui/go.mod's require of
+# the core, not the sibling directory next to it. GOWORK=off is the entire
+# point of this step: with the workspace on, every import is satisfied by the
+# local source and a stale require is invisible, which is how tui/go.mod sat
+# four commits behind a core it could not compile against while this script
+# printed "ok". Turning the workspace off builds what a stranger would get.
+echo "==> go build (no workspace)"
+for module in $NESTED; do
+  (GOWORK=off "$GO" -C "$module" build ./...) || status=1
+done
+
 echo "==> go vet"
 "$GO" vet ./... || status=1
 for module in $NESTED; do

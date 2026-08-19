@@ -29,27 +29,45 @@ func (m *model) View() tea.View {
 	return view
 }
 
-// status is the one line that is always true: what the run has cost so far,
-// whether it is still going, and whether the answer above it is whole.
+// abandoned is the run the user stopped.
+//
+// The core reports why a run ended on KindDone, and cancelling is the one
+// ending that arrives without one — the event never comes. It is also the only
+// abandonment the reader caused themselves, so it is the last one they should
+// have to guess at from a status line still saying "ready" under half an
+// answer.
+const abandoned nacelle.Stop = "abandoned"
+
+// status is the one line that is always true: what the session has cost so
+// far, whether a run is still going, and whether the answer above it is whole.
+//
+// The count is spent plus the run in flight, which is the session total.
+// Anything else jumps around: a per-run counter that survives into the next
+// run reads as the old total plus the new turns and then falls back to the new
+// total on its own, which is a number nobody can act on.
 //
 // Cost is only shown when a backend reports one. Anthropic returns tokens and
 // nothing else, and a zero next to a currency symbol reads as free rather than
 // as unknown.
 func (m *model) status() string {
 	state := "ready"
-	if m.busy {
-		state = "working"
-	}
-	if cut := cutShort(m.stop); !m.busy && cut != "" {
+	if cut := cutShort(m.run.stop); cut != "" {
 		state = cut
 	}
-
-	line := fmt.Sprintf("%s · %d tokens", state, m.usage.Total())
-	if m.usage.CacheReadTokens > 0 {
-		line += fmt.Sprintf(" (%d cached)", m.usage.CacheReadTokens)
+	if m.run.busy {
+		state = "working"
+		if time.Since(m.run.interrupted) < forceQuit {
+			state = "stopping · ctrl+c again, or ctrl+\\, to quit now"
+		}
 	}
-	if m.usage.Cost > 0 {
-		line += fmt.Sprintf(" · $%.4f", m.usage.Cost)
+
+	total := m.spent.Add(m.run.usage)
+	line := fmt.Sprintf("%s · %d tokens", state, total.Total())
+	if total.CacheReadTokens > 0 {
+		line += fmt.Sprintf(" (%d cached)", total.CacheReadTokens)
+	}
+	if total.Cost > 0 {
+		line += fmt.Sprintf(" · $%.4f", total.Cost)
 	}
 	return lipgloss.NewStyle().Faint(true).Render(line)
 }
@@ -59,21 +77,27 @@ func (m *model) status() string {
 // Text accumulates into the answer being streamed rather than becoming a line
 // of its own: the deltas arrive a few characters at a time, and a transcript
 // of those is unreadable.
+//
+// Reasoning accumulates separately. It is not part of the answer: the two
+// written into one buffer come out concatenated with no separator, and the
+// concatenation is what would be sent back as the assistant's message on every
+// later turn — paying for a chain of thought again, in a field the providers
+// do not want it replayed in.
 func (m *model) absorb(event nacelle.Event) {
 	switch event.Kind {
 	case nacelle.KindText:
-		m.answer.WriteString(event.Text)
+		m.run.answer.WriteString(event.Text)
 	case nacelle.KindThinking:
-		m.answer.WriteString(event.Text)
+		m.run.reasoning.WriteString(event.Text)
 	case nacelle.KindToolCall:
 		m.say("tool", fmt.Sprintf("%s %s", event.Tool.Name, event.Tool.Input))
 	case nacelle.KindToolResult:
 		m.say("tool", describe(event.Tool))
 	case nacelle.KindTurn:
-		m.usage = m.usage.Add(event.Usage)
+		m.run.usage = m.run.usage.Add(event.Usage)
 	case nacelle.KindDone:
-		m.usage = event.Usage
-		m.stop = event.Stop
+		m.run.usage = event.Usage
+		m.run.stop = event.Stop
 	}
 }
 
@@ -98,6 +122,8 @@ func cutShort(stop nacelle.Stop) string {
 		return "refused by the model"
 	case nacelle.StopIterations:
 		return "stopped at the iteration limit"
+	case abandoned:
+		return "abandoned"
 	}
 	return "stopped early"
 }
@@ -112,6 +138,33 @@ func describe(tool *nacelle.ToolEvent) string {
 	return fmt.Sprintf("%s done in %s", tool.Name, tool.Duration.Round(time.Millisecond))
 }
 
+// flush moves whatever is still streaming into the transcript, and the answer
+// into the conversation.
+//
+// It is not bookkeeping. Both buffers are drawn by render only while they are
+// filling, so clearing one without moving its text somewhere permanent erases
+// it from the screen at the exact moment it finished — which is what this did
+// until it was used.
+//
+// Only the answer joins the conversation. Reasoning is shown and then dropped,
+// and a nacelle.Message holds text and nothing else today, so a tool call the
+// model made cannot be replayed to it either — a gap in the core, not
+// something a client can paper over.
+func (m *model) flush() {
+	if reasoning := m.run.reasoning.String(); reasoning != "" {
+		m.run.reasoning.Reset()
+		m.say("thinking", reasoning)
+	}
+
+	answer := m.run.answer.String()
+	m.run.answer.Reset()
+	if answer == "" {
+		return
+	}
+	m.conversation = append(m.conversation, nacelle.Message{Assistant: true, Text: answer})
+	m.say("nacelle", answer)
+}
+
 // say commits one labelled line to the transcript.
 func (m *model) say(role, text string) {
 	m.transcript = append(m.transcript, fmt.Sprintf("%s: %s", role, text))
@@ -123,7 +176,10 @@ func (m *model) say(role, text string) {
 // stream scrolling out of sight.
 func (m *model) render() {
 	body := strings.Join(m.transcript, "\n\n")
-	if streaming := m.answer.String(); streaming != "" {
+	if reasoning := m.run.reasoning.String(); reasoning != "" {
+		body += "\n\n" + lipgloss.NewStyle().Faint(true).Render("thinking: "+reasoning)
+	}
+	if streaming := m.run.answer.String(); streaming != "" {
 		body += "\n\n" + streaming
 	}
 	m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width()).Render(body))
