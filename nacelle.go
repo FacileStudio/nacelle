@@ -90,6 +90,11 @@ type Config struct {
 	// side of the request, not ours, and only some backends can reach them.
 	MCP []mcp.Server
 
+	// Approve, if set, is asked before every local tool call runs. See
+	// Approve's own doc comment for why nil — every call runs unasked — is
+	// the default rather than the safe-looking choice.
+	Approve Approve
+
 	// Logger receives the few things worth recording that are not events.
 	// Defaults to slog.Default().
 	Logger *slog.Logger
@@ -172,6 +177,7 @@ func (c Config) request() Request {
 		Thinking:      c.Thinking,
 		MaxTokens:     maxTokens,
 		MaxIterations: c.MaxIterations,
+		Approve:       c.Approve,
 	}
 }
 
