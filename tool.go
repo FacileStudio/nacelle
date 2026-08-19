@@ -36,6 +36,22 @@ type Tool interface {
 	Run(ctx context.Context, input json.RawMessage) (string, error)
 }
 
+// Approve decides whether a tool call may run, asked once per call before
+// RunTool ever calls Run.
+//
+// Nil is the default and means every call runs unasked — the same behaviour
+// this package has always had. Most consumers (a server, a CI job, an
+// unattended run) have nobody to ask, and a package that refused by default
+// would make every one of them write a rubber-stamp callback just to get
+// back to how every tool already worked. A consumer that wants a human in
+// the loop sets this; nothing else about Tool or RunTool changes for one
+// that does not.
+//
+// It is asked with the same context RunTool receives, so cancelling a run
+// (a caller abandoning the stream) unblocks anyone waiting on an answer that
+// is never coming, the same way it already unblocks a tool mid-Run.
+type Approve func(ctx context.Context, name string, input json.RawMessage) bool
+
 // NewTool builds a tool from a Go function.
 //
 // The schema is generated from In's `json` and `jsonschema` struct tags, so a

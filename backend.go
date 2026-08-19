@@ -85,4 +85,8 @@ type Request struct {
 	Thinking      bool
 	MaxTokens     int64
 	MaxIterations int
+
+	// Approve, if set, is asked before every local tool call runs. Nil
+	// means every call runs unasked — see Approve's own doc comment.
+	Approve Approve
 }

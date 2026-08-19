@@ -139,6 +139,12 @@ type ToolEvent struct {
 	// should drop a discarded call and its close entirely, the same way the
 	// backend that discarded it never replays it either.
 	Discarded bool
+
+	// Refused reports that this call never ran because Config.Approve
+	// declined it, not because the tool itself failed. Err still carries
+	// what the model is told either way — this is only the distinction a
+	// consumer wants to render differently: a policy decision, not a bug.
+	Refused bool
 }
 
 // Usage is what a turn or a run cost.

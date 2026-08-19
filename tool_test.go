@@ -121,3 +121,84 @@ func TestBadArgumentsAreReturnedNotPanicked(t *testing.T) {
 		t.Fatal("arguments that do not match the schema were accepted")
 	}
 }
+
+// Nil is the default, and the default has to mean what every tool already
+// did before Approve existed: run unasked. A package that started refusing
+// by default would break every consumer that never asked for a gate.
+func TestANilApproveRunsEveryCallUnasked(t *testing.T) {
+	tool, err := nacelle.NewTool("search", "Find things", func(_ context.Context, in searchInput) (string, error) {
+		return "found " + in.Query, nil
+	})
+	if err != nil {
+		t.Fatalf("NewTool: %v", err)
+	}
+
+	sink := &nacelle.ToolSink{}
+	result, err := nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink)
+	if err != nil || result != "found x" {
+		t.Fatalf("RunTool = %q, %v, want it to run without being asked", result, err)
+	}
+}
+
+// A refusal is reported as a failed call, not skipped in silence — the
+// pairing contract (a call started must be closed) still applies, and the
+// model is better placed than this package to decide whether the task can
+// still be finished without it.
+func TestARefusedCallNeverRunsAndIsReportedAsRefused(t *testing.T) {
+	ran := false
+	tool, err := nacelle.NewTool("search", "Find things", func(context.Context, searchInput) (string, error) {
+		ran = true
+		return "should never happen", nil
+	})
+	if err != nil {
+		t.Fatalf("NewTool: %v", err)
+	}
+
+	deny := func(context.Context, string, json.RawMessage) bool { return false }
+	sink := &nacelle.ToolSink{Approve: deny}
+	result, err := nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink)
+
+	if ran {
+		t.Fatal("the tool ran despite being refused")
+	}
+	if err == nil || result != "" {
+		t.Errorf("RunTool = %q, %v, want an error and no result", result, err)
+	}
+	events := sink.Drain()
+	if len(events) != 1 || !events[0].Tool.Refused {
+		t.Fatalf("events = %+v, want exactly one, marked Refused", events)
+	}
+	if events[0].Tool.Err == nil {
+		t.Error("a refused call carried no error for the model to read")
+	}
+}
+
+// approve is asked with the tool's name and its actual input, not a
+// pre-decided answer — a gate that could not see what it was approving
+// would not be one.
+func TestApproveSeesTheToolNameAndInput(t *testing.T) {
+	tool, err := nacelle.NewTool("search", "Find things", func(_ context.Context, in searchInput) (string, error) {
+		return "found " + in.Query, nil
+	})
+	if err != nil {
+		t.Fatalf("NewTool: %v", err)
+	}
+
+	var gotName string
+	var gotInput json.RawMessage
+	approve := func(_ context.Context, name string, input json.RawMessage) bool {
+		gotName, gotInput = name, input
+		return true
+	}
+
+	sink := &nacelle.ToolSink{Approve: approve}
+	if _, err := nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink); err != nil {
+		t.Fatalf("RunTool: %v", err)
+	}
+	if gotName != "search" {
+		t.Errorf("name = %q, want search", gotName)
+	}
+	if string(gotInput) != `{"query":"x"}` {
+		t.Errorf("input = %s, want the exact bytes the model sent", gotInput)
+	}
+}

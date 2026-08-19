@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -16,9 +17,16 @@ import (
 // sequence is pulled from a single goroutine, so results are parked here and
 // released between events rather than written from whichever goroutine
 // produced them.
+//
+// Approve lives here rather than as its own parameter on RunTool: every
+// caller already constructs and threads a ToolSink through to the same
+// place, so a second piece of per-run policy travelling the same path is
+// one field, not a second argument every call site has to carry.
 type ToolSink struct {
 	mu      sync.Mutex
 	pending []Event
+
+	Approve Approve
 }
 
 // Report records that a tool finished.
@@ -95,8 +103,28 @@ type Invocation struct {
 //
 // Backends call this instead of calling Run directly, so that a tool result
 // reaches the event stream the same way whichever backend executed it, and so
-// that timing is measured in one place.
+// that timing is measured in one place. It is also the one place that checks
+// sink.Approve, so a refusal looks the same — same event shape, same error
+// returned to the caller — regardless of which backend asked.
+//
+// A refusal is reported as a failed call, not skipped in silence: the
+// pairing contract (a call started must be closed) is the same one Discarded
+// exists for, and the model is better placed than this package to decide
+// whether the task can still be finished without it. Refused is what tells a
+// consumer this was a policy decision, not the tool breaking.
 func RunTool(ctx context.Context, tool Tool, call Invocation, input json.RawMessage, sink *ToolSink) (string, error) {
+	if sink.Approve != nil && !sink.Approve(ctx, tool.Name(), input) {
+		err := fmt.Errorf("nacelle: %q was not approved to run", tool.Name())
+		sink.Report(Event{
+			Kind: KindToolResult,
+			Tool: &ToolEvent{
+				ID: call.ID, Index: call.Index, Name: tool.Name(),
+				Input: string(input), Result: err.Error(), Err: err, Refused: true,
+			},
+		})
+		return "", err
+	}
+
 	started := time.Now()
 	result, err := tool.Run(ctx, input)
 
