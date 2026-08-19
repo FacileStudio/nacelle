@@ -3,6 +3,7 @@ package nacelle
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"sync"
 	"time"
 )
@@ -26,7 +27,17 @@ func (s *ToolSink) Report(event Event) {
 	s.pending = append(s.pending, event)
 }
 
-// Drain returns everything reported since the last call.
+// Drain returns everything reported since the last call, in the order the
+// model asked for it.
+//
+// Sorting is per batch, not across the whole run, and that is the honest
+// limit: results are released as they land, so two tools that finish either
+// side of a stream event arrive in separate batches and keep their completion
+// order. Holding every result until the slowest tool in the turn returned
+// would make the whole stream deterministic and would also stop the UI moving
+// while the work happens, which is most of what a consumer wants the stream
+// for. ToolEvent.Index is the way out for anyone who needs the model's order
+// regardless of when things finished.
 func (s *ToolSink) Drain() []Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -35,7 +46,23 @@ func (s *ToolSink) Drain() []Event {
 	}
 	drained := s.pending
 	s.pending = nil
+	slices.SortStableFunc(drained, func(a, b Event) int {
+		return a.Tool.Index - b.Tool.Index
+	})
 	return drained
+}
+
+// Invocation identifies one tool call within the turn that asked for it.
+//
+// It travels as a struct rather than as two more parameters because the two
+// fields answer different questions and are wrong to mix up: ID is what pairs
+// a result to its call across the stream, Index is where the model put it.
+type Invocation struct {
+	// ID is the provider's identifier for the call.
+	ID string
+
+	// Index is the call's position in the turn, from zero.
+	Index int
 }
 
 // RunTool executes a tool and reports the outcome to sink.
@@ -43,14 +70,15 @@ func (s *ToolSink) Drain() []Event {
 // Backends call this instead of calling Run directly, so that a tool result
 // reaches the event stream the same way whichever backend executed it, and so
 // that timing is measured in one place.
-func RunTool(ctx context.Context, tool Tool, id string, input json.RawMessage, sink *ToolSink) (string, error) {
+func RunTool(ctx context.Context, tool Tool, call Invocation, input json.RawMessage, sink *ToolSink) (string, error) {
 	started := time.Now()
 	result, err := tool.Run(ctx, input)
 
 	sink.Report(Event{
 		Kind: KindToolResult,
 		Tool: &ToolEvent{
-			ID:       id,
+			ID:       call.ID,
+			Index:    call.Index,
 			Name:     tool.Name(),
 			Input:    string(input),
 			Result:   result,

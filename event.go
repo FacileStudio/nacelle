@@ -34,6 +34,45 @@ const (
 	KindDone Kind = "done"
 )
 
+// Stop is why a turn or a run ended.
+//
+// It exists because the alternative is silence: a run truncated by the output
+// ceiling, one that outgrew the context window, and one the model refused all
+// arrive as a well-formed response with a normal ending, and a consumer that
+// does not read this cannot tell any of them from a finished answer.
+type Stop string
+
+const (
+	// StopEnd is the model having finished what it was asked.
+	StopEnd Stop = "end"
+
+	// StopTools ends a turn the model wants tools run for. More turns
+	// follow, so it is never the reason a run ended.
+	StopTools Stop = "tools"
+
+	// StopMaxTokens is the output ceiling cutting the answer off.
+	StopMaxTokens Stop = "max_tokens"
+
+	// StopContext is the conversation having outgrown the context window.
+	StopContext Stop = "context"
+
+	// StopRefusal is the model declining, which arrives as a successful
+	// response carrying no answer.
+	StopRefusal Stop = "refusal"
+
+	// StopIterations is MaxIterations reached with the model still asking
+	// for tools. The work is unfinished and nothing went wrong.
+	StopIterations Stop = "iterations"
+
+	// StopOther is a reason this package does not have a name for. It is
+	// not an error, and a consumer should treat it as unfinished.
+	StopOther Stop = "other"
+)
+
+// Complete reports whether the answer is whole. Anything else means the run
+// stopped short, and only StopEnd is safe to present as a finished answer.
+func (s Stop) Complete() bool { return s == StopEnd }
+
 // Event is one thing that happened during a run.
 //
 // The stream is the only output of an agent: SSE, a terminal, a log and a test
@@ -51,6 +90,10 @@ type Event struct {
 	// Usage is the turn's cost for KindTurn, and the run's total for
 	// KindDone. It is zero on every other kind.
 	Usage Usage
+
+	// Stop is why a turn or a run ended, on KindTurn and KindDone. It is
+	// empty on every other kind.
+	Stop Stop
 }
 
 // ToolEvent is a tool call, before or after it ran.
@@ -59,6 +102,15 @@ type ToolEvent struct {
 	// the same ID as the KindToolCall it answers, which is what lets a
 	// consumer pair them without tracking order.
 	ID string
+
+	// Index is the call's position in the turn that asked for it.
+	//
+	// Tools run concurrently, so results are emitted in the order they
+	// finish rather than the order they were asked for — which is real
+	// information, and holding it back until the slowest one lands would
+	// buy determinism with a UI that stops moving. Index is how a consumer
+	// that wants the model's order gets it without paying for that.
+	Index int
 
 	// Name is the tool's name. For a tool reached over MCP it is the name
 	// the server exposes.
