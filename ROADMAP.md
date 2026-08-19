@@ -215,7 +215,9 @@ helps but does not settle it.
 - **Tagging `v0.1.0`.** Gated on Kori, and A6 must land first.
 - **Sessions, profiles, themes, panes in the TUI.** None of them test the API, which is the
   only thing the TUI is for.
-- **A config file for the TUI.** Flags until they hurt.
+- ~~A config file for the TUI. Flags until they hurt.~~ Built anyway, on request, after flags
+  hurt once. `~/.nacelle.yml`, preferences only. Still skipped: a per-project `./.nacelle.yml`,
+  which is a second precedence layer before the first has users.
 
 ## Conventions checked
 

@@ -1,9 +1,9 @@
-// Command tui is a terminal client for a nacelle agent.
+// Command nacelle is a terminal client for a nacelle agent.
 //
 // It exists to be the SDK's first consumer. A terminal exercises every event
 // kind a backend can produce — text, reasoning, a tool starting, a tool
-// finishing, what a turn cost — which is more of the contract than a headless
-// caller touches, and it does so while someone is watching.
+// finishing, why a turn ended, what it cost — which is more of the contract
+// than a headless caller touches, and it does so while someone is watching.
 //
 // It is deliberately small. Sessions, profiles, themes and panes are what a
 // product grows; none of them tests the API, and the point of this one is to
@@ -23,45 +23,25 @@ import (
 	"github.com/FacileStudio/nacelle/tools"
 )
 
-// options is what the flags collect.
-type options struct {
-	backend string
-	model   string
-	root    string
-	bash    bool
-	system  string
-}
-
 const defaultSystem = "You are a terminal coding assistant. " +
 	"Read before you write, keep edits small, and say what you changed."
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "tui:", err)
+		fmt.Fprintln(os.Stderr, "nacelle:", err)
 		os.Exit(1)
 	}
 }
 
-// parse reads the flags. AllowBash is a flag rather than a default because the
-// tool set is not a sandbox: run_command is unconfined, and that has to be a
-// decision someone made rather than one they inherited.
-func parse() options {
-	var opts options
-	flag.StringVar(&opts.backend, "backend", "anthropic", "anthropic or openrouter")
-	flag.StringVar(&opts.model, "model", "", "model id, defaulting to the backend's own")
-	flag.StringVar(&opts.root, "root", ".", "directory the file tools may reach")
-	flag.BoolVar(&opts.bash, "bash", false, "let the model run commands")
-	flag.StringVar(&opts.system, "system", defaultSystem, "system prompt")
-	flag.Parse()
-	return opts
-}
-
 func run() error {
-	opts := parse()
-
-	set, err := tools.New(tools.Config{Root: opts.root, AllowBash: opts.bash})
+	config, err := settings(fromFlags())
 	if err != nil {
-		return fmt.Errorf("opening %s: %w", opts.root, err)
+		return err
+	}
+
+	set, err := tools.New(tools.Config{Root: config.Root, AllowBash: *config.Bash})
+	if err != nil {
+		return fmt.Errorf("opening %s: %w", config.Root, err)
 	}
 	defer set.Close()
 
@@ -70,41 +50,103 @@ func run() error {
 		return fmt.Errorf("building the tool set: %w", err)
 	}
 
-	backend, err := chosen(opts)
+	agent, backend, err := build(config, local)
 	if err != nil {
 		return err
+	}
+
+	_, err = tea.NewProgram(newModel(agent, banner(backend, config))).Run()
+	return err
+}
+
+// build assembles the agent the settings describe, and hands the backend back
+// so the caller can say which one answered.
+func build(config Config, local []nacelle.Tool) (*nacelle.Agent, nacelle.Backend, error) {
+	backend, err := chosen(config)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	agent, err := nacelle.New(nacelle.Config{
 		Backend:       nacelle.Retry(backend, nacelle.RetryOptions{}),
-		System:        opts.system,
+		System:        config.System,
+		Effort:        nacelle.Effort(config.Effort),
+		Thinking:      *config.Thinking,
 		Tools:         local,
-		MaxIterations: 40,
+		MaxIterations: *config.MaxIterations,
 	})
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-
-	_, err = tea.NewProgram(newModel(agent)).Run()
-	return err
+	return agent, backend, nil
 }
 
-// chosen builds the backend the flags asked for.
+// fromFlags is the settings layer the command line supplies.
 //
-// There is no default backend in the library and there is none here either:
-// the flag has a value, but it names the choice rather than hiding it, and an
-// unknown one is refused rather than quietly falling back to a model the
-// caller did not ask for and will be billed for.
-func chosen(opts options) (nacelle.Backend, error) {
-	switch opts.backend {
-	case "anthropic":
-		return anthropic.New(anthropic.Config{Model: opts.model}), nil
-	case "openrouter":
-		if opts.model == "" {
-			return nil, fmt.Errorf("openrouter needs -model, it has no default")
-		}
-		return openrouter.New(openrouter.Config{Model: opts.model})
-	default:
-		return nil, fmt.Errorf("unknown backend %q, want anthropic or openrouter", opts.backend)
+// Only the flags actually typed are collected. Go's flag package cannot tell a
+// flag left alone from one passed its own default value, so Visit — which
+// reports exactly the ones that were set — is what stops a default from
+// silently outranking the config file it is supposed to sit beneath.
+func fromFlags() Config {
+	fallback := defaults()
+	backend := flag.String("backend", fallback.Backend, "anthropic or openrouter")
+	model := flag.String("model", fallback.Model, "model id, defaulting to the backend's own")
+	effort := flag.String("effort", fallback.Effort, "low, medium, high, xhigh or max")
+	root := flag.String("root", fallback.Root, "directory the file tools may reach")
+	system := flag.String("system", fallback.System, "system prompt")
+	bash := flag.Bool("bash", *fallback.Bash, "let the model run commands")
+	thinking := flag.Bool("thinking", *fallback.Thinking, "stream the model's reasoning")
+	iterations := flag.Int("max-iterations", *fallback.MaxIterations, "how many times the model may be asked")
+	flag.Parse()
+
+	typed := map[string]func(*Config){
+		"backend":        func(c *Config) { c.Backend = *backend },
+		"model":          func(c *Config) { c.Model = *model },
+		"effort":         func(c *Config) { c.Effort = *effort },
+		"root":           func(c *Config) { c.Root = *root },
+		"system":         func(c *Config) { c.System = *system },
+		"bash":           func(c *Config) { c.Bash = bash },
+		"thinking":       func(c *Config) { c.Thinking = thinking },
+		"max-iterations": func(c *Config) { c.MaxIterations = iterations },
 	}
+
+	var flags Config
+	flag.Visit(func(f *flag.Flag) {
+		if take, known := typed[f.Name]; known {
+			take(&flags)
+		}
+	})
+	return flags
+}
+
+// chosen builds the backend the settings ask for.
+//
+// An unknown name is refused rather than quietly falling back to a model the
+// caller did not choose and will be billed for, which is the same reason the
+// library itself ships no default backend.
+func chosen(config Config) (nacelle.Backend, error) {
+	switch config.Backend {
+	case "anthropic":
+		return anthropic.New(anthropic.Config{Model: config.Model}), nil
+	case "openrouter":
+		if config.Model == "" {
+			return nil, fmt.Errorf("openrouter needs a model: pass -model, or set model in ~/%s", ConfigFile)
+		}
+		return openrouter.New(openrouter.Config{Model: config.Model})
+	default:
+		return nil, fmt.Errorf("unknown backend %q, want anthropic or openrouter", config.Backend)
+	}
+}
+
+// banner is the line the transcript opens with.
+//
+// It names the backend and model before anything is typed, because the failure
+// that costs the most is discovering, after composing a question, that the
+// client was pointed at a provider you have no key for.
+func banner(backend nacelle.Backend, config Config) string {
+	model := config.Model
+	if model == "" {
+		model = anthropic.DefaultModel
+	}
+	return fmt.Sprintf("%s · %s", backend.Name(), model)
 }
