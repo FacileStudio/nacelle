@@ -31,13 +31,21 @@ the first token, and (as of this round) discovers `CLAUDE.md`/`AGENTS.md` above 
 reach mycelium's flows and memory search, both default on and both fail soft to nothing when there
 is nothing to find.
 
+A later round added `~/.agents/AGENTS.md` (the AGENTS.md standard's own global-base path,
+deliberately not a user's `~/.claude/CLAUDE.md` — see `tui/context.go`'s doc comment) and skill
+loading from `~/.agents/skills/` and trusted `.agents/skills/`, following the Agent Skills
+specification. Project-local skills are the one thing gated on trust
+(`~/.nacelle/trust.json`, `-trust-skills`) — a `SKILL.md` can carry scripts to run, unlike the
+plain instruction text `AGENTS.md`/`CLAUDE.md` hold, which stays ungated for the reason in
+`docs/architecture.md`'s "What is deliberately not here."
+
 No tag; `v0.1.0` stays gated on Kori, which is itself blocked on Perception's MCP server, a
 Perception problem. **Do not sequence nacelle work around Kori.**
 
 What is not built, flagged rather than silently dropped: a global `~/.claude/CLAUDE.md` layer
-(deliberately out — see `tui/context.go`'s doc comment), slash commands, and a skills-loading
-subsystem. All real, all bigger and fuzzier than fit alongside the rest of this round; each needs
-its own scoping session before a `###` entry here would mean anything.
+(deliberately out, same reasoning as skipping it for `AGENTS.md`'s own global path) and slash
+commands. Both real, both bigger and fuzzier than fit alongside the rest of either round; each
+needs its own scoping session before a `###` entry here would mean anything.
 
 ## Tracks
 

@@ -34,7 +34,7 @@ set, the TUI, and the gate, in the order they were built.
   body — OpenRouter's rate limit inside the SSE, an Anthropic `overloaded_error` mid-stream.
   It retries only while nothing has reached the consumer: once a text delta has been printed,
   no wrapper can un-print it.
-- **`tools`** — local read, write, edit, glob, grep and (opt-in) command execution, confined
+- **`tools`** — local read, write, edit, find (glob), search (grep) and (opt-in) command execution, confined
   to one directory through `os.Root` so a path resolving outside it is refused by the kernel
   rather than by string comparison, not a symlink, a `..`, or an absolute path escaping the
   tree. The directory is fixed by the host at construction; no tool takes a `path`, `cwd` or
@@ -72,5 +72,35 @@ set, the TUI, and the gate, in the order they were built.
   `tools`/`mcp`/`tui` from importing a provider SDK directly. CI runs the same gate on push
   and pull request and cannot be bypassed the way the pre-push-only hook could.
 - **`docs/`** and this changelog.
+- **`Backend.CountTokens`** (`Agent.CountTokens` on top of it) — real on `anthropic`, through
+  the SDK's own `count_tokens` endpoint; refused with `*Unsupported` on `openrouter`, which
+  has no server-side endpoint and would otherwise mean guessing at a tokenizer for whichever
+  of the hundreds of models behind the gateway answered.
+- **`Trim`** — a boundary-safe context-truncation primitive. Deliberately not a summarizer:
+  deciding what to keep and how to compress it is a product opinion this package holds
+  nowhere else, so `Trim` only does the mechanical part safely — it never returns a slice
+  that keeps a `ToolResult` message without the `ToolCall` before it, which every provider
+  this package talks to would otherwise reject outright.
+- **`tools.Mycelium`** — `list_flows`, `run_flow` and `search_memory`, giving a model narrower,
+  more legible access to this machine's [mycelium](https://github.com/FacileStudio/mycelium)
+  flows and memory search than routing the same commands through `run_command` would. Absent
+  mycelium on `PATH` is not an error; it returns no tools, the same as `AllowBash` being off.
+- **`tui/` reads `~/.agents/AGENTS.md`**, the [AGENTS.md standard](https://agentsstandard.com)'s
+  own global-base path — the same file Codex, Cursor, Copilot, Gemini and pi (at its own
+  equivalent) already read. Deliberately not a user's `~/.claude/CLAUDE.md`: that file assumes
+  Claude Code's own tools, hooks and slash commands, where an `AGENTS.md` at the standard's
+  own path is written, by the convention's premise, to make sense to whichever agent reads it.
+- **`tui/` loads skills from `~/.agents/skills/` and trusted `.agents/skills/` directories**,
+  following the [Agent Skills specification](https://agentskills.io/specification). Only a
+  skill's name and description ever reach the system prompt; the model reads the rest with its
+  own `read_file` call once it decides a skill applies, so no new tool was needed to invoke
+  one. Global skills load unconditionally, the same reasoning as the global `AGENTS.md` above;
+  project-local skills require trust first — a `SKILL.md` can instruct the model to run
+  scripts it ships alongside itself, unlike the plain instruction text `AGENTS.md`/`CLAUDE.md`
+  carry, and that is the one thing in this package's context loading that is gated on purpose.
+  `-trust-skills` trusts every `.agents/skills` directory found under `-root` for one run and
+  remembers the decision in `~/.nacelle/trust.json`, keyed by canonical directory — the first
+  thing to give `~/.nacelle/` a reason to be a directory rather than the flat `~/.nacelle.yml`
+  file it had been.
 
 [Unreleased]: https://github.com/FacileStudio/nacelle/commits/main

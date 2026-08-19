@@ -14,6 +14,7 @@ type Agent struct { /* unexported */ }
 
 func New(cfg Config) (*Agent, error)
 func (a *Agent) Stream(ctx context.Context, conversation []Message) iter.Seq2[Event, error]
+func (a *Agent) CountTokens(ctx context.Context, conversation []Message) (int64, error)
 func (a *Agent) Backend() Backend
 ```
 
@@ -21,7 +22,21 @@ func (a *Agent) Backend() Backend
 duplicate MCP server name, or a `Config` asking for a capability the backend lacks all return
 an error instead of a half-configured agent. `Stream` refuses a conversation with a part on
 the wrong side of its role before the backend ever sees it — see
-[The `Message` union](architecture.md#the-message-union).
+[The `Message` union](architecture.md#the-message-union). `CountTokens` builds the same
+request `Stream` would — system prompt, tools, MCP servers, not just the bare conversation —
+and asks the backend how many tokens it would use; a backend that cannot answer (see
+`Capabilities.TokenCounting`) returns an `*Unsupported` error.
+
+```go
+func Trim(conversation []Message, keep int) (kept []Message, dropped int)
+```
+
+Drops the oldest messages, keeping at most `keep` of the most recent — a hard ceiling, useful
+for trimming to a token budget. Truncation, not summarization: deciding what to preserve and
+how to compress it is a product opinion this package holds nowhere else. Never returns a slice
+starting on a `ToolResult` message without the `ToolCall` before it; when the requested
+boundary would land inside that pair, it drops the whole pair rather than leaving a
+conversation every provider here would reject.
 
 ```go
 var (
@@ -75,13 +90,15 @@ type Backend interface {
 	Name() string
 	Capabilities() Capabilities
 	Stream(ctx context.Context, request Request) iter.Seq2[Event, error]
+	CountTokens(ctx context.Context, request Request) (int64, error)
 }
 
 type Capabilities struct {
-	MCP      bool
-	Thinking bool
-	Effort   bool
-	Cost     bool
+	MCP           bool
+	Thinking      bool
+	Effort        bool
+	Cost          bool
+	TokenCounting bool
 }
 
 type Request struct {
@@ -350,6 +367,8 @@ func (s *Set) Close() error
 func (s *Set) Dir() string
 func (s *Set) Tools() ([]nacelle.Tool, error)    // everything, honouring Config.AllowBash
 func (s *Set) ReadOnly() ([]nacelle.Tool, error) // read, find, search — nothing that can write
+
+func Mycelium() ([]nacelle.Tool, error)
 ```
 
 `Tools()` returns: `read_file`, `write_file`, `edit_file` (exact-match replace, refuses an
@@ -357,6 +376,11 @@ ambiguous or absent match), `find_files` (glob), `search_files` (grep), and — 
 `AllowBash` — `run_command`. No tool takes a `path`, `cwd` or `root` argument the model could
 nominate itself; see [architecture.md](architecture.md#the-tool-call-loop) for why that
 specific restriction is load-bearing (CVE-2025-59532).
+
+`Mycelium()` is independent of `Set` — no root, no config — and returns `list_flows`, `run_flow`
+and `search_memory` when the `mycelium` binary is on `PATH`, or `nil, nil` when it is not. Each
+shells out via `exec.CommandContext` with argv arguments, never a shell string, so nothing the
+model puts in a flow name or a search query reaches a shell to be interpreted.
 
 ## `tui`
 
