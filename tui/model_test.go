@@ -10,11 +10,24 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/FacileStudio/nacelle"
+	"github.com/charmbracelet/x/ansi"
 )
+
+// visible is a rendered screen with the styling stripped, which is what a
+// test checking for words rather than colours wants: markdown rendering wraps
+// a paragraph in a colour escape per line, and a literal check for a phrase
+// spanning two of those lines never finds it in the raw ANSI.
+func visible(screen string) string { return ansi.Strip(screen) }
 
 // spoken is the transcript without the opening banner, which every model has
 // and no test about what was said cares about.
-func spoken(m *model) []string { return m.transcript[1:] }
+func spoken(m *model) []string {
+	said := make([]string, 0, len(m.transcript))
+	for _, e := range m.transcript[1:] {
+		said = append(said, e.text)
+	}
+	return said
+}
 
 // sized is a model with a window, because everything that renders needs one.
 func sized() *model {
@@ -50,7 +63,7 @@ func TestAFinishedAnswerJoinsTheConversation(t *testing.T) {
 	if len(m.conversation) != 1 {
 		t.Fatalf("conversation = %v, want the answer appended", m.conversation)
 	}
-	if !m.conversation[0].Assistant || m.conversation[0].Text != "an answer" {
+	if m.conversation[0].Role != nacelle.RoleAssistant || said(m.conversation[0]) != "an answer" {
 		t.Errorf("message = %+v, want the assistant's answer", m.conversation[0])
 	}
 	if m.run.busy {
@@ -138,7 +151,7 @@ func TestAFinishedAnswerStaysOnScreen(t *testing.T) {
 	m.absorb(nacelle.Event{Kind: nacelle.KindText, Text: "the whole answer"})
 	m.settle()
 
-	if !strings.Contains(m.viewport.View(), "the whole answer") {
+	if !strings.Contains(visible(m.viewport.View()), "the whole answer") {
 		t.Errorf("viewport = %q, want the finished answer still visible", m.viewport.View())
 	}
 }

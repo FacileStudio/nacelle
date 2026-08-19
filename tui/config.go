@@ -115,7 +115,7 @@ func load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("reading %s: %w", path, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	decoder := yaml.NewDecoder(file)
 	decoder.KnownFields(true)

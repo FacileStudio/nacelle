@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
 
 	"github.com/FacileStudio/nacelle"
 )
@@ -30,9 +31,12 @@ type model struct {
 	viewport viewport.Model
 	prompt   textinput.Model
 
-	transcript   []string
+	transcript   []entry
 	conversation []nacelle.Message
 	spent        nacelle.Usage
+
+	theme  palette
+	pretty *glamour.TermRenderer
 
 	run inflight
 }
@@ -59,6 +63,8 @@ type inflight struct {
 	stop        nacelle.Stop
 	interrupted time.Time
 	busy        bool
+	asked       []nacelle.Part
+	answered    []nacelle.Part
 }
 
 // newModel builds the client. The banner names the backend and model, so which
@@ -73,16 +79,19 @@ func newModel(agent *nacelle.Agent, banner string) *model {
 
 	view := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 
-	return &model{
-		agent:      agent,
-		viewport:   view,
-		prompt:     prompt,
-		transcript: []string{banner},
-		run:        inflight{cancel: func() {}},
+	m := &model{
+		agent:    agent,
+		viewport: view,
+		prompt:   prompt,
+		theme:    themed(true),
+		run:      inflight{cancel: func() {}},
 	}
+	m.pretty = prettier(m.theme.markdown, m.viewport.Width())
+	m.say(fromClient, banner)
+	return m
 }
 
-func (m *model) Init() tea.Cmd { return textinput.Blink }
+func (m *model) Init() tea.Cmd { return tea.Batch(textinput.Blink, tea.RequestBackgroundColor) }
 
 // Update routes each message to the one place that owns it. The cases stay
 // thin on purpose: everything that changes more than one field is a method, so
@@ -95,6 +104,10 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if handled, cmd := m.key(message); handled {
 			return m, cmd
 		}
+	case tea.BackgroundColorMsg:
+		m.theme = themed(message.IsDark())
+		m.restyle()
+		return m, nil
 	case result:
 		return m, m.consume(message)
 	case finished:
@@ -112,12 +125,12 @@ func (m *model) resize(size tea.WindowSizeMsg) tea.Cmd {
 	m.viewport.SetWidth(size.Width)
 	m.prompt.SetWidth(size.Width)
 	m.viewport.SetHeight(max(size.Height-2, 1))
-	m.render()
+	m.restyle()
 	return nil
 }
 
 // key handles this client's bindings, reporting whether it consumed the press.
-// Anything else belongs to the prompt.
+// Anything the scroller does not claim either belongs to the prompt.
 //
 // Ctrl+C cancels a run in flight and only quits when there is nothing to
 // cancel, so a long answer can be abandoned without losing the session. The
@@ -146,7 +159,7 @@ func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 	case "enter":
 		return true, m.ask()
 	}
-	return false, nil
+	return m.scroll(press), nil
 }
 
 // ask sends whatever is in the prompt, unless a run is already going.
@@ -164,8 +177,9 @@ func (m *model) ask() tea.Cmd {
 	m.run.stop = ""
 	m.run.usage = nacelle.Usage{}
 	m.run.interrupted = time.Time{}
-	m.say("you", question)
-	m.conversation = append(m.conversation, nacelle.Message{Text: question})
+	m.run.asked, m.run.answered = nil, nil
+	m.say(fromReader, question)
+	m.conversation = append(m.conversation, nacelle.UserText(question))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.run.cancel = cancel
@@ -182,9 +196,10 @@ func (m *model) ask() tea.Cmd {
 func (m *model) consume(next result) tea.Cmd {
 	if next.err != nil {
 		m.flush()
-		m.say("error", next.err.Error())
+		m.say(fromFailure, next.err.Error())
 		return waitFor(m.run.results)
 	}
+	m.record(next.event)
 	m.absorb(next.event)
 	m.render()
 	return waitFor(m.run.results)
@@ -200,7 +215,9 @@ func (m *model) settle() tea.Cmd {
 	m.run.cancel()
 	m.run.busy = false
 
-	m.flush()
+	m.closeResults()
+	m.dropUnanswered()
+	m.closeTurn(m.run.stop)
 	m.spent = m.spent.Add(m.run.usage)
 	m.run.usage = nacelle.Usage{}
 
