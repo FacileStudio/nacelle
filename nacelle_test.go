@@ -203,3 +203,20 @@ func TestUsageAccumulates(t *testing.T) {
 		t.Errorf("total = %d, want 28", sum.Total())
 	}
 }
+
+// A write is not a hit. Counting CacheCreationTokens as attempted-but-missed
+// would report a low hit rate on a run's very first turn, when every prefix
+// is written and none has had the chance to be read back yet.
+func TestCacheHitRateExcludesWritesFromTheDenominator(t *testing.T) {
+	usage := nacelle.Usage{InputTokens: 50, CacheReadTokens: 50, CacheCreationTokens: 900}
+	if rate := usage.CacheHitRate(); rate != 0.5 {
+		t.Errorf("rate = %v, want 0.5 — the 900 written tokens should not count against it", rate)
+	}
+}
+
+// No cacheable input at all is not a miss; there was nothing to hit.
+func TestCacheHitRateIsZeroWithNothingToHit(t *testing.T) {
+	if rate := (nacelle.Usage{}).CacheHitRate(); rate != 0 {
+		t.Errorf("rate = %v, want 0 rather than a divide-by-zero", rate)
+	}
+}

@@ -184,3 +184,19 @@ func (u Usage) Add(other Usage) Usage {
 func (u Usage) Total() int64 {
 	return u.InputTokens + u.OutputTokens + u.CacheReadTokens + u.CacheCreationTokens
 }
+
+// CacheHitRate is the share of input this run read from cache rather than
+// paid full price for, from 0 to 1.
+//
+// It excludes CacheCreationTokens from the denominator on purpose: a write is
+// not a hit, and counting it as attempted-but-missed would understate the
+// rate on a run's first turn, when every prefix is written and none can have
+// been read yet. Zero on a run with no cacheable input at all — that is not
+// a miss, there was nothing to hit.
+func (u Usage) CacheHitRate() float64 {
+	eligible := u.InputTokens + u.CacheReadTokens
+	if eligible == 0 {
+		return 0
+	}
+	return float64(u.CacheReadTokens) / float64(eligible)
+}
