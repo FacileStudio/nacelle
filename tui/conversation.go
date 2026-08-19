@@ -35,6 +35,10 @@ func (m *model) record(event nacelle.Event) {
 			Finished: true,
 		})
 	case nacelle.KindToolResult:
+		if event.Tool.Discarded {
+			m.forgetAsked(event.Tool.ID)
+			return
+		}
 		m.closeTurn("")
 		m.run.answered = append(m.run.answered, nacelle.ToolResult{
 			ID:     event.Tool.ID,
@@ -43,6 +47,24 @@ func (m *model) record(event nacelle.Event) {
 			Failed: event.Tool.Err != nil,
 		})
 	}
+}
+
+// forgetAsked drops one call from the turn being built, as if the model had
+// never made it.
+//
+// This is what a Discarded result means: an attempt that produced the call
+// was superseded before it ran, and the backend that discarded it never
+// replays it either — see anthropic/unanswered.go's discard. Closing the
+// turn here the ordinary way would fabricate history the model never
+// actually has: a call it never made, answered by an error it never saw.
+func (m *model) forgetAsked(id string) {
+	kept := m.run.asked[:0]
+	for _, call := range m.run.asked {
+		if part, ok := call.(nacelle.ToolCall); !ok || part.ID != id {
+			kept = append(kept, call)
+		}
+	}
+	m.run.asked = kept
 }
 
 // closeResults commits the tool results collected since the last turn.

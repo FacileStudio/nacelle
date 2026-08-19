@@ -119,6 +119,54 @@ func TestTheCallAndItsResultKeepTheSameID(t *testing.T) {
 	}
 }
 
+// toolIDs is every id a conversation's tool calls and tool results carry,
+// tagged by which of the two it came from — "call:x" or "result:x" — so a
+// test can check both presence and absence without unpacking parts by hand.
+func toolIDs(conversation []nacelle.Message) []string {
+	var ids []string
+	for _, message := range conversation {
+		for _, part := range message.Parts {
+			switch part := part.(type) {
+			case nacelle.ToolCall:
+				ids = append(ids, "call:"+part.ID)
+			case nacelle.ToolResult:
+				ids = append(ids, "result:"+part.ID)
+			}
+		}
+	}
+	return ids
+}
+
+// A Discarded result means the call it closes never ran at all: an attempt
+// that produced it was superseded before the backend could execute it (see
+// anthropic/unanswered.go's discard, for a fallback block mid-turn). Anthropic's
+// own runner never replays that call, so neither should a conversation this
+// client rebuilds from the stream — replaying it would tell the model it made
+// a call, and got an error, that in reality never happened.
+func TestADiscardedCallIsNeverReplayed(t *testing.T) {
+	m := using(t)
+	m.record(nacelle.Event{Kind: nacelle.KindToolResult, Tool: &nacelle.ToolEvent{
+		ID: "call_1", Name: "read_file", Err: errors.New("refused and retried"), Discarded: true,
+	}})
+	m.record(nacelle.Event{Kind: nacelle.KindToolCall, Tool: &nacelle.ToolEvent{
+		ID: "call_2", Name: "read_file", Input: `{"path":"go.sum"}`,
+	}})
+	m.record(nacelle.Event{Kind: nacelle.KindToolResult, Tool: &nacelle.ToolEvent{
+		ID: "call_2", Name: "read_file", Result: "the lockfile",
+	}})
+	m.record(nacelle.Event{Kind: nacelle.KindText, Text: "it is the nacelle module"})
+	m.absorb(nacelle.Event{Kind: nacelle.KindText, Text: "it is the nacelle module"})
+	m.settle()
+
+	ids := strings.Join(toolIDs(m.conversation), ",")
+	if strings.Contains(ids, "call_1") {
+		t.Fatalf("conversation = %+v, want the discarded call left out entirely", m.conversation)
+	}
+	if !strings.Contains(ids, "call:call_2") || !strings.Contains(ids, "result:call_2") {
+		t.Errorf("conversation = %+v, want the real call and its result both kept", m.conversation)
+	}
+}
+
 // A call nothing answered is what an abandoned run and a capped run both leave
 // behind, and every provider rejects a conversation carrying one. The turn has
 // to go back without it.

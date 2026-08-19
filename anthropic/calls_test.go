@@ -99,6 +99,9 @@ func TestAFallbackDiscardsTheCallsBeforeIt(t *testing.T) {
 	if len(discarded) != 1 || discarded[0].Tool.ID != "refused" || discarded[0].Tool.Err == nil {
 		t.Fatalf("the fallback emitted %+v, want the refused call closed with an error", discarded)
 	}
+	if !discarded[0].Tool.Discarded {
+		t.Errorf("close for %+v was not marked Discarded, so a consumer would replay a call that never ran", discarded[0].Tool)
+	}
 	call, _ := pending.take("echo", []byte(`{"text":"same"}`))
 	if call.ID != "retried" {
 		t.Errorf("call = %+v, want the block after the fallback; the skipped one was still registered", call)
