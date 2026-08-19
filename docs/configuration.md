@@ -1,0 +1,97 @@
+# nacelle — Configuration
+
+Every field the core `Config` reads, then the TUI's own settings layer — a separate thing,
+with its own precedence order — and the traps in each.
+
+## `nacelle.Config`
+
+The core reads nothing from the environment or from disk. Every field is passed in the struct
+literal a consumer builds.
+
+| Field | Default | What it does |
+|---|---|---|
+| `Backend` | — required | The model this agent runs on. No default: a package that picks one for you is a package that hides the most consequential decision in the configuration |
+| `System` | — required | The system prompt. Empty is refused rather than defaulted — an agent with no system prompt is a general-purpose assistant wearing a product's name |
+| `Effort` | the backend's own default | `low`, `medium`, `high`, `xhigh`, `max` |
+| `Thinking` | `false` | Stream the model's reasoning as `KindThinking`. Off by default, matching the APIs: the raw chain of thought is never returned and a readable summary is opt-in |
+| `MaxTokens` | `DefaultMaxTokens` (32000) | Per-turn output ceiling. Generous on purpose — every request is streamed, so a large ceiling costs nothing in latency, while a small one truncates an answer mid-sentence and buys a retry |
+| `MaxIterations` | `0` (no cap) | How many times the model may be asked. A cap is only safe when every tool is read-only and cheap; reaching it ends the run with `Stop: StopIterations`, not a failure |
+| `Tools` | `nil` | Tools the model may call in this process |
+| `MCP` | `nil` | MCP servers the model may call tools on. Only `anthropic` can reach them — see [architecture.md](architecture.md#capabilities) |
+| `Logger` | `slog.Default()` | Receives the few things worth recording that are not events — retry attempts, mainly |
+
+`Backend`, `Thinking`, `Effort` and `MCP` are all checked against the chosen backend's
+`Capabilities` at construction; a config asking for something the backend cannot do is refused
+with an `*Unsupported` error rather than silently running with less.
+
+## `anthropic.Config`
+
+| Field | Default | What it does |
+|---|---|---|
+| `Client` | built from the environment | Set to share a client, point at a proxy, or hand a test a stub transport |
+| `Model` | `DefaultModel` (`claude-opus-5`) | — |
+
+## `openrouter.Config`
+
+| Field | Default | What it does |
+|---|---|---|
+| `APIKey` | `OPENROUTER_API_KEY` | — |
+| `Model` | — required | An OpenRouter model slug, e.g. `anthropic/claude-opus-5`. Required: OpenRouter fronts hundreds of models and a default would be this package choosing the one thing the caller came here to choose |
+| `BaseURL` | `DefaultBaseURL` | Point at a compatible gateway or a recording proxy in tests |
+| `Referer`, `Title` | — | Attribution only — `HTTP-Referer` and `X-OpenRouter-Title`. Neither affects the answer; without `Referer` the usage simply does not appear against an app |
+| `Provider` | `nil` | OpenRouter's provider-routing object, passed through untouched. Worth setting `require_parameters: true` when tool calling matters — it keeps the request away from providers that would drop the tool schema |
+| `Options` | `nil` | Extra request options for the underlying client |
+
+## `tools.Config`
+
+| Field | Default | What it does |
+|---|---|---|
+| `Root` | — required | The directory every tool is confined to, through `os.Root` |
+| `AllowBash` | `false` | Mounts the command tool. Not a limit that can be tuned into safety — running commands is either something this agent may do or it is not |
+| `CommandEnv` | `PATH` + `HOME` only | The process environment is never inherited — it is where a service keeps the credentials a model must not read |
+| `CommandTimeout` | `DefaultCommandTimeout` (2 min) | A command outliving it is killed with its children |
+| `MaxOutputBytes` | `DefaultMaxOutputBytes` (64 KiB) | Caps what one tool call may return — output stays in the context window for the rest of the conversation |
+| `MaxReadBytes` | `DefaultMaxReadBytes` (48 KiB) | Caps a single file read, below the output cap so a read that hit the limit still leaves room for the notice saying so |
+
+## The TUI's settings layer
+
+`tui/` is a separate settings problem from the core, and deliberately does not share a
+mechanism with it: **the library must never read configuration from disk or environment.** A
+`nacelle` package that read `~/.nacelle.yml` would let a file on a *different* machine's disk
+change a headless consumer's behaviour, the way Bubble Tea's own config never reaches past the
+program that imports it.
+
+### Precedence
+
+**Flag beats environment beats file beats default**, resolved in one function
+(`settings()` in `tui/config.go`) and nowhere else. The suite has already paid for the
+alternative once: a CLI that read its environment inside one code branch and its file inside
+another turned what its README called "overrides" into two mutually exclusive modes nobody
+could tell apart.
+
+| Layer | Source | Notes |
+|---|---|---|
+| Flags | `-backend`, `-model`, `-effort`, `-root`, `-system`, `-bash`, `-thinking`, `-max-iterations` | Only flags actually **typed** are collected, via `flag.Visit` — Go's `flag` package cannot otherwise tell a flag left alone from one passed its own default value |
+| Environment | `NACELLE_BACKEND`, `NACELLE_MODEL`, `NACELLE_EFFORT`, `NACELLE_ROOT`, `NACELLE_SYSTEM`, `NACELLE_BASH`, `NACELLE_THINKING`, `NACELLE_MAX_ITERATIONS` | A misspelt boolean (`NACELLE_BASH=yez`) is treated as unmentioned, not as `false`, and falls through to the layer below |
+| File | `~/.nacelle.yml` | Preferences only, **no credentials** — those already have two homes: the environment, and the Anthropic SDK's own profile. `KnownFields(true)`: an unrecognised key (`max_iteration:`, one letter short) is refused rather than silently ignored |
+| Defaults | — | `backend: anthropic`, `root: .`, `bash: false`, `thinking: false`, `max_iterations: 40` |
+
+### `~/.nacelle.yml`
+
+```yaml
+backend: anthropic
+model: claude-opus-5
+effort: high
+root: .
+system: You are a terminal coding assistant.
+bash: true
+thinking: true
+max_iterations: 40
+```
+
+Every field is optional. A missing file is not an error — most people never write one — but an
+unreadable or malformed one is: a config silently ignored is worse than no config, because the
+setting carefully written is simply not in effect and nothing says so.
+
+**No per-project `./.nacelle.yml` yet.** A second precedence layer before the first has real
+users is a layer nobody has asked for the shape of.

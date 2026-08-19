@@ -45,6 +45,17 @@ A backend importing `nacelle` and `nacelle/mcp` gets the loop and nothing else. 
 `sandbox/` are separate Go modules for the same reason `tronc/migrate` and `tronc/testdb`
 are: an import should not cost you a dependency you will never call.
 
+## Documentation
+
+| Doc | What's in it |
+|---|---|
+| [Architecture](docs/architecture.md) | The `Backend` seam, the event stream, the `Message` union, retry, caching |
+| [Configuration](docs/configuration.md) | Every `Config` field, the TUI's settings layer, and precedence |
+| [Development](docs/development.md) | Local setup, the quality gate, CI, versioning |
+| [API](docs/api.md) | Every exported symbol, package by package |
+
+Release history: [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Core shape
 
 ```go
@@ -324,8 +335,9 @@ The ordered version, with exact files and exit criteria, is in [`ROADMAP.md`](RO
 
 ## Gate
 
-`sh scripts/check.sh` — gofmt, vet, test. `filet check .` on top, and it is expected to be
-silent: the loop was refactored to satisfy it rather than the other way round.
+`sh scripts/check.sh` — gofmt, vet, `-race` test, `golangci-lint`, every module. `filet check .`
+on top, and it is expected to be silent: the loop was refactored to satisfy it rather than the
+other way round. CI runs the same gate on push and pull request.
 
 ## Licence
 
