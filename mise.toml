@@ -1,13 +1,16 @@
+# 1.26.4 because tui/ needs it: Bubble Tea v2 declares that floor, and a
+# nested module may sit above the root's. The root stays on 1.25 so the
+# documented floor for a backend importing the loop stays honest.
 [tools]
-go = "1.25"
+go = "1.26.4"
 
 [tasks.check]
 description = "Run the full quality gate: gofmt, vet, test"
 run = "sh ./scripts/check.sh"
 
 [tasks.test]
-description = "Run the tests only"
-run = "go test ./..."
+description = "Run the tests only, every module included"
+run = "go test ./... && go -C tui test ./..."
 
 [tasks.format]
 description = "Format the Go sources in place"

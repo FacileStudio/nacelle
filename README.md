@@ -8,9 +8,9 @@ An agent is a loop around a model with tools attached. That loop is about two hu
 and it gets rewritten in every project that needs one, slightly differently, with a slightly
 different bug in the tool-result handling. `nacelle` is the single version.
 
-> **Status: two backends and the local tool set work; nothing consumes them yet.** Anthropic,
-> OpenRouter, `tools/`, and per-turn usage are implemented and tested. `tui/` and `sandbox/`
-> are not written. Untagged — the API moves until Kori has used it.
+> **Status: it has its first consumer.** Both backends, `tools/`, retry, prompt caching and
+> per-turn usage are implemented and tested, and `tui/` runs on them. `sandbox/` is not
+> written. Untagged — the API moves until Kori has used it too.
 
 ## Who it is for
 
@@ -37,7 +37,7 @@ nacelle/                 core: Agent, Backend seam, events, tools, usage   [buil
   openrouter/            backend: hand-rolled loop, 400+ models, real cost [built]
   mcp/                   MCP server connections and credentials            [built]
   tools/                 local tool set: read, write, edit, find, search, run [built]
-  tui/        (submodule) terminal client — Bubble Tea lands here and nowhere else
+  tui/        (submodule) terminal client — Bubble Tea lands here and nowhere else [built]
   sandbox/    (submodule) container and microVM execution for Atelier
 ```
 
@@ -230,6 +230,30 @@ Four things that cost time and are not obvious from the sample code:
 models require the sequence to match what they produced — a tool loop that drops it loses the
 model's train of thought exactly when it is waiting on a tool result.
 
+## The terminal client
+
+```sh
+go run ./tui -root . -bash
+go run ./tui -backend openrouter -model anthropic/claude-opus-5
+```
+
+`tui/` is a separate Go module, so importing `nacelle` never costs you Bubble Tea. It is the
+SDK's first consumer and that is its job: a terminal exercises every event kind a backend can
+produce — text, reasoning, a tool starting, a tool finishing, what a turn cost — while someone
+is watching, which is more of the contract than a headless caller touches.
+
+It is deliberately small. Sessions, profiles, themes and panes are what a product grows, and
+none of them test the API. The point is to find where the API is annoying before three
+consumers depend on it — and it has already found things:
+
+- **`Message` is text and a role, so a tool call cannot be replayed to the model.** The client
+  keeps the answer and drops the tool history, because there is nowhere to put it.
+- **`openrouter` never emits `KindToolCall`**, so on that backend a tool runs invisibly.
+- **`anthropic` emits `KindToolResult` with an empty `Tool.ID`**, so calls and results cannot be
+  paired by id the way `event.go` says they can.
+
+None of those are client bugs and none are fixed here. They are what the first consumer was for.
+
 ## Not a port of `pi`
 
 `pi` ([`earendil-works/pi`](https://github.com/earendil-works/pi), MIT) is the Node coding agent
@@ -256,8 +280,9 @@ someone who put an agent in a box before us. Take ideas, cite them, write our ow
 1. ~~The gate, the core loop, `mcp/`, `tools/`, and both backends.~~ Done.
 2. Consume it from Kori. That is the first real test of the API, and the point at which it
    gets tagged `v0.1.0`. Expect the API to move before then.
-3. `tui/` and `sandbox/`, driven by the `pi` replacement and Atelier respectively — and by
-   what they actually turn out to need, not by this list.
+3. ~~`tui/`, at floor scope.~~ Done, and it is already reporting API problems.
+4. Widen `Message` so a conversation can carry tool calls, then `sandbox/` for Atelier —
+   driven by what they actually turn out to need, not by this list.
 
 ## Gate
 

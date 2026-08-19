@@ -5,13 +5,20 @@
 #   sh scripts/check.sh          gofmt + vet + test
 #   sh scripts/check.sh --format rewrite Go sources in place
 #
-# nacelle is a library: there is no client half, so this is the whole gate.
-# It deliberately depends on nothing but a `go`, and is NOT invoked through
+# There is no client half to build, so this is the whole gate. It deliberately
+# depends on nothing but a `go`, and is NOT invoked through
 # mise: `mise run` resolves every tool in the merged config before running any
 # task body, so one broken tool in a global config would take the gate down
 # with it.
 
 set -eu
+
+# Nested modules, each with its own go.mod. Every `./...` below stops at their
+# directory boundary, so they need naming explicitly or they get no gate at all
+# and the run still ends in "ok". `gofmt -l .` is the exception: it is a plain
+# file walk that knows nothing of modules, so it already covers them. Keep this
+# in step with the go.mod files.
+NESTED="tui"
 
 mode="all"
 case "${1:-}" in
@@ -44,18 +51,34 @@ if [ "$mode" = "format" ]; then
   exit 0
 fi
 
+# Failures accumulate rather than aborting. With more than one module, stopping
+# at the first one hides half the report, and the second half is the half
+# nobody remembers to re-run.
+status=0
+
 echo "==> gofmt"
 unformatted="$("$GOFMT" -l .)"
 if [ -n "$unformatted" ]; then
   echo "gofmt: the following files are not formatted (run 'sh scripts/check.sh --format'):"
   echo "$unformatted"
-  exit 1
+  status=1
 fi
 
 echo "==> go vet"
-"$GO" vet ./...
+"$GO" vet ./... || status=1
+for module in $NESTED; do
+  ("$GO" -C "$module" vet ./...) || status=1
+done
 
 echo "==> go test"
-"$GO" test ./...
+"$GO" test ./... || status=1
+for module in $NESTED; do
+  ("$GO" -C "$module" test ./...) || status=1
+done
+
+if [ "$status" -ne 0 ]; then
+  echo "check failed"
+  exit "$status"
+fi
 
 echo "==> ok"

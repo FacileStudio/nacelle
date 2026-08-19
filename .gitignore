@@ -2,3 +2,5 @@
 *.out
 /dist/
 bin/
+go.work.sum
+tui/tui
