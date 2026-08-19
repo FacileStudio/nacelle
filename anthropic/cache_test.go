@@ -16,7 +16,7 @@ import (
 func TestTheStablePrefixIsCachedWhenSomethingWillReadIt(t *testing.T) {
 	amortising := map[string]nacelle.Request{
 		"a run with tools":       {System: "s", MaxTokens: 1, Tools: []nacelle.Tool{echoTool(t)}},
-		"a conversation resumed": {System: "s", MaxTokens: 1, Messages: []nacelle.Message{{Text: "again"}}},
+		"a conversation resumed": {System: "s", MaxTokens: 1, Messages: []nacelle.Message{nacelle.UserText("again")}},
 	}
 	for name, request := range amortising {
 		if got := New(Config{}).params(request).CacheControl; got != sdk.NewBetaCacheControlEphemeralParam() {

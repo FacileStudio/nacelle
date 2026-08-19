@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"reflect"
 	"testing"
 
 	"github.com/FacileStudio/nacelle"
@@ -113,7 +114,7 @@ func TestTheRequestReachesTheBackendWithDefaultsFilled(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	for range agent.Stream(context.Background(), []nacelle.Message{{Text: "hi"}}) {
+	for range agent.Stream(context.Background(), []nacelle.Message{nacelle.UserText("hi")}) {
 	}
 
 	if backend.received.System != "be useful" {
@@ -122,7 +123,7 @@ func TestTheRequestReachesTheBackendWithDefaultsFilled(t *testing.T) {
 	if backend.received.MaxTokens != nacelle.DefaultMaxTokens {
 		t.Errorf("max tokens = %d, want the default filled in", backend.received.MaxTokens)
 	}
-	if len(backend.received.Messages) != 1 || backend.received.Messages[0].Text != "hi" {
+	if len(backend.received.Messages) != 1 || !reflect.DeepEqual(backend.received.Messages[0], nacelle.UserText("hi")) {
 		t.Errorf("messages = %+v, want the conversation passed through", backend.received.Messages)
 	}
 }

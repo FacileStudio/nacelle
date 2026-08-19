@@ -72,10 +72,3 @@ type Request struct {
 	MaxTokens     int64
 	MaxIterations int
 }
-
-// Message is one turn of the conversation so far.
-type Message struct {
-	// Assistant marks a message the model produced rather than the user.
-	Assistant bool
-	Text      string
-}

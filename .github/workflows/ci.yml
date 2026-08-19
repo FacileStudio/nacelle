@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # The root module, on the oldest Go it claims to run on. Pinning 1.25 is what
+  # keeps the floor in go.mod honest: build the library only on the newer
+  # toolchain the TUI needs, and a 1.26-only construct lands in the SDK without
+  # anyone noticing until a consumer on 1.25 cannot compile it. gofmt is a plain
+  # file walk that knows nothing of modules, so that step covers tui/ too.
+  #
+  # GOWORK and GOTOOLCHAIN are both off, for the same reason: go.work asks for
+  # 1.26.4, so with the workspace on there is nothing left to pin. Go would
+  # fetch 1.26.4 to satisfy it and the job would test the newer toolchain while
+  # reporting the older one. Off is also what a stranger gets — `go get
+  # github.com/FacileStudio/nacelle` reads go.mod, never the workspace file
+  # sitting next to it.
+  check:
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: "off"
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: gofmt -l . | tee /dev/stderr | (! read)
+      - run: go vet ./...
+      - run: go test -race ./...
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.12.2
+
+  # The nested modules. `./...` in the job above stops at their directory
+  # boundary, and they do not share the root's Go floor: Bubble Tea v2 declares
+  # 1.26.4, which is the entire reason tui/ is a module of its own.
+  #
+  # GOWORK is off here for a second reason as well. With the workspace on, every
+  # import is satisfied from the worktree and a stale require in tui/go.mod is
+  # invisible — which is how it once sat four commits behind a core it could not
+  # compile against while the gate printed "ok". This job builds what someone
+  # running `go install github.com/FacileStudio/nacelle/tui@latest` would get,
+  # so a breaking change to the core is red here until the core is pushed and
+  # the require bumped. That is the report, not a flaw in it.
+  check-modules:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: tui
+            go: "1.26.4"
+    env:
+      GOWORK: "off"
+      GOTOOLCHAIN: local
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -race ./...
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.12.2
+          working-directory: ${{ matrix.module }}
+          args: --config ../.golangci.yml
