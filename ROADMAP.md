@@ -1,10 +1,12 @@
 # Roadmap
 
-Written 2026-08-19. **B1, B2 and A0-A5 are done** — see the git log. What remains is A6, B3-B5
-and Track C; the closed items are kept below because their reasoning is still the argument for
-not undoing them. A cold-start handoff: everything needed to pick up a track with no
-prior conversation. Ordering lives here; the reasoning behind each item lives in the
-commit that closes it.
+Written 2026-08-19. A cold-start handoff: everything needed to pick up a track with no prior
+conversation. Ordering lives here; the reasoning behind each item lives in the commit that
+closes it.
+
+**Done: B1, B2 and A0-A5.** What remains is **A6**, **B3-B5** and **Track C**. Closed items are
+kept below rather than deleted, because their reasoning is still the argument for not undoing
+them.
 
 ## Where this is
 
@@ -13,15 +15,16 @@ tested. `tui/` runs on them and is the SDK's first consumer. No tag, and `v0.1.0
 gated on Kori — which is itself blocked on Perception's MCP server, a Perception problem.
 **Do not sequence nacelle work around Kori.**
 
-The TUI's first day found that the event contract is partly fiction. That is what Track A
-fixes, and it is the critical path.
+The TUI's first day found that the event contract was partly fiction. A0-A5 fixed that; both
+backends now emit tool calls with pairable ids, report why a run stopped, and agree on what the
+iteration cap means. A6 is what is left of Track A, and it is the critical path.
 
 ## Tracks
 
 **A** is strictly ordered — A6 needs the tool-call IDs A2 restores. **B** depends on
 nothing in A and can run in parallel or in a second session. **C** needs A finished.
 
-Start with **B1 + B2**, then **A0–A5**, then **A6** as its own focused session.
+~~Start with B1 + B2, then A0-A5.~~ Done. **A6 is next, and deserves its own focused session.**
 
 ---
 
