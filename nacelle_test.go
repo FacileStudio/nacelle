@@ -13,15 +13,20 @@ import (
 
 // stub is a backend that records what it was asked and can be told what it
 // supports, so the capability rules are testable without a network.
+//
+// called is separate from received: a zero Request is a valid thing to have
+// received, so it cannot stand in for "was this backend ever reached at all".
 type stub struct {
 	can      nacelle.Capabilities
 	received nacelle.Request
+	called   bool
 }
 
 func (s *stub) Name() string                       { return "stub" }
 func (s *stub) Capabilities() nacelle.Capabilities { return s.can }
 
 func (s *stub) Stream(_ context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error] {
+	s.called = true
 	s.received = request
 	return func(yield func(nacelle.Event, error) bool) {
 		yield(nacelle.Event{Kind: nacelle.KindDone}, nil)
@@ -126,6 +131,64 @@ func TestTheRequestReachesTheBackendWithDefaultsFilled(t *testing.T) {
 	if len(backend.received.Messages) != 1 || !reflect.DeepEqual(backend.received.Messages[0], nacelle.UserText("hi")) {
 		t.Errorf("messages = %+v, want the conversation passed through", backend.received.Messages)
 	}
+}
+
+// A ToolCall only makes sense as the model's own move, and a ToolResult only
+// as an answer to one — so a conversation putting either on the wrong side is
+// refused before either backend ever sees it, rather than sent and left to the
+// two backends to disagree about (one rejects it over the wire, the other
+// drops it in silence).
+func TestAPartOnTheWrongRoleIsRefusedBeforeTheBackendIsCalled(t *testing.T) {
+	toolCallFromTheUser := []nacelle.Message{
+		{Role: nacelle.RoleUser, Parts: []nacelle.Part{
+			nacelle.ToolCall{ID: "1", Name: "search", Finished: true},
+		}},
+	}
+	toolResultFromTheAssistant := []nacelle.Message{
+		{Role: nacelle.RoleAssistant, Parts: []nacelle.Part{
+			nacelle.ToolResult{ID: "1", Name: "search", Result: "done"},
+		}},
+	}
+
+	cases := map[string][]nacelle.Message{
+		"a tool call from the user":        toolCallFromTheUser,
+		"a tool result from the assistant": toolResultFromTheAssistant,
+	}
+
+	for name, conversation := range cases {
+		t.Run(name, func(t *testing.T) { assertRefused(t, conversation) })
+	}
+}
+
+// assertRefused runs one conversation and checks it was rejected before the
+// backend was ever reached.
+func assertRefused(t *testing.T, conversation []nacelle.Message) {
+	t.Helper()
+
+	backend := full()
+	agent, err := nacelle.New(nacelle.Config{Backend: backend, System: "s"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	events, errs := drain(agent.Stream(context.Background(), conversation))
+	if events != 1 || errs != 1 {
+		t.Fatalf("stream produced %d events with %d errors, want exactly one error and nothing else", events, errs)
+	}
+	if backend.called {
+		t.Error("the backend was reached with a conversation the role check should have refused first")
+	}
+}
+
+// drain counts every event and error a stream produces.
+func drain(stream iter.Seq2[nacelle.Event, error]) (events, errs int) {
+	for _, err := range stream {
+		events++
+		if err != nil {
+			errs++
+		}
+	}
+	return events, errs
 }
 
 func TestUsageAccumulates(t *testing.T) {
