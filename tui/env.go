@@ -17,14 +17,16 @@ const EnvPrefix = "NACELLE_"
 // the first.
 func fromEnv() Config {
 	return Config{
-		Backend:       os.Getenv(EnvPrefix + "BACKEND"),
-		Model:         os.Getenv(EnvPrefix + "MODEL"),
-		Effort:        os.Getenv(EnvPrefix + "EFFORT"),
-		Root:          os.Getenv(EnvPrefix + "ROOT"),
-		System:        os.Getenv(EnvPrefix + "SYSTEM"),
-		Bash:          envBool(EnvPrefix + "BASH"),
-		Thinking:      envBool(EnvPrefix + "THINKING"),
-		MaxIterations: envInt(EnvPrefix + "MAX_ITERATIONS"),
+		Backend:        os.Getenv(EnvPrefix + "BACKEND"),
+		Model:          os.Getenv(EnvPrefix + "MODEL"),
+		Effort:         os.Getenv(EnvPrefix + "EFFORT"),
+		Root:           os.Getenv(EnvPrefix + "ROOT"),
+		System:         os.Getenv(EnvPrefix + "SYSTEM"),
+		Bash:           envBool(EnvPrefix + "BASH"),
+		Thinking:       envBool(EnvPrefix + "THINKING"),
+		Jardin:         envBool(EnvPrefix + "JARDIN"),
+		ProjectContext: envBool(EnvPrefix + "PROJECT_CONTEXT"),
+		MaxIterations:  envInt(EnvPrefix + "MAX_ITERATIONS"),
 	}
 }
 

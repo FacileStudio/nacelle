@@ -157,3 +157,36 @@ func TestAnUnresolvableHomeMeansNoConfigFileRatherThanNoProgram(t *testing.T) {
 		t.Errorf("model = %q, want the flag honoured with nowhere to read a file from", config.Model)
 	}
 }
+
+// Unlike Bash, both default on: neither costs anything to ask for when there
+// is nothing to find — no jardin on PATH, no CLAUDE.md or AGENTS.md anywhere
+// above root — so a machine without either is no worse off, and a machine
+// with them benefits without a flag to discover first. The precedence chain
+// itself is already proven generic by the Bash and Thinking tests above;
+// this only has to prove these two default to the right value.
+func TestJardinAndProjectContextDefaultOn(t *testing.T) {
+	fallback := defaults()
+	if !*fallback.Jardin {
+		t.Error("jardin = false, want it on by default")
+	}
+	if !*fallback.ProjectContext {
+		t.Error("project context = false, want it on by default")
+	}
+}
+
+// The same turned-off-is-not-unset guarantee TestATurnedOffToggleIsNotMistakenForAnUnsetOne
+// proves for thinking, checked against a toggle that defaults the other way.
+func TestJardinCanBeTurnedOffByTheFile(t *testing.T) {
+	written(t, "jardin: false\nproject_context: false\n")
+
+	config, err := settings(Config{})
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	if *config.Jardin {
+		t.Error("jardin = true, want the file's false to survive a default that had it on")
+	}
+	if *config.ProjectContext {
+		t.Error("project context = true, want the file's false to survive a default that had it on")
+	}
+}

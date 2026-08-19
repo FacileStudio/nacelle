@@ -23,26 +23,36 @@ const ConfigFile = ".nacelle.yml"
 // it is a file that can never be committed to a dotfiles repo, which is the
 // only reason to want one of these on two machines.
 type Config struct {
-	Backend       string `yaml:"backend"`
-	Model         string `yaml:"model"`
-	Effort        string `yaml:"effort"`
-	Root          string `yaml:"root"`
-	System        string `yaml:"system"`
-	Bash          *bool  `yaml:"bash"`
-	Thinking      *bool  `yaml:"thinking"`
-	MaxIterations *int   `yaml:"max_iterations"`
+	Backend        string `yaml:"backend"`
+	Model          string `yaml:"model"`
+	Effort         string `yaml:"effort"`
+	Root           string `yaml:"root"`
+	System         string `yaml:"system"`
+	Bash           *bool  `yaml:"bash"`
+	Thinking       *bool  `yaml:"thinking"`
+	Jardin         *bool  `yaml:"jardin"`
+	ProjectContext *bool  `yaml:"project_context"`
+	MaxIterations  *int   `yaml:"max_iterations"`
 }
 
 // defaults is the bottom layer, and the only one that answers everything.
+//
+// Jardin and ProjectContext default on, unlike Bash: both fail soft with
+// nothing to show for it when there is nothing to find — no jardin on PATH,
+// no CLAUDE.md or AGENTS.md anywhere above Root — so a machine without either
+// is no worse off for asking, and a machine with them gets the benefit
+// without a flag to discover first.
 func defaults() Config {
-	bash, thinking, iterations := false, false, 40
+	bash, thinking, jardin, projectContext, iterations := false, false, true, true, 40
 	return Config{
-		Backend:       "anthropic",
-		Root:          ".",
-		System:        defaultSystem,
-		Bash:          &bash,
-		Thinking:      &thinking,
-		MaxIterations: &iterations,
+		Backend:        "anthropic",
+		Root:           ".",
+		System:         defaultSystem,
+		Bash:           &bash,
+		Thinking:       &thinking,
+		Jardin:         &jardin,
+		ProjectContext: &projectContext,
+		MaxIterations:  &iterations,
 	}
 }
 
@@ -69,6 +79,12 @@ func (c *Config) merge(over Config) {
 	}
 	if over.Thinking != nil {
 		c.Thinking = over.Thinking
+	}
+	if over.Jardin != nil {
+		c.Jardin = over.Jardin
+	}
+	if over.ProjectContext != nil {
+		c.ProjectContext = over.ProjectContext
 	}
 	if over.MaxIterations != nil {
 		c.MaxIterations = over.MaxIterations

@@ -224,6 +224,8 @@ type silent struct{}
 func (silent) Name() string                       { return "silent" }
 func (silent) Capabilities() nacelle.Capabilities { return nacelle.Capabilities{} }
 
+func (silent) CountTokens(context.Context, nacelle.Request) (int64, error) { return 0, nil }
+
 func (silent) Stream(context.Context, nacelle.Request) iter.Seq2[nacelle.Event, error] {
 	return func(yield func(nacelle.Event, error) bool) {
 		yield(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopEnd}, nil)
