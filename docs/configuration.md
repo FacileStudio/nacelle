@@ -71,19 +71,21 @@ could tell apart.
 
 | Layer | Source | Notes |
 |---|---|---|
-| Flags | `-backend`, `-model`, `-effort`, `-root`, `-system`, `-bash`, `-thinking`, `-jardin`, `-project-context`, `-skills`, `-trust-skills`, `-max-iterations` | Only flags actually **typed** are collected, via `flag.Visit` — Go's `flag` package cannot otherwise tell a flag left alone from one passed its own default value |
-| Environment | `NACELLE_BACKEND`, `NACELLE_MODEL`, `NACELLE_EFFORT`, `NACELLE_ROOT`, `NACELLE_SYSTEM`, `NACELLE_BASH`, `NACELLE_THINKING`, `NACELLE_JARDIN`, `NACELLE_PROJECT_CONTEXT`, `NACELLE_SKILLS`, `NACELLE_TRUST_SKILLS`, `NACELLE_MAX_ITERATIONS` | A misspelt boolean (`NACELLE_BASH=yez`) is treated as unmentioned, not as `false`, and falls through to the layer below |
+| Flags | `-backend`, `-model`, `-effort`, `-root`, `-system`, `-bash`, `-thinking`, `-jardin`, `-project-context`, `-skills`, `-trust-skills`, `-approve-tools`, `-max-iterations` | Only flags actually **typed** are collected, via `flag.Visit` — Go's `flag` package cannot otherwise tell a flag left alone from one passed its own default value |
+| Environment | `NACELLE_BACKEND`, `NACELLE_MODEL`, `NACELLE_EFFORT`, `NACELLE_ROOT`, `NACELLE_SYSTEM`, `NACELLE_BASH`, `NACELLE_THINKING`, `NACELLE_JARDIN`, `NACELLE_PROJECT_CONTEXT`, `NACELLE_SKILLS`, `NACELLE_TRUST_SKILLS`, `NACELLE_APPROVE_TOOLS`, `NACELLE_MAX_ITERATIONS` | A misspelt boolean (`NACELLE_BASH=yez`) is treated as unmentioned, not as `false`, and falls through to the layer below |
 | File | `~/.nacelle.yml` | Preferences only, **no credentials** — those already have two homes: the environment, and the Anthropic SDK's own profile. `KnownFields(true)`: an unrecognised key (`max_iteration:`, one letter short) is refused rather than silently ignored |
-| Defaults | — | `backend: anthropic`, `root: .`, `bash: false`, `thinking: false`, `jardin: true`, `project_context: true`, `skills: true`, `trust_skills: false`, `max_iterations: 40` |
+| Defaults | — | `backend: anthropic`, `root: .`, `bash: false`, `thinking: false`, `jardin: true`, `project_context: true`, `skills: true`, `trust_skills: false`, `approve_tools: false`, `max_iterations: 40` |
 
 `jardin`, `project_context` and `skills` default **on**, unlike `bash`: each fails soft to
 nothing when there is nothing to find — no `jardin` on `PATH`, no `AGENTS.md`/`CLAUDE.md`
 anywhere above `root`, no `~/.agents/skills/` — so a machine without any of them is no worse
-off for asking. `trust_skills` defaults **off**, and that is a different kind of default: a
-project's own `.agents/skills/` can carry instructions to run arbitrary scripts, and
-blanket-trusting whatever a directory happens to contain is a decision only the person running
-this should make. See [Context, skills and jardin tools](#context-skills-and-jardin-tools)
-below.
+off for asking. `trust_skills` and `approve_tools` both default **off**, and for the same
+underlying reason: a project's own `.agents/skills/` can carry instructions to run arbitrary
+scripts, and asking before every tool call is a decision that changes how the client feels to
+use — blanket-trusting a directory, or blanket-interrupting every call, are both decisions only
+the person running this should opt into, not defaults sprung on them. See
+[Context, skills and jardin tools](#context-skills-and-jardin-tools) and
+[Tool approval](#tool-approval) below.
 
 ### `~/.nacelle.yml`
 
@@ -99,6 +101,7 @@ jardin: true
 project_context: true
 skills: true
 trust_skills: false
+approve_tools: false
 max_iterations: 40
 ```
 
@@ -138,3 +141,36 @@ directory — run it once per project, not on every launch.
 **Jardin tools** (`-jardin`, `tools.Jardin`, [api.md](api.md#tools)). `list_flows`, `run_flow`
 and `search_memory`, when the `jardin` binary is on `PATH`. Narrower and more legible than
 reaching the same commands through `run_command`, and available even with `-bash=false`.
+
+## Tool approval
+
+`-approve-tools` (`NACELLE_APPROVE_TOOLS`, `approve_tools`) asks before every tool call runs.
+**Off by default**: a nil `Config.Approve` means the SDK itself runs every call unasked, and
+the TUI's own default matches — nobody gets a behaviour change without opting in.
+
+When on, a call blocks in the status line on `y` (allow this one call), `a` (allow this tool
+for the rest of the session — remembered in memory only, never written to disk, unlike
+`-trust-skills`) or `n` (deny; asked again next time). Asks are serialized to one question at
+a time, because a backend can run several tool calls concurrently within a turn and this
+client has exactly one place to show a question. A pending question is answered or abandoned
+by the same ctrl+c/ctrl+\ that already gets a wedged run's way out — both wait on the run's
+own cancellable context, so cancelling one unblocks the other with no separate mechanism.
+
+A denial is reported on `ToolEvent.Refused`, not as a tool failure — the SDK converts it into
+a normal tool-result error block for the model to see, the same as any other failed call.
+
+## Slash commands
+
+Typing `/` at the start of a line names one of the client's own commands instead of a
+question — none of these reach the model or start a run:
+
+| Command | Does |
+|---|---|
+| `/clear` | Reset the transcript, the conversation sent to the model, and the running cost total. Same client, new session. |
+| `/help` | List the commands above and the keybindings (scrolling, ctrl+c/ctrl+\). |
+| `/quit` | Quit. |
+
+An unrecognised command (a typo like `/clera`) is reported back rather than sent to the model
+as a literal question — the same trade-off every peer client with slash commands makes, on the
+same reasoning: a real question is far less likely to start with a slash than a mistyped
+command is.
