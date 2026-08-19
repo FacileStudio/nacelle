@@ -32,18 +32,28 @@ type Config struct {
 	Thinking       *bool  `yaml:"thinking"`
 	Jardin         *bool  `yaml:"jardin"`
 	ProjectContext *bool  `yaml:"project_context"`
+	Skills         *bool  `yaml:"skills"`
+	TrustSkills    *bool  `yaml:"trust_skills"`
 	MaxIterations  *int   `yaml:"max_iterations"`
 }
 
 // defaults is the bottom layer, and the only one that answers everything.
 //
-// Jardin and ProjectContext default on, unlike Bash: both fail soft with
-// nothing to show for it when there is nothing to find — no jardin on PATH,
-// no CLAUDE.md or AGENTS.md anywhere above Root — so a machine without either
-// is no worse off for asking, and a machine with them gets the benefit
-// without a flag to discover first.
+// Jardin, ProjectContext and Skills default on, unlike Bash: all three fail
+// soft with nothing to show for it when there is nothing to find — no
+// jardin on PATH, no CLAUDE.md or AGENTS.md anywhere above Root, no
+// ~/.agents/skills/ — so a machine without any of them is no worse off for
+// asking, and a machine with them gets the benefit without a flag to
+// discover first.
+//
+// TrustSkills defaults off, and that is not the same reasoning. Loading
+// skills found globally or already trusted is one thing; a project's own
+// .agents/skills/ can carry instructions to run arbitrary scripts, and
+// blanket-trusting whatever a directory happens to contain is a decision
+// only the person running this should make, not a default.
 func defaults() Config {
-	bash, thinking, jardin, projectContext, iterations := false, false, true, true, 40
+	bash, thinking, jardin, projectContext, skills, trustSkills := false, false, true, true, true, false
+	iterations := 40
 	return Config{
 		Backend:        "anthropic",
 		Root:           ".",
@@ -52,6 +62,8 @@ func defaults() Config {
 		Thinking:       &thinking,
 		Jardin:         &jardin,
 		ProjectContext: &projectContext,
+		Skills:         &skills,
+		TrustSkills:    &trustSkills,
 		MaxIterations:  &iterations,
 	}
 }
@@ -59,6 +71,17 @@ func defaults() Config {
 // merge overwrites every setting the layer above actually mentions, and leaves
 // the rest alone.
 func (c *Config) merge(over Config) {
+	c.mergeStrings(over)
+	c.mergeToggles(over)
+	if over.MaxIterations != nil {
+		c.MaxIterations = over.MaxIterations
+	}
+}
+
+// mergeStrings overwrites every string setting over actually mentions. Empty
+// is "not mentioned" for these — none has a meaningful empty value, which is
+// exactly what makes a string safe to use unlike the toggles below.
+func (c *Config) mergeStrings(over Config) {
 	if over.Backend != "" {
 		c.Backend = over.Backend
 	}
@@ -74,6 +97,13 @@ func (c *Config) merge(over Config) {
 	if over.System != "" {
 		c.System = over.System
 	}
+}
+
+// mergeToggles overwrites every *bool setting over actually mentions. These
+// stay pointers rather than joining mergeStrings' plain-value treatment
+// because a layer saying nothing and a layer saying false are different
+// answers a bool cannot tell apart.
+func (c *Config) mergeToggles(over Config) {
 	if over.Bash != nil {
 		c.Bash = over.Bash
 	}
@@ -86,8 +116,11 @@ func (c *Config) merge(over Config) {
 	if over.ProjectContext != nil {
 		c.ProjectContext = over.ProjectContext
 	}
-	if over.MaxIterations != nil {
-		c.MaxIterations = over.MaxIterations
+	if over.Skills != nil {
+		c.Skills = over.Skills
+	}
+	if over.TrustSkills != nil {
+		c.TrustSkills = over.TrustSkills
 	}
 }
 

@@ -26,6 +26,8 @@ func fromEnv() Config {
 		Thinking:       envBool(EnvPrefix + "THINKING"),
 		Jardin:         envBool(EnvPrefix + "JARDIN"),
 		ProjectContext: envBool(EnvPrefix + "PROJECT_CONTEXT"),
+		Skills:         envBool(EnvPrefix + "SKILLS"),
+		TrustSkills:    envBool(EnvPrefix + "TRUST_SKILLS"),
 		MaxIterations:  envInt(EnvPrefix + "MAX_ITERATIONS"),
 	}
 }
