@@ -14,17 +14,23 @@ func Transient(err error) error {
 	if err == nil {
 		return nil
 	}
-	return transient{err}
+	return transient{error: err}
 }
 
 // transient is what Transient returns. It answers a method rather than
 // carrying a bare marker so that a caller with an error type of its own can
 // join the scheme by implementing the same one.
-type transient struct{ error }
+type transient struct {
+	error
+
+	attempt int
+}
 
 func (transient) Retryable() bool { return true }
 
 func (t transient) Unwrap() error { return t.error }
+
+func (t transient) Attempt() int { return t.attempt }
 
 // Retryable reports whether err is worth starting a run again for.
 //
@@ -38,4 +44,32 @@ func Retryable(err error) bool {
 		return known.Retryable()
 	}
 	return errors.Is(err, io.ErrUnexpectedEOF)
+}
+
+// Attempt reports which attempt an error was recorded on, or zero for an error
+// nothing retried.
+//
+// A backend cannot fill this in, because it does not know how many times its
+// stream has been started — only Retry does, and it stamps the number on the
+// failure it finally surfaces. It is exposed so a consumer can say "gave up
+// after three tries" instead of reporting a single anonymous failure, which is
+// the difference between a run that limped and one that sailed through.
+func Attempt(err error) int {
+	var counted interface{ Attempt() int }
+	if errors.As(err, &counted) {
+		return counted.Attempt()
+	}
+	return 0
+}
+
+// onAttempt records which attempt a failure happened on.
+//
+// It refuses anything not already retryable rather than marking it, because
+// the wrapper it returns answers Retryable() true: stamping a bad request
+// would turn a permanent refusal into something the next layer starts over.
+func onAttempt(err error, attempt int) error {
+	if !Retryable(err) {
+		return err
+	}
+	return transient{error: err, attempt: attempt}
 }

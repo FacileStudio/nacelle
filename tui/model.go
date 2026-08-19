@@ -26,6 +26,7 @@ type model struct {
 	results <-chan result
 	cancel  context.CancelFunc
 	usage   nacelle.Usage
+	stop    nacelle.Stop
 	busy    bool
 }
 
@@ -108,6 +109,7 @@ func (m *model) ask() tea.Cmd {
 		return nil
 	}
 	m.prompt.Reset()
+	m.stop = ""
 	m.say("you", question)
 	m.conversation = append(m.conversation, nacelle.Message{Text: question})
 

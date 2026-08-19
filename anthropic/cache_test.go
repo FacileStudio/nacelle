@@ -39,8 +39,8 @@ func TestToolsAreOrderedSoTheCachedPrefixIsStable(t *testing.T) {
 	}
 	alpha, beta := build("alpha"), build("beta")
 
-	forwards := adapt([]nacelle.Tool{alpha, beta}, &nacelle.ToolSink{})
-	backwards := adapt([]nacelle.Tool{beta, alpha}, &nacelle.ToolSink{})
+	forwards := adapt([]nacelle.Tool{alpha, beta}, &nacelle.ToolSink{}, newInvocations())
+	backwards := adapt([]nacelle.Tool{beta, alpha}, &nacelle.ToolSink{}, newInvocations())
 
 	for position := range forwards {
 		if forwards[position].Name() != backwards[position].Name() {

@@ -1,6 +1,8 @@
 # Roadmap
 
-Written 2026-08-19. A cold-start handoff: everything needed to pick up a track with no
+Written 2026-08-19. **B1, B2 and A0-A5 are done** — see the git log. What remains is A6, B3-B5
+and Track C; the closed items are kept below because their reasoning is still the argument for
+not undoing them. A cold-start handoff: everything needed to pick up a track with no
 prior conversation. Ordering lives here; the reasoning behind each item lives in the
 commit that closes it.
 

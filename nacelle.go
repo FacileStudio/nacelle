@@ -73,9 +73,14 @@ type Config struct {
 	// MaxTokens defaults to DefaultMaxTokens.
 	MaxTokens int64
 
-	// MaxIterations caps how many times the model may call tools and be
-	// asked again. Zero means no cap, which is only safe when every tool is
-	// read-only and cheap.
+	// MaxIterations caps how many times the model is asked, so a value of
+	// N permits N requests and the tool rounds between them. Zero means no
+	// cap, which is only safe when every tool is read-only and cheap.
+	//
+	// Reaching it is unfinished work rather than a failure: the run ends
+	// with a KindDone carrying everything it cost and a Stop of
+	// StopIterations. The last turn asked for tools that were never run, so
+	// there is no answer built on them — check Stop before presenting one.
 	MaxIterations int
 
 	// Tools the model may call in this process.

@@ -246,13 +246,17 @@ It is deliberately small. Sessions, profiles, themes and panes are what a produc
 none of them test the API. The point is to find where the API is annoying before three
 consumers depend on it — and it has already found things:
 
-- **`Message` is text and a role, so a tool call cannot be replayed to the model.** The client
-  keeps the answer and drops the tool history, because there is nowhere to put it.
-- **`openrouter` never emits `KindToolCall`**, so on that backend a tool runs invisibly.
-- **`anthropic` emits `KindToolResult` with an empty `Tool.ID`**, so calls and results cannot be
-  paired by id the way `event.go` says they can.
+- ~~`openrouter` never emits `KindToolCall`.~~ Fixed. It also turned out that announcing calls
+  without reporting a failure for an unknown tool would have left an orphan call, so that is
+  closed too.
+- ~~`anthropic` emits `KindToolResult` with an empty `Tool.ID`.~~ Fixed. The SDK never hands a
+  tool its call id, so the pairing is rebuilt from the stream side; see `anthropic/invocation.go`.
+- **`Message` is text and a role, so a tool call cannot be replayed to the model.** Still open,
+  and the largest thing left — the client keeps the answer and drops the tool history, because
+  there is nowhere to put it. Tracked as A6 in [`ROADMAP.md`](ROADMAP.md).
 
-None of those are client bugs and none are fixed here. They are what the first consumer was for.
+Three problems for one week-old client, two of them now closed. That is what a first consumer
+is for.
 
 ## Not a port of `pi`
 

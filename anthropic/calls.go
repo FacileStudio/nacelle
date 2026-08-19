@@ -12,12 +12,19 @@ import (
 // the arguments as JSON fragments, then a stop. Reporting it at the start
 // would mean reporting a call whose input is still empty, so it is held until
 // the block closes and emitted whole.
+//
+// A tracker covers one turn, which is what makes its counter the position of
+// a call within the turn that asked for it. The registry it files finished
+// calls into outlives it, because the runner executes a turn's tools at the
+// start of the next one.
 type callTracker struct {
-	open map[int64]*nacelle.ToolEvent
+	open    map[int64]*nacelle.ToolEvent
+	pending *invocations
+	next    int
 }
 
-func newCallTracker() *callTracker {
-	return &callTracker{open: map[int64]*nacelle.ToolEvent{}}
+func newCallTracker(pending *invocations) *callTracker {
+	return &callTracker{open: map[int64]*nacelle.ToolEvent{}, pending: pending}
 }
 
 // consume maps one raw stream event onto zero or more nacelle events.
@@ -34,14 +41,21 @@ func (c *callTracker) consume(event sdk.BetaRawMessageStreamEventUnion) []nacell
 }
 
 // start records a tool call whose arguments have not arrived yet.
+//
+// The position is taken here rather than at the stop because content blocks
+// open in the order the model wrote them, which is the order Index promises,
+// and it counts calls rather than blocks so that prose or reasoning ahead of
+// the first call does not shift it.
 func (c *callTracker) start(event sdk.BetaRawMessageStreamEventUnion) {
 	if !isToolUse(event.ContentBlock.Type) {
 		return
 	}
 	c.open[event.Index] = &nacelle.ToolEvent{
-		ID:   event.ContentBlock.ID,
-		Name: event.ContentBlock.Name,
+		ID:    event.ContentBlock.ID,
+		Index: c.next,
+		Name:  event.ContentBlock.Name,
 	}
+	c.next++
 }
 
 // delta turns a content fragment into an event, or files it against the tool
@@ -61,13 +75,19 @@ func (c *callTracker) delta(event sdk.BetaRawMessageStreamEventUnion) []nacelle.
 	return nil
 }
 
-// stop closes a tool call and reports it whole.
+// stop closes a tool call, files it so the execution can find its id, and
+// reports it whole.
+//
+// Filing happens at the close because that is the first moment the arguments
+// are complete, and the arguments are half of what identifies the call to the
+// handler that will run it.
 func (c *callTracker) stop(event sdk.BetaRawMessageStreamEventUnion) []nacelle.Event {
 	call, ok := c.open[event.Index]
 	if !ok {
 		return nil
 	}
 	delete(c.open, event.Index)
+	c.pending.record(call)
 	return []nacelle.Event{{Kind: nacelle.KindToolCall, Tool: call}}
 }
 
@@ -87,5 +107,34 @@ func usageOf(usage sdk.BetaMessageDeltaUsage) nacelle.Usage {
 		OutputTokens:        usage.OutputTokens,
 		CacheReadTokens:     usage.CacheReadInputTokens,
 		CacheCreationTokens: usage.CacheCreationInputTokens,
+	}
+}
+
+// stopOf names why a turn ended.
+//
+// Mapping rather than passing the API's string through is what lets a
+// consumer act on the answer being incomplete without learning the provider's
+// vocabulary, and it is why the unrecognised case is StopOther rather than a
+// new name invented per reason: a stop reason this package has never seen is
+// still not an ending anyone should present as a finished answer.
+//
+// stop_sequence joins end_turn because the caller chose the marker the model
+// stopped at, so the text before it is the answer that was asked for.
+// compaction and pause_turn land in StopOther deliberately: neither says the
+// answer is whole, and neither is something a caller can act on today.
+func stopOf(reason sdk.BetaStopReason) nacelle.Stop {
+	switch reason {
+	case sdk.BetaStopReasonEndTurn, sdk.BetaStopReasonStopSequence:
+		return nacelle.StopEnd
+	case sdk.BetaStopReasonToolUse:
+		return nacelle.StopTools
+	case sdk.BetaStopReasonMaxTokens:
+		return nacelle.StopMaxTokens
+	case sdk.BetaStopReasonModelContextWindowExceeded:
+		return nacelle.StopContext
+	case sdk.BetaStopReasonRefusal:
+		return nacelle.StopRefusal
+	default:
+		return nacelle.StopOther
 	}
 }

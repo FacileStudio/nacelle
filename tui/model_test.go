@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"iter"
 	"strings"
 	"testing"
 	"time"
@@ -119,4 +121,81 @@ func TestCtrlCStopsTheRunBeforeItQuits(t *testing.T) {
 	if _, cmd = m.key(press); cmd == nil {
 		t.Error("ctrl+c with nothing running did not quit")
 	}
+}
+
+// A run cut off by the token ceiling arrives as a well-formed stream that
+// simply ends, so the only thing separating a truncated answer from a finished
+// one on screen is this line. "ready" under half a sentence is a lie.
+func TestAnIncompleteRunSaysSoInTheStatusLine(t *testing.T) {
+	incomplete := map[nacelle.Stop]string{
+		nacelle.StopMaxTokens:  "token limit",
+		nacelle.StopContext:    "out of context",
+		nacelle.StopRefusal:    "refused",
+		nacelle.StopIterations: "iteration limit",
+		nacelle.StopOther:      "stopped early",
+	}
+
+	for stop, want := range incomplete {
+		m := sized()
+		m.absorb(nacelle.Event{Kind: nacelle.KindDone, Stop: stop})
+
+		status := m.status()
+		if !strings.Contains(status, want) {
+			t.Errorf("status for %q = %q, want it to mention %q", stop, status, want)
+		}
+		if strings.Contains(status, "ready") {
+			t.Errorf("status for %q = %q, want a truncated run not to read as a finished one", stop, status)
+		}
+	}
+}
+
+// The other half of the same bargain: a run that finished must not be dressed
+// up as a problem, or the warning stops meaning anything.
+func TestAFinishedRunLeavesTheStatusLineAlone(t *testing.T) {
+	m := sized()
+	m.absorb(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopEnd})
+
+	if status := m.status(); !strings.Contains(status, "ready") {
+		t.Errorf("status = %q, want the usual ready line", status)
+	}
+}
+
+// The warning belongs to the run that earned it. Left standing, it would
+// accuse the next answer of being truncated too.
+func TestANewQuestionClearsTheStopFromTheLastRun(t *testing.T) {
+	m := sized()
+	m.agent = answering(t)
+	m.absorb(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopMaxTokens})
+	m.prompt.SetValue("again please")
+	m.ask()
+	defer m.cancel()
+
+	if m.stop != "" {
+		t.Errorf("stop = %q, want the previous run's reason cleared", m.stop)
+	}
+}
+
+// silent is a backend that ends a run without saying anything, which is all a
+// test that only cares about what asking does to the model needs.
+type silent struct{}
+
+func (silent) Name() string                       { return "silent" }
+func (silent) Capabilities() nacelle.Capabilities { return nacelle.Capabilities{} }
+
+func (silent) Stream(context.Context, nacelle.Request) iter.Seq2[nacelle.Event, error] {
+	return func(yield func(nacelle.Event, error) bool) {
+		yield(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopEnd}, nil)
+	}
+}
+
+// answering is an agent that can be asked something. The model dereferences it
+// as soon as a question is sent, so a test that calls ask needs a real one.
+func answering(t *testing.T) *nacelle.Agent {
+	t.Helper()
+
+	agent, err := nacelle.New(nacelle.Config{Backend: silent{}, System: "be quiet"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return agent
 }
