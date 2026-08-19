@@ -9,12 +9,19 @@ import (
 // backoff is how long to wait after the given attempt: Base doubled per
 // failure, capped at Max, minus up to a quarter as jitter.
 //
+// Base is clamped before the doubling begins rather than only inside it. Max
+// is documented to cap the delay however many attempts have failed, and the
+// first attempt doubles nothing, so a Base longer than Max used to be returned
+// whole exactly once — RetryOptions{Base: 30 * time.Second} slept half a
+// minute under the default eight second cap, which is the one delay a caller
+// reading that sentence would never expect.
+//
 // The jitter is the one place this package is deliberately not deterministic.
 // It exists so a fleet of agents rate-limited by the same provider at the same
 // instant does not march back in step, and it changes when a request is sent
 // rather than what is sent, so it cannot move a model's output.
 func (o RetryOptions) backoff(attempt int) time.Duration {
-	delay := o.Base
+	delay := min(o.Base, o.Max)
 	for range attempt - 1 {
 		delay *= 2
 		if delay >= o.Max {

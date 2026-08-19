@@ -76,3 +76,44 @@ data: [DONE]
 		t.Errorf("Retryable(%v) = false, want true", err)
 	}
 }
+
+// The fallback on metadata.error_type exists for the payloads whose code is
+// not a number, and a number-typed decoder failed the whole parse on exactly
+// those — so the branch written for this case never ran, and a rate limit
+// spelled in words classified as permanent.
+func TestAnInBandRateLimitSpelledInWordsIsRetryable(t *testing.T) {
+	const rateLimited = `data: {"id":"g","error":{"code":"rate_limit_exceeded","message":"Rate limit exceeded","metadata":{"error_type":"rate_limit_exceeded"}},"choices":[{"index":0,"delta":{"content":""},"finish_reason":"error"}]}
+
+data: [DONE]
+
+`
+	backend, _ := serve(t, rateLimited)
+
+	err := failure(t, backend)
+	if err == nil {
+		t.Fatal("an in-band rate limit was swallowed")
+	}
+	if !nacelle.Retryable(err) {
+		t.Errorf("Retryable(%v) = false, want true", err)
+	}
+}
+
+// A payload that is not a JSON object carries no code to read, and guessing
+// that an unreadable failure is temporary is how a permanent one becomes a
+// slow permanent one.
+func TestAnUnreadableErrorPayloadFailsClosed(t *testing.T) {
+	const malformed = `data: {"id":"g","error":["rate limited"],"choices":[{"index":0,"delta":{"content":""},"finish_reason":"error"}]}
+
+data: [DONE]
+
+`
+	backend, _ := serve(t, malformed)
+
+	err := failure(t, backend)
+	if err == nil {
+		t.Fatal("an in-band failure this package cannot parse was swallowed")
+	}
+	if nacelle.Retryable(err) {
+		t.Errorf("Retryable(%v) = true, want an unparseable failure treated as permanent", err)
+	}
+}

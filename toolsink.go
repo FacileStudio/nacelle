@@ -1,6 +1,7 @@
 package nacelle
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"slices"
@@ -21,6 +22,13 @@ type ToolSink struct {
 }
 
 // Report records that a tool finished.
+//
+// It takes whatever a backend hands it, an event carrying no ToolEvent
+// included. Refusing one here would be the tidier trust boundary, but there is
+// nowhere to put the refusal: the signature returns nothing, the caller is
+// usually a tool goroutine with no consumer to hand an error to, and dropping
+// the event silently loses a result the model is still waiting on. Drain is
+// written to cope with it instead, which keeps the bad event visible.
 func (s *ToolSink) Report(event Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -47,9 +55,27 @@ func (s *ToolSink) Drain() []Event {
 	drained := s.pending
 	s.pending = nil
 	slices.SortStableFunc(drained, func(a, b Event) int {
-		return a.Tool.Index - b.Tool.Index
+		return cmp.Compare(toolIndex(a), toolIndex(b))
 	})
 	return drained
+}
+
+// toolIndex is where an event sits in the turn that asked for it, and zero for
+// an event carrying no tool at all.
+//
+// Report is exported, so the pointer it parks here belongs to whoever wrote
+// the backend and can be nil. Reading Index straight off it crashed the host
+// from inside a sort comparator, which is both the least debuggable place for
+// a nil dereference and an intermittent one: a single pending event never
+// calls the comparator, so the crash needed two tools to finish between
+// events. Comparing rather than subtracting is the same fix twice over —
+// subtracting two indices overflows for values a provider could in principle
+// send, and there is no reason to hand-roll what cmp does.
+func toolIndex(event Event) int {
+	if event.Tool == nil {
+		return 0
+	}
+	return event.Tool.Index
 }
 
 // Invocation identifies one tool call within the turn that asked for it.

@@ -47,6 +47,13 @@ var errStopped = errors.New("nacelle/openrouter: the consumer stopped ranging")
 // converse runs the ask-and-answer loop until the model stops asking for
 // tools, returning what the run cost and why it ended.
 //
+// The iteration counter is one-based because MaxIterations counts requests,
+// not rounds: N permits N requests and the tool rounds between them, so the
+// Nth turn's tools are the ones nobody asked for. Every reason to stop is
+// decided by refuse before anything is executed, which is the whole point —
+// see guard.go for why a turn's tools can be refused after the model has
+// already asked for them.
+//
 // Reaching MaxIterations ends the run as StopIterations rather than as an
 // error. The model was still working and the caller set the ceiling, so
 // nothing went wrong; failing here would also throw away the accumulated
@@ -62,17 +69,13 @@ func (b *Backend) converse(ctx context.Context, request nacelle.Request, out *em
 	}
 
 	var total nacelle.Usage
-	for iteration := 0; ; iteration++ {
-		if request.MaxIterations > 0 && iteration >= request.MaxIterations {
-			return total, nacelle.StopIterations, nil
-		}
-
+	for iteration := 1; ; iteration++ {
 		turn, err := b.turn(ctx, messages, request, call, &total)
 		if err != nil {
 			return total, nacelle.StopOther, err
 		}
-		if len(turn.calls) == 0 {
-			return total, turn.stop, nil
+		if stop, refused := refuse(turn, iteration, request.MaxIterations); refused {
+			return total, stop, announce(turn.calls, out)
 		}
 
 		messages, err = answer(ctx, messages, turn, call)

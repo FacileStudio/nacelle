@@ -28,12 +28,19 @@ var transientTypes = map[shared.ErrorType]bool{
 // reaching this point either survived that or was never visible to it. The
 // second case is the one that matters — an error event arriving mid-stream is
 // delivered on a response that was a success when its headers were written.
+//
+// Any 5xx counts, whatever the body said. The typed set is the API's own
+// vocabulary and it is right about the API, but the API is not the only thing
+// that answers: a proxy, a gateway or a load balancer in between writes its
+// own body, and a 502 carrying no type at all is exactly the failure another
+// attempt fixes. Without this line, that one condition is permanent here and
+// retried on the OpenRouter backend, which is a difference nobody chose.
 func classify(err error) error {
 	var api *sdk.Error
 	if err == nil || !errors.As(err, &api) {
 		return err
 	}
-	if transientTypes[api.Type()] {
+	if transientTypes[api.Type()] || api.StatusCode >= 500 {
 		return nacelle.Transient(err)
 	}
 	return err

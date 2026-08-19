@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -13,9 +14,14 @@ import (
 	"github.com/FacileStudio/nacelle"
 )
 
+// grace is what a command gets between being asked to stop and being made to.
+// It is also how long os/exec waits for a pipe an orphaned grandchild is still
+// holding before it closes the pipe itself.
+const grace = 2 * time.Second
+
 type commandInput struct {
 	Command string `json:"command" jsonschema:"required,description=The shell command to run, from the working directory"`
-	Timeout int    `json:"timeout,omitempty" jsonschema:"description=Seconds to allow before the command is killed. Omit for the default"`
+	Timeout int    `json:"timeout,omitempty" jsonschema:"description=Seconds to allow before the command is killed. Omit for the default. A value above the configured ceiling is clamped to it"`
 }
 
 // commandTool builds the shell runner.
@@ -32,35 +38,65 @@ func (s *Set) commandTool() (nacelle.Tool, error) {
 			if strings.TrimSpace(in.Command) == "" {
 				return "", fmt.Errorf("no command given")
 			}
-			timeout := s.commandTimeout
-			if in.Timeout > 0 {
-				timeout = time.Duration(in.Timeout) * time.Second
-			}
-			return s.run(ctx, in.Command, timeout)
+			return s.run(ctx, in.Command, bounded(in.Timeout, s.commandTimeout))
 		})
 }
 
-// run executes one command, bounded in time and output.
+// bounded is the timeout one call actually gets.
+//
+// A model may ask for less than the operator configured and never for more.
+// Without the ceiling, a model writing `timeout: 86400` has raised a bound it
+// does not own and the operator's setting is advisory. Anything absent, zero,
+// negative or above the ceiling falls back to the ceiling rather than being
+// refused, because a bad guess at a timeout should cost the model a shorter
+// command, not a failed tool call.
+//
+// The comparison is made in seconds on purpose. Converting first overflows:
+// time.Duration(1<<40) * time.Second wraps int64 into a negative duration,
+// which expires the moment it is set and turns a silly number into an
+// unrunnable tool.
+func bounded(seconds int, ceiling time.Duration) time.Duration {
+	if seconds <= 0 || time.Duration(seconds) > ceiling/time.Second {
+		return ceiling
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+// run executes one command, bounded in time, in output, and in how long it can
+// hold the goroutine that called it.
 //
 // The command is put in its own process group so the whole tree can be
 // signalled. Killing the shell alone leaves its children running, and a test
 // runner or a dev server orphaned by a timeout goes on holding the port the
 // next command needs.
 //
-// Reaping is announced by closing a channel rather than by sending the wait
-// error down it, because two goroutines need to hear it: this one, and the
-// escalation in killGroup. A close is a broadcast, a send is consumed once, and
-// the version that sent it invited exactly the kind of who-drains-what bug that
-// deadlocks a timeout path nobody exercises. The error rides alongside in a
-// plain variable, published by the same close and read only after it.
+// WaitDelay is the difference between a tool call that returns and one that
+// does not, and it is not obvious. Collecting output into a bytes.Buffer makes
+// os/exec insert a pipe and a copying goroutine, and Wait blocks until every
+// holder of the write end has closed it — including a grandchild that called
+// setsid and so was never in the group the kill reached. Without a delay,
+// `./server &` hangs this call for as long as the server lives. With one,
+// os/exec closes the pipes itself and Wait returns.
+//
+// Cancel is wired to the same signal so that os/exec owns the deadline too.
+// Its timer, not ours, is what closes the pipes when the signal does not land
+// at all — EPERM on a setuid child, or a process that simply ignores SIGTERM —
+// which is the path that used to wait forever with nothing left to wait for.
+//
+// A cancelled context is not a timeout and is not reported as one. The caller
+// asking for the command to stop is the caller's own business, so it comes
+// back as an error rather than as output the model would read as a run that
+// finished.
 func (s *Set) run(ctx context.Context, command string, timeout time.Duration) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.Command("/bin/sh", "-c", command)
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	cmd.Dir = s.dir
 	cmd.Env = s.commandEnv
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.WaitDelay = grace
+	cmd.Cancel = func() error { return signalGroup(cmd, syscall.SIGTERM) }
 
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -70,51 +106,63 @@ func (s *Set) run(ctx context.Context, command string, timeout time.Duration) (s
 		return "", err
 	}
 
-	var waitErr error
-	done := make(chan struct{})
-	go func() {
-		waitErr = cmd.Wait()
-		close(done)
-	}()
+	reaped := make(chan struct{})
+	go escalate(cmd, ctx.Done(), reaped)
+	waitErr := cmd.Wait()
+	close(reaped)
 
-	select {
-	case <-done:
-		return report(out.String(), waitErr, s.maxOutput), nil
-	case <-ctx.Done():
-		killGroup(cmd, done)
-		<-done
+	switch {
+	case errors.Is(ctx.Err(), context.Canceled):
+		return "", ctx.Err()
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return report(out.String(), errTimedOut{after: timeout}, s.maxOutput), nil
+	default:
+		return report(out.String(), waitErr, s.maxOutput), nil
 	}
 }
 
-// killGroup signals the command and everything it started.
+// signalGroup sends one signal to the command and everything it started.
 //
 // The negative pid is the whole point: kill(-pgid) reaches the process group,
-// where kill(pid) reaches only the shell that spawned the work. A signal that
-// fails to send means the group is already gone, so there is nothing left to
-// escalate to.
+// where kill(pid) reaches only the shell that spawned the work.
 //
-// Whether the group went quietly on SIGTERM is read from the caller's done
-// channel, closed when cmd.Wait returns. The obvious-looking alternative is to
-// poll cmd.ProcessState, and it is a data race: Wait writes that field from
-// another goroutine and nothing publishes it to this one. Two seconds is the
-// grace a well-behaved process gets to flush and exit before SIGKILL, which it
-// does not get to refuse.
-func killGroup(cmd *exec.Cmd, done <-chan struct{}) {
+// A signal that cannot be sent comes back as os.ErrProcessDone, which is what
+// os/exec reads as "there was nothing left to interrupt" and so declines to
+// dress up as a failure of the command. It changes nothing about the bound:
+// os/exec starts its WaitDelay timer either way, so a group that refuses the
+// signal is still released on a clock rather than on optimism.
+func signalGroup(cmd *exec.Cmd, signal syscall.Signal) error {
 	if cmd.Process == nil {
-		return
+		return os.ErrProcessDone
 	}
-	pgid := -cmd.Process.Pid
-	if err := syscall.Kill(pgid, syscall.SIGTERM); err != nil {
+	if err := syscall.Kill(-cmd.Process.Pid, signal); err != nil {
+		return os.ErrProcessDone
+	}
+	return nil
+}
+
+// escalate is the SIGKILL that a command ignoring SIGTERM does not get to
+// refuse.
+//
+// os/exec escalates on its own once WaitDelay is up, but only to the command
+// itself, and the children are the entire reason this tool bothers with a
+// process group: a killed shell whose test runner survives is the bug the
+// group was introduced to fix.
+//
+// reaped closes when Wait returns, which is also the moment the pid becomes
+// free to reuse, so the signal is only ever sent while the group is still
+// known to be there.
+func escalate(cmd *exec.Cmd, expired <-chan struct{}, reaped <-chan struct{}) {
+	select {
+	case <-reaped:
 		return
+	case <-expired:
 	}
 
 	select {
-	case <-time.After(2 * time.Second):
-		if err := syscall.Kill(pgid, syscall.SIGKILL); err != nil {
-			return
-		}
-	case <-done:
+	case <-reaped:
+	case <-time.After(grace):
+		signalGroup(cmd, syscall.SIGKILL)
 	}
 }
 

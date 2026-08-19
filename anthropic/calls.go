@@ -14,127 +14,146 @@ import (
 // the block closes and emitted whole.
 //
 // A tracker covers one turn, which is what makes its counter the position of
-// a call within the turn that asked for it. The registry it files finished
-// calls into outlives it, because the runner executes a turn's tools at the
-// start of the next one.
+// a call within the turn that asked for it. It sorts the turn's calls by who
+// will run them: a local one is queued for the registry, because the runner
+// executes a turn's tools at the start of the next one, while an MCP one is
+// held here until its result block arrives on this same turn.
 type callTracker struct {
-	open    map[int64]*nacelle.ToolEvent
-	pending *invocations
-	next    int
+	open     map[int64]*openCall
+	remote   map[string]*nacelle.ToolEvent
+	queued   []*nacelle.ToolEvent
+	pending  *invocations
+	thinking bool
+	next     int
 }
 
-func newCallTracker(pending *invocations) *callTracker {
-	return &callTracker{open: map[int64]*nacelle.ToolEvent{}, pending: pending}
+// openCall is a content block still streaming, and which side of the request
+// is going to execute it.
+type openCall struct {
+	event  *nacelle.ToolEvent
+	remote bool
+}
+
+func newCallTracker(pending *invocations, thinking bool) *callTracker {
+	return &callTracker{
+		open:     map[int64]*openCall{},
+		remote:   map[string]*nacelle.ToolEvent{},
+		pending:  pending,
+		thinking: thinking,
+	}
 }
 
 // consume maps one raw stream event onto zero or more nacelle events.
 func (c *callTracker) consume(event sdk.BetaRawMessageStreamEventUnion) []nacelle.Event {
 	switch event.Type {
 	case "content_block_start":
-		c.start(event)
+		return c.start(event)
 	case "content_block_delta":
 		return c.delta(event)
 	case "content_block_stop":
 		return c.stop(event)
+	case "message_stop":
+		return c.finish()
 	}
 	return nil
 }
 
-// start records a tool call whose arguments have not arrived yet.
+// start records a tool call whose arguments have not arrived yet, or reports
+// an MCP tool's result, which arrives whole rather than in fragments.
 //
 // The position is taken here rather than at the stop because content blocks
 // open in the order the model wrote them, which is the order Index promises,
 // and it counts calls rather than blocks so that prose or reasoning ahead of
 // the first call does not shift it.
-func (c *callTracker) start(event sdk.BetaRawMessageStreamEventUnion) {
-	if !isToolUse(event.ContentBlock.Type) {
-		return
+//
+// A fallback block discards the turn's queue because the runner discards the
+// same calls: they belong to the attempt that refused, the fallback middleware
+// strips them from the replayed history, and an entry for a call nobody will
+// ever execute is the stale key that mispairs a later result. Discarded is not
+// forgotten — see discard, which closes them.
+func (c *callTracker) start(event sdk.BetaRawMessageStreamEventUnion) []nacelle.Event {
+	block := event.ContentBlock
+	switch {
+	case block.Type == "fallback":
+		return c.discard()
+	case block.Type == "mcp_tool_result":
+		return c.remoteResult(block)
+	case isToolUse(block.Type):
+		c.open[event.Index] = &openCall{
+			event:  &nacelle.ToolEvent{ID: block.ID, Index: c.next, Name: block.Name},
+			remote: block.Type == "mcp_tool_use",
+		}
+		c.next++
 	}
-	c.open[event.Index] = &nacelle.ToolEvent{
-		ID:    event.ContentBlock.ID,
-		Index: c.next,
-		Name:  event.ContentBlock.Name,
-	}
-	c.next++
+	return nil
 }
 
 // delta turns a content fragment into an event, or files it against the tool
 // call it belongs to. The index is what keeps two tools requested in the same
 // turn from mixing their arguments.
+//
+// Reasoning is dropped unless the run asked for it. nacelle.Config documents
+// Thinking as streaming the model's reasoning as KindThinking events and
+// leaves it off, so forwarding it to a consumer that never opted in is not
+// generosity — it is a backend inventing a promise, and the OpenRouter one
+// gates the same deltas the same way.
 func (c *callTracker) delta(event sdk.BetaRawMessageStreamEventUnion) []nacelle.Event {
 	switch event.Delta.Type {
 	case "text_delta":
 		return []nacelle.Event{{Kind: nacelle.KindText, Text: event.Delta.Text}}
 	case "thinking_delta":
+		if !c.thinking {
+			return nil
+		}
 		return []nacelle.Event{{Kind: nacelle.KindThinking, Text: event.Delta.Thinking}}
 	case "input_json_delta":
-		if call, ok := c.open[event.Index]; ok {
-			call.Input += event.Delta.PartialJSON
+		if call, found := c.open[event.Index]; found {
+			call.event.Input += event.Delta.PartialJSON
 		}
 	}
 	return nil
 }
 
-// stop closes a tool call, files it so the execution can find its id, and
+// stop closes a tool call, files it against whoever will answer it, and
 // reports it whole.
 //
 // Filing happens at the close because that is the first moment the arguments
 // are complete, and the arguments are half of what identifies the call to the
-// handler that will run it.
+// handler that will run it. Only a local call reaches the registry: an MCP
+// tool runs on Anthropic's side, so no execution will ever come looking for
+// it, and it waits here for the result block instead.
 func (c *callTracker) stop(event sdk.BetaRawMessageStreamEventUnion) []nacelle.Event {
-	call, ok := c.open[event.Index]
-	if !ok {
+	open, found := c.open[event.Index]
+	if !found {
 		return nil
 	}
 	delete(c.open, event.Index)
-	c.pending.record(call)
-	return []nacelle.Event{{Kind: nacelle.KindToolCall, Tool: call}}
+	if open.remote {
+		c.remote[open.event.ID] = open.event
+	} else {
+		c.queued = append(c.queued, open.event)
+	}
+	return []nacelle.Event{{Kind: nacelle.KindToolCall, Tool: open.event}}
+}
+
+// finish hands the turn's local calls to the registry and closes any MCP call
+// whose result never arrived.
+//
+// The handoff is at the end of the turn rather than at each call because that
+// is the moment the batch is final — a fallback block can still have discarded
+// it — and because replacing the registry whole is what stops a turn's entries
+// outliving the turn.
+func (c *callTracker) finish() []nacelle.Event {
+	c.pending.reset(c.queued)
+	return c.orphans()
 }
 
 // isToolUse reports whether a content block is the model calling a tool.
 //
 // Both spellings count. A tool this process runs arrives as tool_use and one
 // reached over MCP as mcp_tool_use, and a consumer has no reason to care which
-// side of the request executed it.
+// side of the request executed it — which is exactly why both must also end up
+// closed by a KindToolResult, whoever ran them.
 func isToolUse(blockType string) bool {
 	return blockType == "tool_use" || blockType == "mcp_tool_use"
-}
-
-// usageOf converts the API's per-turn accounting into ours.
-func usageOf(usage sdk.BetaMessageDeltaUsage) nacelle.Usage {
-	return nacelle.Usage{
-		InputTokens:         usage.InputTokens,
-		OutputTokens:        usage.OutputTokens,
-		CacheReadTokens:     usage.CacheReadInputTokens,
-		CacheCreationTokens: usage.CacheCreationInputTokens,
-	}
-}
-
-// stopOf names why a turn ended.
-//
-// Mapping rather than passing the API's string through is what lets a
-// consumer act on the answer being incomplete without learning the provider's
-// vocabulary, and it is why the unrecognised case is StopOther rather than a
-// new name invented per reason: a stop reason this package has never seen is
-// still not an ending anyone should present as a finished answer.
-//
-// stop_sequence joins end_turn because the caller chose the marker the model
-// stopped at, so the text before it is the answer that was asked for.
-// compaction and pause_turn land in StopOther deliberately: neither says the
-// answer is whole, and neither is something a caller can act on today.
-func stopOf(reason sdk.BetaStopReason) nacelle.Stop {
-	switch reason {
-	case sdk.BetaStopReasonEndTurn, sdk.BetaStopReasonStopSequence:
-		return nacelle.StopEnd
-	case sdk.BetaStopReasonToolUse:
-		return nacelle.StopTools
-	case sdk.BetaStopReasonMaxTokens:
-		return nacelle.StopMaxTokens
-	case sdk.BetaStopReasonModelContextWindowExceeded:
-		return nacelle.StopContext
-	case sdk.BetaStopReasonRefusal:
-		return nacelle.StopRefusal
-	default:
-		return nacelle.StopOther
-	}
 }

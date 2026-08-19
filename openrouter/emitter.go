@@ -21,8 +21,15 @@ func (e *emitter) sendAll(events []nacelle.Event) bool {
 	return true
 }
 
-// fail ends the sequence with an error.
-func (e *emitter) fail(err error) { e.yield(nacelle.Event{}, err) }
+// fail ends the sequence with an error, classified on the way out.
+//
+// Classification lives here rather than at the one call site that used to do
+// it because this is the only door: OpenRouter reports rate limits and
+// upstream failures inside a 200 response, so whether a run is worth retrying
+// is decided by parsing the payload, and an error path added later that
+// skipped that step would silently turn every retryable failure permanent.
+// Doing it at the door means a new path cannot forget.
+func (e *emitter) fail(err error) { e.yield(nacelle.Event{}, classify(err)) }
 
 // flushTools yields the tool results collected since the last flush.
 func (e *emitter) flushTools() bool { return e.sendAll(e.sink.Drain()) }

@@ -13,11 +13,27 @@ import (
 // backend is affordable: a cache read bills at a tenth of a plain input token,
 // and the runner replays the system prompt and every tool schema each time
 // round the loop.
-func TestTheStablePrefixIsCached(t *testing.T) {
+func TestTheStablePrefixIsCachedWhenSomethingWillReadIt(t *testing.T) {
+	amortising := map[string]nacelle.Request{
+		"a run with tools":       {System: "s", MaxTokens: 1, Tools: []nacelle.Tool{echoTool(t)}},
+		"a conversation resumed": {System: "s", MaxTokens: 1, Messages: []nacelle.Message{{Text: "again"}}},
+	}
+	for name, request := range amortising {
+		if got := New(Config{}).params(request).CacheControl; got != sdk.NewBetaCacheControlEphemeralParam() {
+			t.Errorf("%s: cache control = %#v, want an ephemeral breakpoint", name, got)
+		}
+	}
+}
+
+// A Config with no tools and no history makes exactly one API call, so the
+// breakpoint writes a cache entry nothing will ever read and bills 1.25x the
+// input for it. Charging every one-shot caller a quarter extra to save this
+// package a condition is not a trade-off worth defending.
+func TestAOneShotRunIsNotChargedForACacheNobodyReads(t *testing.T) {
 	params := New(Config{}).params(nacelle.Request{System: "s", MaxTokens: 1})
 
-	if params.CacheControl != sdk.NewBetaCacheControlEphemeralParam() {
-		t.Errorf("cache control = %#v, want an ephemeral breakpoint", params.CacheControl)
+	if params.CacheControl != (sdk.BetaCacheControlEphemeralParam{}) {
+		t.Errorf("cache control = %#v, want none; a one-shot run pays 1.25x for an entry with no read", params.CacheControl)
 	}
 }
 

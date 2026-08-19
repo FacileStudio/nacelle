@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
@@ -11,8 +12,18 @@ import (
 	"github.com/FacileStudio/nacelle"
 )
 
+// forceQuit is how long the offer to quit outright stays open after the first
+// ctrl+c. Long enough to read the status line, short enough that a second
+// ctrl+c minutes later still means "stop this run" rather than "throw the
+// session away".
+const forceQuit = 3 * time.Second
+
 // model is the whole client: a transcript, a prompt, and at most one run in
 // flight.
+//
+// spent is what every finished run cost, and lives outside the run because it
+// outlives it. The status line adds the two, which is a session total that only
+// ever goes up.
 type model struct {
 	agent *nacelle.Agent
 
@@ -20,14 +31,34 @@ type model struct {
 	prompt   textinput.Model
 
 	transcript   []string
-	answer       strings.Builder
 	conversation []nacelle.Message
+	spent        nacelle.Usage
 
-	results <-chan result
-	cancel  context.CancelFunc
-	usage   nacelle.Usage
-	stop    nacelle.Stop
-	busy    bool
+	run inflight
+}
+
+// inflight is the one run this client allows at a time: how to hear from it,
+// how to abandon it, what it has produced, and what it has cost.
+//
+// Reasoning gets a buffer of its own rather than sharing the answer's. Sharing
+// one concatenated the two, which put the last thought against the first word
+// with no separator on screen and, worse, committed the reasoning to the
+// conversation — so every later turn re-sent a chain of thought the provider
+// bills for and does not want replayed.
+//
+// usage is this run alone, because KindTurn accumulates and KindDone replaces:
+// a single counter carrying over from the last run reads as that run's total
+// plus this run's turns, and then drops to this run's total the moment it
+// finishes.
+type inflight struct {
+	results     <-chan result
+	cancel      context.CancelFunc
+	answer      strings.Builder
+	reasoning   strings.Builder
+	usage       nacelle.Usage
+	stop        nacelle.Stop
+	interrupted time.Time
+	busy        bool
 }
 
 // newModel builds the client. The banner names the backend and model, so which
@@ -35,7 +66,7 @@ type model struct {
 // than after the first question fails.
 func newModel(agent *nacelle.Agent, banner string) *model {
 	prompt := textinput.New()
-	prompt.Placeholder = "Ask something. Ctrl+C to stop or quit."
+	prompt.Placeholder = "Ask something. Ctrl+C to stop or quit, Ctrl+\\ to force it."
 	prompt.Prompt = "> "
 	prompt.SetVirtualCursor(false)
 	prompt.Focus()
@@ -46,8 +77,8 @@ func newModel(agent *nacelle.Agent, banner string) *model {
 		agent:      agent,
 		viewport:   view,
 		prompt:     prompt,
-		cancel:     func() {},
 		transcript: []string{banner},
+		run:        inflight{cancel: func() {}},
 	}
 }
 
@@ -85,21 +116,33 @@ func (m *model) resize(size tea.WindowSizeMsg) tea.Cmd {
 	return nil
 }
 
-// key handles the two bindings this client has, reporting whether it consumed
-// the press. Anything else belongs to the prompt.
+// key handles this client's bindings, reporting whether it consumed the press.
+// Anything else belongs to the prompt.
 //
 // Ctrl+C cancels a run in flight and only quits when there is nothing to
 // cancel, so a long answer can be abandoned without losing the session. The
 // terminal is in raw mode, which means nothing quits on Ctrl+C unless this
 // says so.
+//
+// That courtesy needs an escape hatch, because it depends on the very thing
+// that may be stuck: busy is cleared by settle, settle waits for the results
+// channel to close, and a tool wedged on a subprocess never closes it. A
+// second ctrl+c inside forceQuit, or ctrl+\ at any time, quits whatever the
+// run is doing — otherwise the only way out of an alt-screen raw-mode terminal
+// is kill -9 from somewhere else.
 func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 	switch press.String() {
-	case "ctrl+c":
-		if m.busy {
-			m.cancel()
-			return true, nil
-		}
+	case "ctrl+\\":
 		return true, tea.Quit
+	case "ctrl+c":
+		if !m.run.busy || time.Since(m.run.interrupted) < forceQuit {
+			return true, tea.Quit
+		}
+		m.run.interrupted = time.Now()
+		m.run.stop = abandoned
+		m.run.cancel()
+		m.render()
+		return true, nil
 	case "enter":
 		return true, m.ask()
 	}
@@ -107,55 +150,59 @@ func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 }
 
 // ask sends whatever is in the prompt, unless a run is already going.
+//
+// Everything that belonged to the last run is cleared here and nowhere else: a
+// stop reason left standing would accuse this answer of being truncated, a
+// usage left standing would be counted twice, and an interruption left standing
+// would make the first ctrl+c of a fresh run quit the client outright.
 func (m *model) ask() tea.Cmd {
 	question := strings.TrimSpace(m.prompt.Value())
-	if question == "" || m.busy {
+	if question == "" || m.run.busy {
 		return nil
 	}
 	m.prompt.Reset()
-	m.stop = ""
+	m.run.stop = ""
+	m.run.usage = nacelle.Usage{}
+	m.run.interrupted = time.Time{}
 	m.say("you", question)
 	m.conversation = append(m.conversation, nacelle.Message{Text: question})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	m.cancel = cancel
-	m.busy = true
-	m.results = start(ctx, m.agent, m.conversation)
-	return waitFor(m.results)
+	m.run.cancel = cancel
+	m.run.busy = true
+	m.run.results = start(ctx, m.agent, m.conversation)
+	return waitFor(m.run.results)
 }
 
 // consume folds one result into the transcript and waits for the next.
+//
+// The answer is committed before the error is, because an error line printed
+// first tells the reader the request failed and only then shows them the half
+// sentence it interrupted, which is the wrong order to read a failure in.
 func (m *model) consume(next result) tea.Cmd {
 	if next.err != nil {
+		m.flush()
 		m.say("error", next.err.Error())
-		return waitFor(m.results)
+		return waitFor(m.run.results)
 	}
 	m.absorb(next.event)
 	m.render()
-	return waitFor(m.results)
+	return waitFor(m.run.results)
 }
 
-// settle ends a run: the streamed answer is committed to the transcript and to
-// the conversation, and the prompt opens again.
+// settle ends a run: whatever streamed is committed, what it cost joins the
+// session total, and the prompt opens again.
 //
-// Committing it to the transcript is not bookkeeping. The answer streams into a
-// buffer that render draws only while it is filling, so clearing that buffer
-// without moving the text somewhere permanent erases the answer from the screen
-// at the exact moment it finished — which is what this did until it was used.
-//
-// Only the text is kept in the conversation. A nacelle.Message holds text and
-// nothing else today, so a tool call the model made cannot be replayed to it —
-// a gap in the core, not something a client can paper over.
+// The run's usage is folded into spent here rather than left standing, so the
+// next question starts from a clean per-run counter and the status line keeps
+// showing a session total that only grows.
 func (m *model) settle() tea.Cmd {
-	m.cancel()
-	m.busy = false
+	m.run.cancel()
+	m.run.busy = false
 
-	answer := m.answer.String()
-	m.answer.Reset()
-	if answer != "" {
-		m.conversation = append(m.conversation, nacelle.Message{Assistant: true, Text: answer})
-		m.say("nacelle", answer)
-	}
+	m.flush()
+	m.spent = m.spent.Add(m.run.usage)
+	m.run.usage = nacelle.Usage{}
 
 	m.render()
 	return nil

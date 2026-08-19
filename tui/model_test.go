@@ -31,7 +31,7 @@ func TestStreamedTextAccumulatesIntoOneAnswer(t *testing.T) {
 		m.absorb(nacelle.Event{Kind: nacelle.KindText, Text: delta})
 	}
 
-	if got := m.answer.String(); got != "the whole answer" {
+	if got := m.run.answer.String(); got != "the whole answer" {
 		t.Errorf("answer = %q, want the deltas joined", got)
 	}
 	if lines := spoken(m); len(lines) != 0 {
@@ -43,7 +43,7 @@ func TestStreamedTextAccumulatesIntoOneAnswer(t *testing.T) {
 // question is asked of a model that never said anything.
 func TestAFinishedAnswerJoinsTheConversation(t *testing.T) {
 	m := sized()
-	m.busy = true
+	m.run.busy = true
 	m.absorb(nacelle.Event{Kind: nacelle.KindText, Text: "an answer"})
 	m.settle()
 
@@ -53,10 +53,10 @@ func TestAFinishedAnswerJoinsTheConversation(t *testing.T) {
 	if !m.conversation[0].Assistant || m.conversation[0].Text != "an answer" {
 		t.Errorf("message = %+v, want the assistant's answer", m.conversation[0])
 	}
-	if m.busy {
+	if m.run.busy {
 		t.Error("still busy after the run settled")
 	}
-	if m.answer.Len() != 0 {
+	if m.run.answer.Len() != 0 {
 		t.Error("the answer was left in the buffer for the next turn to repeat")
 	}
 }
@@ -93,7 +93,7 @@ func TestTheRunTotalReplacesTheRunningCount(t *testing.T) {
 	m.absorb(nacelle.Event{Kind: nacelle.KindTurn, Usage: nacelle.Usage{InputTokens: 10}})
 	m.absorb(nacelle.Event{Kind: nacelle.KindDone, Usage: nacelle.Usage{InputTokens: 20}})
 
-	if got := m.usage.Total(); got != 20 {
+	if got := m.run.usage.Total(); got != 20 {
 		t.Errorf("total = %d, want the run total rather than the sum of both", got)
 	}
 }
@@ -109,7 +109,7 @@ func TestCtrlCStopsTheRunBeforeItQuits(t *testing.T) {
 
 	m := sized()
 	stopped := false
-	m.cancel, m.busy = func() { stopped = true }, true
+	m.run.cancel, m.run.busy = func() { stopped = true }, true
 
 	handled, cmd := m.key(press)
 	if !handled {
@@ -122,7 +122,7 @@ func TestCtrlCStopsTheRunBeforeItQuits(t *testing.T) {
 		t.Error("the program quit instead of stopping the run")
 	}
 
-	m.busy = false
+	m.run.busy = false
 	if _, cmd = m.key(press); cmd == nil {
 		t.Error("ctrl+c with nothing running did not quit")
 	}
@@ -134,7 +134,7 @@ func TestCtrlCStopsTheRunBeforeItQuits(t *testing.T) {
 // first real session found.
 func TestAFinishedAnswerStaysOnScreen(t *testing.T) {
 	m := sized()
-	m.busy = true
+	m.run.busy = true
 	m.absorb(nacelle.Event{Kind: nacelle.KindText, Text: "the whole answer"})
 	m.settle()
 
@@ -197,10 +197,10 @@ func TestANewQuestionClearsTheStopFromTheLastRun(t *testing.T) {
 	m.absorb(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopMaxTokens})
 	m.prompt.SetValue("again please")
 	m.ask()
-	defer m.cancel()
+	defer m.run.cancel()
 
-	if m.stop != "" {
-		t.Errorf("stop = %q, want the previous run's reason cleared", m.stop)
+	if m.run.stop != "" {
+		t.Errorf("stop = %q, want the previous run's reason cleared", m.run.stop)
 	}
 }
 

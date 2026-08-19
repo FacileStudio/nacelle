@@ -121,3 +121,15 @@ func messageDelta(reason string) string {
 	return `{"type":"message_delta","delta":{"stop_reason":"` + reason +
 		`","stop_sequence":null},"usage":{"output_tokens":5}}`
 }
+
+// raw builds a stream event the way the wire does, so the test exercises the
+// SDK's own decoding of the union rather than a hand-filled struct that could
+// disagree with it.
+func raw(t *testing.T, payload string) sdk.BetaRawMessageStreamEventUnion {
+	t.Helper()
+	var event sdk.BetaRawMessageStreamEventUnion
+	if err := json.Unmarshal([]byte(payload), &event); err != nil {
+		t.Fatalf("decoding %s: %v", payload, err)
+	}
+	return event
+}

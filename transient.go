@@ -22,15 +22,33 @@ func Transient(err error) error {
 // join the scheme by implementing the same one.
 type transient struct {
 	error
-
-	attempt int
 }
 
 func (transient) Retryable() bool { return true }
 
 func (t transient) Unwrap() error { return t.error }
 
-func (t transient) Attempt() int { return t.attempt }
+// exhausted is the failure Retry surfaces once it has stopped starting the run
+// over, whether it ran out of attempts or the context ended during a backoff.
+//
+// It exists to answer Retryable() false. The transient marker that earned the
+// run its retries is still down on the cause, where errors.As would find it,
+// and a caller with a retry layer of its own then starts the same doomed run
+// again: three attempts nested under three attempts is nine calls to a
+// provider that already said no three times, reported as three. Sitting in
+// front of the cause rather than replacing it keeps errors.Is working on what
+// actually went wrong, and carries the attempt number Attempt reports.
+type exhausted struct {
+	error
+
+	attempt int
+}
+
+func (exhausted) Retryable() bool { return false }
+
+func (e exhausted) Unwrap() error { return e.error }
+
+func (e exhausted) Attempt() int { return e.attempt }
 
 // Retryable reports whether err is worth starting a run again for.
 //
@@ -60,16 +78,4 @@ func Attempt(err error) int {
 		return counted.Attempt()
 	}
 	return 0
-}
-
-// onAttempt records which attempt a failure happened on.
-//
-// It refuses anything not already retryable rather than marking it, because
-// the wrapper it returns answers Retryable() true: stamping a bad request
-// would turn a permanent refusal into something the next layer starts over.
-func onAttempt(err error, attempt int) error {
-	if !Retryable(err) {
-		return err
-	}
-	return transient{error: err, attempt: attempt}
 }

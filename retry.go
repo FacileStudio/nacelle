@@ -2,6 +2,7 @@ package nacelle
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"log/slog"
 	"time"
@@ -91,12 +92,11 @@ func (r retrying) Stream(ctx context.Context, request Request) iter.Seq2[Event, 
 			if err == nil {
 				return
 			}
-			if !r.again(attempt, produced, err) || !pause(ctx, r.options.backoff(attempt)) {
-				r.gaveUp(attempt, err)
-				yield(Event{}, onAttempt(err, attempt))
+			surfaced := r.afterFailure(ctx, attempt, produced, err)
+			if surfaced != nil {
+				yield(Event{}, surfaced)
 				return
 			}
-			r.willRetry(attempt, err)
 		}
 	}
 }
@@ -118,9 +118,22 @@ func (r retrying) once(ctx context.Context, request Request, yield func(Event, e
 	return produced, nil
 }
 
-// again reports whether a failed attempt may be started over.
-func (r retrying) again(attempt int, produced bool, err error) bool {
-	return !produced && attempt < r.options.Attempts && Retryable(err)
+// afterFailure decides what a failed attempt becomes: nil to start the run
+// over, or the error the consumer should be handed instead.
+//
+// The two ways of stopping are kept apart here because they are not the same
+// news. Running out of attempts is the provider having failed; a context that
+// ended mid-backoff is the caller having asked us to stop, and reporting the
+// second as the first blames a backend for a keystroke.
+func (r retrying) afterFailure(ctx context.Context, attempt int, produced bool, err error) error {
+	if produced || attempt >= r.options.Attempts || !Retryable(err) {
+		return r.giveUp(attempt, err)
+	}
+	if !pause(ctx, r.options.backoff(attempt)) {
+		return abandoned(ctx.Err(), err, attempt)
+	}
+	r.willRetry(attempt, err)
+	return nil
 }
 
 // willRetry records an attempt that is about to be started over.
@@ -134,18 +147,41 @@ func (r retrying) willRetry(attempt int, err error) {
 		"backend", r.Name(), "attempt", attempt, "attempts", r.options.Attempts, "error", err)
 }
 
-// gaveUp records the failure that ended the run, and only when it ended one we
-// had been retrying.
+// giveUp ends the run, reporting the failure that ended it and returning what
+// the consumer should receive.
 //
-// A permanent refusal is not logged here at all: it was never a retry, the
-// caller receives it unchanged, and reporting it twice teaches the reader that
-// this package double-counts. Neither is a first attempt that could not be
-// started over — nothing was retried, so this decorator has nothing to add to
-// the error the consumer is already holding.
-func (r retrying) gaveUp(attempt int, err error) {
-	if attempt == 1 || !Retryable(err) {
-		return
+// A first attempt is handed back untouched and in silence. Nothing was
+// retried, so this decorator has neither a log line nor an attempt number to
+// add to the error the consumer is already holding, and a permanent refusal
+// that arrived straight away must reach the caller exactly as the backend
+// wrote it rather than twice over.
+//
+// Anything later is logged and stamped, a permanent failure that followed a
+// transient one included. That run warns "retrying" and used to end in total
+// silence with an attempt count of zero — a story that opens and never closes,
+// and the only record that the first failure happened at all.
+func (r retrying) giveUp(attempt int, err error) error {
+	if attempt == 1 {
+		return err
 	}
 	r.options.Logger.Error("nacelle: giving up after a transient failure",
 		"backend", r.Name(), "attempt", attempt, "attempts", r.options.Attempts, "error", err)
+	return exhausted{error: err, attempt: attempt}
+}
+
+// abandoned is the error a run ends with when the context ended while a
+// backoff was still being waited out.
+//
+// The provider's failure is kept as a cause, because it is still why a retry
+// was pending, but it must not be what the consumer reads first. Surfacing it
+// alone made errors.Is(err, context.Canceled) false, left the error claiming
+// to be retryable when the context will never be live again, and printed
+// "giving up after a transient failure" at a user who had pressed Ctrl-C.
+// Wrapping both puts the cancellation and the cause on one error, so whichever
+// the caller asks about is there.
+func abandoned(interrupted, failure error, attempt int) error {
+	return exhausted{
+		error:   fmt.Errorf("%w while waiting to retry: %w", interrupted, failure),
+		attempt: attempt,
+	}
 }
