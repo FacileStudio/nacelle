@@ -4,27 +4,33 @@ Written 2026-08-19. A cold-start handoff: everything needed to pick up a track w
 conversation. Ordering lives here; the reasoning behind each item lives in the commit that
 closes it.
 
-**Done: B1, B2 and A0-A5.** What remains is **A6**, **B3-B5** and **Track C**. Closed items are
+**Done: Track A (A0-A6) and B1-B4.** What remains is **B5** and **Track C**. Closed items are
 kept below rather than deleted, because their reasoning is still the argument for not undoing
 them.
 
 ## Where this is
 
 Both backends, `tools/`, retry, prompt caching and per-turn usage are implemented and
-tested. `tui/` runs on them and is the SDK's first consumer. No tag, and `v0.1.0` stays
-gated on Kori — which is itself blocked on Perception's MCP server, a Perception problem.
-**Do not sequence nacelle work around Kori.**
+tested. `Message` is a sealed content-part union (A6): a conversation can carry a tool call and
+round-trips through both backends at the wire level, with a test proving it per backend. CI runs
+the gate — build, vet, `-race` test, `golangci-lint` — on push and PR, and cannot be bypassed with
+`--no-verify` the way the old pre-push-only hook could (B3, B4). `tui/` is the SDK's first
+consumer, rebuilds the real conversation from the event stream instead of dropping tool history,
+renders answers as markdown, scrolls, and shows a spinner for the gap before the first token.
+No tag; `v0.1.0` stays gated on Kori, which is itself blocked on Perception's MCP server, a
+Perception problem. **Do not sequence nacelle work around Kori.**
 
-The TUI's first day found that the event contract was partly fiction. A0-A5 fixed that; both
-backends now emit tool calls with pairable ids, report why a run stopped, and agree on what the
-iteration cap means. A6 is what is left of Track A, and it is the critical path.
+A6 being done unblocks what was parked under "Not in scope" only because it depended on A6:
+context compaction, pre-send token counting, and cache diagnostics are all real wins that were
+never designed, only deferred. None has files or a shape decided yet — that is the next thing
+worth a focused session, alongside Track C below.
 
 ## Tracks
 
-**A** is strictly ordered — A6 needs the tool-call IDs A2 restores. **B** depends on
-nothing in A and can run in parallel or in a second session. **C** needs A finished.
+**A** is strictly ordered and now closed. **B** depended on nothing in A; B1-B4 are closed, B5 is
+not. **C** needed A finished, and now can start.
 
-~~Start with B1 + B2, then A0-A5.~~ Done. **A6 is next, and deserves its own focused session.**
+~~Start with B1 + B2, then A0-A5.~~ Done. ~~A6 is next.~~ Done. **B5, then Track C, are next.**
 
 ---
 
@@ -208,11 +214,17 @@ helps but does not settle it.
 
 ## Not in scope, deliberately
 
-- **Context compaction, pre-send token counting, cache diagnostics.** All real wins, all
-  blocked on A6 anyway.
 - **A provider interface beyond the two backends.** Settled; revisit when a third is real.
 - **`sandbox/`.** Atelier drives it, and Atelier has not asked.
-- **Tagging `v0.1.0`.** Gated on Kori, and A6 must land first.
+- **Tagging `v0.1.0`.** Gated on Kori.
+- **Per-call tool approval (allow / allow-for-session / deny) in the TUI.** The pattern most
+  comparable harnesses have (Crush's permission dialog, Pi's approval loop) and the one
+  candidate from that comparison that would exercise the SDK rather than just decorate the
+  client — everything else in that category (sessions, panes, a model picker) fails the same
+  test the line below already applies. Not started: it needs a design decision the TUI cannot
+  make alone, since on the Anthropic backend the tool-call loop runs inside the vendor SDK's own
+  runner (`sdkTool.Execute`, `anthropic/adapt.go`) and a consumer-side pause has to block there,
+  not intercept a step nacelle's own loop controls the way OpenRouter's hand-rolled one does.
 - **Sessions, profiles, themes, panes in the TUI.** None of them test the API, which is the
   only thing the TUI is for.
 - ~~A config file for the TUI. Flags until they hurt.~~ Built anyway, on request, after flags
