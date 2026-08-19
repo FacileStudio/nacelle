@@ -104,9 +104,11 @@ func (e *emitter) sendAll(events []nacelle.Event) bool {
 	return true
 }
 
-// fail ends the sequence with an error.
+// fail ends the sequence with an error, classified so a transient one can be
+// retried. Every error out of this backend passes through here, which is why
+// the classification lives at this door rather than at each of its callers.
 func (e *emitter) fail(err error) {
-	e.yield(nacelle.Event{}, err)
+	e.yield(nacelle.Event{}, classify(err))
 }
 
 // flushTools yields the tool results collected since the last flush.

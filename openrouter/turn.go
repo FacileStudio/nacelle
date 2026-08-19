@@ -61,7 +61,7 @@ func (b *Backend) turn(
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return nil, err
+		return nil, classify(err)
 	}
 
 	return finish(&accumulator, reasoningDetails)

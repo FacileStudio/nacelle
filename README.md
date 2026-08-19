@@ -109,6 +109,40 @@ _, err := nacelle.New(nacelle.Config{Backend: openrouter.New(...), MCP: servers}
 That is the whole reason `Capabilities` exists. Losing MCP tools quietly looks like a model
 that will not use its tools, and you can spend an afternoon on that.
 
+## Retrying
+
+```go
+backend := nacelle.Retry(openrouter.New(...), nacelle.RetryOptions{})
+```
+
+The zero `RetryOptions` is the recommended policy, not the absence of one: three
+attempts, 500ms doubling to a 8s ceiling, with jitter. `Attempts: 1` turns it off.
+
+**This is not a backoff engine, on purpose.** Both SDKs already retry at the HTTP
+level — connection failures, 408, 409, 429, 5xx, honouring `Retry-After-Ms` and
+`Retry-After` — and that covers establishing a stream, streaming requests included.
+Writing another one here would be a worse copy of code we already ship.
+
+What it adds is the case no HTTP retry can see: **a provider that answers 200 and
+puts the failure in the body.** OpenRouter reports a rate limit as an error object
+inside the SSE; an Anthropic `overloaded_error` can arrive mid-stream on a response
+whose status was committed long before. Both reach a caller as a dead stream, and
+neither is visible to anything classifying on a status code.
+
+Two details that decide whether this works at all:
+
+- **The in-band code is a number.** OpenRouter sends `"code": 429`, not `"429"`. A
+  decoder expecting a string drops the field without failing the parse, so the
+  classifier reads an empty code and calls every rate limit permanent — a retry that
+  looks implemented and never fires. `TestAnInBandRateLimitIsRetryable` pins it.
+- **Retrying stops the moment anything is yielded.** A consumer that has seen a text
+  delta has already printed it, and no wrapper can un-print it. A failure after the
+  first event ends the run and is reported as it is.
+
+Backends classify their own provider's vocabulary and mark what is worth another go
+with `nacelle.Transient`; the core knows only `Retryable(error) bool`. Your own error
+type joins the scheme by implementing `Retryable() bool`.
+
 ## The local tool set
 
 ```go
