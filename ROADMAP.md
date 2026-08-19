@@ -4,9 +4,9 @@ Written 2026-08-19. A cold-start handoff: everything needed to pick up a track w
 conversation. Ordering lives here; the reasoning behind each item lives in the commit that
 closes it.
 
-**Done: Track A (A0-A6) and B1-B4.** What remains is **B5** and **Track C**. Closed items are
-kept below rather than deleted, because their reasoning is still the argument for not undoing
-them.
+**Done: Tracks A, B and C.** Every track that was planned is closed. What is left is unplanned —
+see "Where this is" below for what a next session would actually pick up. Closed items are kept
+below rather than deleted, because their reasoning is still the argument for not undoing them.
 
 ## Where this is
 
@@ -14,23 +14,35 @@ Both backends, `tools/`, retry, prompt caching and per-turn usage are implemente
 tested. `Message` is a sealed content-part union (A6): a conversation can carry a tool call and
 round-trips through both backends at the wire level, with a test proving it per backend. CI runs
 the gate — build, vet, `-race` test, `golangci-lint` — on push and PR, and cannot be bypassed with
-`--no-verify` the way the old pre-push-only hook could (B3, B4). `tui/` is the SDK's first
-consumer, rebuilds the real conversation from the event stream instead of dropping tool history,
-renders answers as markdown, scrolls, and shows a spinner for the gap before the first token.
+`--no-verify` the way the old pre-push-only hook could (B3, B4). `CHANGELOG.md` and `docs/` exist
+(B5), mirroring `tronc`'s actual structure since the wiki convention page they were meant to
+follow no longer exists post-reset.
+
+Everything A6 unblocked is now built, not just unparked: `Backend.CountTokens` (real on Anthropic,
+honestly refused on OpenRouter), `Usage.CacheHitRate`, and `Trim` — a boundary-safe truncation
+primitive, deliberately not a summarizer; see `message.go` and `trim.go`'s own doc comments for
+why compaction *strategy* stays out of this package. Track C shipped as `tools.Jardin()` — a
+nacelle tool package that shells out, the option the roadmap left as "decide first" — rather than
+an MCP server added to jardin, because it needed no change outside this repo.
+
+`tui/` is the SDK's first consumer: rebuilds the real conversation from the event stream instead
+of dropping tool history, renders answers as markdown, scrolls, shows a spinner for the gap before
+the first token, and (as of this round) discovers `CLAUDE.md`/`AGENTS.md` above `-root` and can
+reach jardin's flows and memory search, both default on and both fail soft to nothing when there
+is nothing to find.
+
 No tag; `v0.1.0` stays gated on Kori, which is itself blocked on Perception's MCP server, a
 Perception problem. **Do not sequence nacelle work around Kori.**
 
-A6 being done unblocks what was parked under "Not in scope" only because it depended on A6:
-context compaction, pre-send token counting, and cache diagnostics are all real wins that were
-never designed, only deferred. None has files or a shape decided yet — that is the next thing
-worth a focused session, alongside Track C below.
+What is not built, flagged rather than silently dropped: a global `~/.claude/CLAUDE.md` layer
+(deliberately out — see `tui/context.go`'s doc comment), slash commands, and a skills-loading
+subsystem. All real, all bigger and fuzzier than fit alongside the rest of this round; each needs
+its own scoping session before a `###` entry here would mean anything.
 
 ## Tracks
 
-**A** is strictly ordered and now closed. **B** depended on nothing in A; B1-B4 are closed, B5 is
-not. **C** needed A finished, and now can start.
-
-~~Start with B1 + B2, then A0-A5.~~ Done. ~~A6 is next.~~ Done. **B5, then Track C, are next.**
+**A**, **B** and **C** are all closed. Nothing here is currently ordered — the next work is
+whichever of the "not built" items above, or something not yet named, earns a session of its own.
 
 ---
 
