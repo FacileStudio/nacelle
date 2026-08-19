@@ -14,6 +14,8 @@ github.com/FacileStudio/nacelle v0.0.0-20260819152844-d28e2251a9e3 h1:sEJGRmofER
 github.com/FacileStudio/nacelle v0.0.0-20260819152844-d28e2251a9e3/go.mod h1:OXvXau2MoSOoHuGKxPUM0VB9S5Wd3MqT+4mRcBLMaLU=
 github.com/FacileStudio/nacelle v0.0.0-20260819170642-1833849e1900 h1:CJa5mKNuJEeCXpO0bC9MWPa2Sq8ysQIc8BR0hfFvTAg=
 github.com/FacileStudio/nacelle v0.0.0-20260819170642-1833849e1900/go.mod h1:OXvXau2MoSOoHuGKxPUM0VB9S5Wd3MqT+4mRcBLMaLU=
+github.com/FacileStudio/nacelle v0.0.0-20260819172450-f3a794df71a5 h1:dmguRjcPL3iqiqa9ivvG0+RCejTSrd0QYVG01lxMNC4=
+github.com/FacileStudio/nacelle v0.0.0-20260819172450-f3a794df71a5/go.mod h1:OXvXau2MoSOoHuGKxPUM0VB9S5Wd3MqT+4mRcBLMaLU=
 github.com/alecthomas/chroma/v2 v2.14.0 h1:R3+wzpnUArGcQz7fCETQBzO5n9IMNi13iIs46aU4V9E=
 github.com/alecthomas/chroma/v2 v2.14.0/go.mod h1:QolEbTfmUHIMVpBqxeDnNBj2uoeI4EbYP4i6n68SG4I=
 github.com/anthropics/anthropic-sdk-go v1.63.1 h1:M9dIoZzUWB453ulVpBkQp3FX0769udzrTscDrsJk1w4=
