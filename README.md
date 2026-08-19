@@ -216,3 +216,12 @@ someone who put an agent in a box before us. Take ideas, cite them, write our ow
 
 `sh scripts/check.sh` — gofmt, vet, test. `filet check .` on top, and it is expected to be
 silent: the loop was refactored to satisfy it rather than the other way round.
+
+## Licence
+
+Apache License 2.0 — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
+Apache rather than MIT for one practical reason: `nacelle` expects to carry code from
+Apache-licensed neighbours such as [`charm.land/fantasy`](https://github.com/charmbracelet/fantasy),
+and matching licences keeps the repo under one set of terms instead of two. The patent grant is a
+welcome extra. Attribution for anything vendored belongs in `NOTICE`.
