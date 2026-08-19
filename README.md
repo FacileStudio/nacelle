@@ -83,7 +83,18 @@ searchEvents, err := nacelle.NewTool("search_events", "Find events matching a qu
     func(ctx context.Context, in searchInput) (string, error) { … })
 ```
 
-Defaults: `claude-opus-5`, adaptive thinking, 32k output per turn.
+Defaults: `claude-opus-5`, adaptive thinking, 32k output per turn, and prompt
+caching always on.
+
+Caching is not a knob because there is no run this package makes where turning it
+off pays. A cache write costs 1.25x a plain input token and a read costs 0.1x, so it
+is ahead from the second request sharing a prefix — and the tool runner resends the
+whole conversation every iteration, so any run that calls a tool has already made
+that request. Over ten turns it is the difference between paying for the system
+prompt and tool schemas once and paying for them ten times. Tools are sorted by name
+for the same reason: they render at the front of the prefix, so leaving them in the
+caller's order would make two identically-configured agents miss each other's cache
+with nothing in the result to say why.
 
 ## Backends, and the capability rule
 
@@ -196,6 +207,8 @@ Three things that are not negotiable, because they are what makes the core embed
 | The backend seam is the whole loop, not one request | Anthropic ships a runner and server-side MCP; a backend without them must drive the loop itself. A request-level seam would have forced the Anthropic path to give up a tested loop to look symmetrical with one that cannot have it |
 | Capabilities are named features, not tiers | A consumer needs to know MCP specifically is missing, not that a backend is "limited" |
 | `openai-go` for the OpenRouter transport | The SSE parsing is where the bugs live — its comment/blank-line handling is the fix for the exact `: OPENROUTER PROCESSING` crash. Module pruning keeps it to four indirect deps |
+| Prompt caching on, with no way off | Break-even is two requests sharing a prefix; a tool-using run always makes them |
+| Retry wraps the Backend, and is not a backoff engine | The SDKs already retry HTTP properly; what they cannot see is a failure delivered inside a 200 |
 | TUI and sandbox are separate modules | A backend must not inherit Bubble Tea or a container runtime |
 
 ### Notes from building the OpenRouter backend

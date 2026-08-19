@@ -69,14 +69,29 @@ func (b *Backend) Model() string { return b.model }
 
 // params is the request every turn of a run is made from. Only the messages
 // change between turns, and the runner owns those.
+//
+// CacheControl is set at the top level, which asks the API to mark the last
+// cacheable block itself and move that mark forward as the conversation grows.
+// Doing it there rather than per block is not a shortcut: the runner owns the
+// message slice, so the individual blocks are not ours to annotate, and the
+// server-side placement is the pattern the documentation recommends anyway.
+//
+// It has no switch because there is no run this package makes where turning it
+// off pays. A cache write costs 1.25x a plain input token and a read costs
+// 0.1x, so it is ahead from the second request that shares a prefix — and the
+// tool runner resends the whole conversation on every iteration, so any run
+// that calls a tool has already made that second request. Over ten turns this
+// is the difference between paying for the system prompt and tool schemas once
+// and paying for them ten times.
 func (b *Backend) params(request nacelle.Request) sdk.BetaToolRunnerParams {
 	params := sdk.BetaToolRunnerParams{
 		BetaMessageNewParams: sdk.BetaMessageNewParams{
-			Model:     sdk.Model(b.model),
-			MaxTokens: request.MaxTokens,
-			System:    []sdk.BetaTextBlockParam{{Text: request.System}},
-			Thinking:  thinkingConfig(request.Thinking),
-			Messages:  toParams(request.Messages),
+			Model:        sdk.Model(b.model),
+			MaxTokens:    request.MaxTokens,
+			System:       []sdk.BetaTextBlockParam{{Text: request.System}},
+			Thinking:     thinkingConfig(request.Thinking),
+			Messages:     toParams(request.Messages),
+			CacheControl: sdk.NewBetaCacheControlEphemeralParam(),
 		},
 		MaxIterations: request.MaxIterations,
 	}
