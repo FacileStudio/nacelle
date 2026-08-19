@@ -277,6 +277,9 @@ someone who put an agent in a box before us. Take ideas, cite them, write our ow
 
 ## Next steps
 
+The ordered version, with exact files and exit criteria, is in [`ROADMAP.md`](ROADMAP.md).
+
+
 1. ~~The gate, the core loop, `mcp/`, `tools/`, and both backends.~~ Done.
 2. Consume it from Kori. That is the first real test of the API, and the point at which it
    gets tagged `v0.1.0`. Expect the API to move before then.
