@@ -18,6 +18,20 @@ import (
 // second ctrl+c minutes later still means "stop this run", not "quit".
 const forceQuit = 3 * time.Second
 
+// commandState is everything /skill:name and the dropdown menu need beyond
+// what command.go itself owns: skills to resolve a name against, the
+// dropdown's own filter/selection state, and the window height layout()
+// needs to reserve the dropdown's own space out of. Embedded rather than
+// named, the same reason Config embeds Discovery in config.go: every field
+// still reads as m.skills or m.menu, not m.commandState.skills — grouping
+// exists only to keep model's own field count from growing by one every
+// time this list does.
+type commandState struct {
+	skills       map[string]skill
+	menu         commandMenu
+	windowHeight int
+}
+
 // model is the whole client: a transcript, a prompt, and at most one run in
 // flight.
 //
@@ -38,14 +52,15 @@ type model struct {
 	pretty *glamour.TermRenderer
 	spin   spinner.Model
 
-	skills map[string]skill
-	run    inflight
+	commandState
+	run inflight
 }
 
 // newModel builds the client. The banner names the backend and model, so
 // which provider is billed is visible before typing, not after it fails.
 // skills is every skill loaded this run — kept keyed by name so
-// /skill:name is a lookup, not a scan, every time it's typed.
+// /skill:name is a lookup, not a scan, every time it's typed, and listed
+// alongside the client's own commands in the dropdown menu.
 func newModel(agent *nacelle.Agent, banner string, skills []skill) *model {
 	byName := bySkillName(skills)
 
@@ -53,7 +68,6 @@ func newModel(agent *nacelle.Agent, banner string, skills []skill) *model {
 	prompt.Placeholder = "Ask something. Ctrl+C to stop or quit, Ctrl+\\ to force it."
 	prompt.Prompt = "> "
 	prompt.SetVirtualCursor(false)
-	suggestCommands(&prompt, byName)
 	prompt.Focus()
 	view := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 
@@ -64,8 +78,11 @@ func newModel(agent *nacelle.Agent, banner string, skills []skill) *model {
 		prompt:   prompt,
 		theme:    themed(true),
 		spin:     spinner.New(spinner.WithSpinner(spinner.MiniDot)),
-		skills:   byName,
-		run:      inflight{cancel: func() {}},
+		commandState: commandState{
+			skills: byName,
+			menu:   commandMenu{items: menuItems(byName)},
+		},
+		run: inflight{cancel: func() {}},
 	}
 	m.pretty = prettier(m.theme.markdown, m.viewport.Width())
 	m.say(fromClient, banner)
@@ -103,6 +120,7 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 	var cmd tea.Cmd
 	m.prompt, cmd = m.prompt.Update(message)
+	m.refreshMenu()
 	return m, cmd
 }
 
@@ -120,6 +138,12 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 // Both stay live while a tool approval is pending too: a question nobody
 // answers must not be a second way to get stuck. See decide's doc comment
 // for why cancelling clears run.pending directly instead.
+//
+// The dropdown menu is checked next, ahead of both enter and the scroller:
+// while it's open, up/down/tab/enter/esc belong to picking a command, not
+// to scrolling the transcript or sending what's typed. Anything the menu
+// itself does not claim (an ordinary character, backspace) falls all the
+// way through to the prompt, which is what keeps its own filter editable.
 func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 	switch press.String() {
 	case "ctrl+\\":
@@ -137,6 +161,11 @@ func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 	}
 	if m.run.pending != nil {
 		return true, m.decide(press)
+	}
+	if m.menu.open() {
+		if handled, cmd := m.navigateMenu(press); handled {
+			return true, cmd
+		}
 	}
 	switch press.String() {
 	case "enter":

@@ -4,7 +4,6 @@ import (
 	"sort"
 	"strings"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/FacileStudio/nacelle"
@@ -59,9 +58,10 @@ func (m *model) parseCommand(line string) (command, bool) {
 }
 
 // commandNames lists every registered command, "/"-prefixed and sorted, for
-// the prompt's own suggestion list — the one place that list is built, so a
-// command added to commands starts suggesting itself instead of only working
-// once someone remembers to wire it in twice.
+// the dropdown menu's own candidate list (menuItems, in menu.go) — the one
+// place this list is built, so a command added to commands starts showing
+// up there too instead of only working once someone remembers to wire it
+// in twice.
 func commandNames() []string {
 	names := make([]string, 0, len(commands))
 	for name := range commands {
@@ -69,16 +69,6 @@ func commandNames() []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-// suggestCommands turns commandNames, plus a "/skill:name" for every loaded
-// skill, into completion: a match ghosts in ahead of the cursor as it's
-// typed, tab accepts it. Kept next to commands itself rather than in
-// newModel, so the prompt's own construction does not need to know the two
-// are related.
-func suggestCommands(prompt *textinput.Model, skills map[string]skill) {
-	prompt.ShowSuggestions = true
-	prompt.SetSuggestions(append(commandNames(), skillCommandNames(skills)...))
 }
 
 // clear starts a new session in the same client: the transcript, the
@@ -113,7 +103,7 @@ func (m *model) help() tea.Cmd {
 		"",
 		"Ctrl+C cancels a run, or quits when idle. Ctrl+\\ force-quits.",
 		"Up/Down/PageUp/PageDown scroll the transcript.",
-		"Tab completes a /command; ctrl+n/ctrl+p cycle suggestions when more than one matches.",
+		"Typing / opens a dropdown of commands and skills — up/down move, tab/enter pick, esc closes it.",
 	}, "\n"))
 	return nil
 }
