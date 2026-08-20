@@ -155,6 +155,12 @@ something only the person running nacelle, on their own machine, can do in the f
 and `search_memory`, when the `jardin` binary is on `PATH`. Narrower and more legible than
 reaching the same commands through `run_command`, and available even with `-bash=false`.
 
+**The banner** (`tui/main.go`'s `banner`) is how much of this is actually visible before typing
+anything: line one names the backend and model, line two the resolved `-root`, how many skills
+loaded (from every source above, combined) and how many `CLAUDE.md`/`AGENTS.md` files did.
+Nothing on it is decorative — each answers a real "is that actually on" question this client
+otherwise had no way to check short of a debug build.
+
 ## Tool approval
 
 `-approve-tools` (`NACELLE_APPROVE_TOOLS`, `approve_tools`) asks before every tool call runs.
