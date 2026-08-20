@@ -67,9 +67,8 @@ func run() error {
 // localTools opens the file/search/command tools and, when asked, adds
 // jardin's and the web search — the caller owns closing the returned Set.
 //
-// WebSearch's error is returned unwrapped, unlike jardin's. It already names
-// the endpoint and what is wrong with it, and a second "building the web
-// search tool" in front of that says nothing the reader has not just read.
+// The two internet tools are built together in webTools, which is also where
+// the reason WebSearch's error goes back unwrapped is written down.
 //
 // Every failure after tools.New succeeds closes the Set on the way out.
 // Without that it is dropped on the floor: the caller's own defer only ever
@@ -109,12 +108,11 @@ func localTools(config Config) (_ *tools.Set, local []nacelle.Tool, err error) {
 		local = append(local, jardinTools...)
 	}
 
-	searching, err := tools.WebSearch(*config.Search)
-	if err != nil {
+	var reaching []nacelle.Tool
+	if reaching, err = webTools(config); err != nil {
 		return nil, nil, err
 	}
-
-	local = append(local, searching...)
+	local = append(local, reaching...)
 
 	return opened, local, nil
 }

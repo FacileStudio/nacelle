@@ -23,11 +23,17 @@ func (d *dirList) Set(v string) error { *d = append(*d, v); return nil }
 // one every time that list does.
 type declared struct {
 	backend, model, effort, root, system *string
-	search                               *string
-	bash, thinking, approveTools         *bool
-	iterations                           *int
-	skillDirs                            *dirList
+	webFlags
+	bash, thinking, approveTools *bool
+	iterations                   *int
+	skillDirs                    *dirList
 	discoveryFlags
+}
+
+// webFlags is declared's half of Web — one flag pointer per field there.
+type webFlags struct {
+	search *string
+	fetch  *bool
 }
 
 // discoveryFlags is declared's half of Discovery — one flag pointer per
@@ -51,10 +57,9 @@ func declareFlags(fallback Config) declared {
 		effort:    flag.String("effort", fallback.Effort, "low, medium, high, xhigh or max"),
 		root:      flag.String("root", fallback.Root, "directory the file tools may reach"),
 		system:    flag.String("system", fallback.System, "system prompt"),
-		search: flag.String("search", *fallback.Search,
-			"base URL of a SearXNG instance to search the web through; empty means no web search"),
-		bash:     flag.Bool("bash", *fallback.Bash, "let the model run commands"),
-		thinking: flag.Bool("thinking", *fallback.Thinking, "stream the model's reasoning"),
+		webFlags:  declareWeb(fallback),
+		bash:      flag.Bool("bash", *fallback.Bash, "let the model run commands"),
+		thinking:  flag.Bool("thinking", *fallback.Thinking, "stream the model's reasoning"),
 		approveTools: flag.Bool("approve-tools", *fallback.ApproveTools,
 			"ask before every tool call runs, y/a/n; off by default, every call runs unasked"),
 		iterations: flag.Int("max-iterations", *fallback.MaxIterations, "how many times the model may be asked"),
@@ -71,6 +76,17 @@ func declareFlags(fallback Config) declared {
 	}
 }
 
+// declareWeb registers the two network settings, kept out of declareFlags so
+// that function stays inside the length the gate allows.
+func declareWeb(fallback Config) webFlags {
+	return webFlags{
+		search: flag.String("search", *fallback.Search,
+			"base URL of a SearXNG instance to search the web through; empty means no web search"),
+		fetch: flag.Bool("fetch", *fallback.Fetch,
+			"let the model read a web page by URL; on by default"),
+	}
+}
+
 // typedSetters maps each flag's name to what it does to a Config, which is
 // the shape flag.Visit wants: it reports flag names, not values, and a name
 // on its own cannot say where in Config it belongs.
@@ -82,6 +98,7 @@ func typedSetters(f declared) map[string]func(*Config) {
 		"root":            func(c *Config) { c.Root = *f.root },
 		"system":          func(c *Config) { c.System = *f.system },
 		"search":          func(c *Config) { c.Search = f.search },
+		"fetch":           func(c *Config) { c.Fetch = f.fetch },
 		"bash":            func(c *Config) { c.Bash = f.bash },
 		"thinking":        func(c *Config) { c.Thinking = f.thinking },
 		"jardin":          func(c *Config) { c.Jardin = f.jardin },

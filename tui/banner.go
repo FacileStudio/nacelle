@@ -17,6 +17,11 @@ import (
 // each is a real "is that actually on" question this client had no way to
 // answer before without a debug build.
 //
+// Each web setting is named in the direction that would otherwise surprise:
+// search when it is on, because it had to be configured and confirming that
+// is the point; fetch when it is off, because it is on by default and a model
+// that cannot read a page it just found needs the reason on screen.
+//
 // Search is named only when it is on. Being off has no symptom — nothing is
 // offered, so nothing goes wrong and there is nothing to explain — and naming
 // it every launch would be a permanent line about something most people
@@ -52,6 +57,9 @@ func banner(backend nacelle.Backend, config Config, found loaded) string {
 
 	if *config.Search != "" {
 		line += " · search on"
+	}
+	if !*config.Fetch {
+		line += " · fetch off"
 	}
 	return line
 }

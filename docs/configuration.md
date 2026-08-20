@@ -72,9 +72,9 @@ could tell apart.
 | Layer | Source | Notes |
 |---|---|---|
 | Flags | `-backend`, `-model`, `-effort`, `-root`, `-system`, `-bash`, `-thinking`, `-jardin`, `-project-context`, `-skills`, `-trust-skills`, `-skill-dir`, `-approve-tools`, `-max-iterations` | Only flags actually **typed** are collected, via `flag.Visit` — Go's `flag` package cannot otherwise tell a flag left alone from one passed its own default value. `-skill-dir` is repeatable (`-skill-dir a -skill-dir b`); every other flag keeps only its last occurrence |
-| Environment | `NACELLE_BACKEND`, `NACELLE_MODEL`, `NACELLE_EFFORT`, `NACELLE_ROOT`, `NACELLE_SYSTEM`, `NACELLE_BASH`, `NACELLE_THINKING`, `NACELLE_JARDIN`, `NACELLE_PROJECT_CONTEXT`, `NACELLE_SKILLS`, `NACELLE_TRUST_SKILLS`, `NACELLE_SKILL_DIRS`, `NACELLE_APPROVE_TOOLS`, `NACELLE_MAX_ITERATIONS`, `NACELLE_SEARCH` | A misspelt boolean (`NACELLE_BASH=yez`) is treated as unmentioned, not as `false`, and falls through to the layer below. `NACELLE_SKILL_DIRS` is colon-separated, the same convention `PATH` itself uses for a list of directories |
+| Environment | `NACELLE_BACKEND`, `NACELLE_MODEL`, `NACELLE_EFFORT`, `NACELLE_ROOT`, `NACELLE_SYSTEM`, `NACELLE_BASH`, `NACELLE_THINKING`, `NACELLE_JARDIN`, `NACELLE_PROJECT_CONTEXT`, `NACELLE_SKILLS`, `NACELLE_TRUST_SKILLS`, `NACELLE_SKILL_DIRS`, `NACELLE_APPROVE_TOOLS`, `NACELLE_MAX_ITERATIONS`, `NACELLE_SEARCH`, `NACELLE_FETCH` | A misspelt boolean (`NACELLE_BASH=yez`) is treated as unmentioned, not as `false`, and falls through to the layer below. `NACELLE_SKILL_DIRS` is colon-separated, the same convention `PATH` itself uses for a list of directories |
 | File | `~/.nacelle.yml` | Preferences only, **no credentials** — those already have two homes: the environment, and the Anthropic SDK's own profile. `KnownFields(true)`: an unrecognised key (`max_iteration:`, one letter short) is refused rather than silently ignored |
-| Defaults | — | `backend: anthropic`, `root: .`, `bash: false`, `thinking: false`, `jardin: true`, `project_context: true`, `skills: true`, `trust_skills: false`, `skill_dirs: []`, `approve_tools: false`, `max_iterations: 40`, `search: ""` (no web search) |
+| Defaults | — | `backend: anthropic`, `root: .`, `bash: false`, `thinking: false`, `jardin: true`, `project_context: true`, `skills: true`, `trust_skills: false`, `skill_dirs: []`, `approve_tools: false`, `max_iterations: 40`, `search: ""` (no web search), `fetch: true` |
 
 `jardin`, `project_context` and `skills` default **on**, unlike `bash`: each fails soft to
 nothing when there is nothing to find — no `jardin` on `PATH`, no `AGENTS.md`/`CLAUDE.md`
@@ -106,6 +106,7 @@ skill_dirs:
 approve_tools: false
 max_iterations: 40
 search: https://searx.example
+fetch: true
 ```
 
 Every field is optional. A missing file is not an error — most people never write one — but an
@@ -201,6 +202,30 @@ copied from a browser rather than the instance's base URL.
 Why an instance you host rather than the backends' own search: both have it, and neither is
 free — $10 per 1,000 searches on Anthropic, no free tier on OpenRouter. A local tool also works
 identically on both backends, where server-side search would be wired, and billed, per backend.
+
+## Reading a page
+
+`fetch:` (`NACELLE_FETCH`, `-fetch`) lets the model read one web page by URL. **On by default**,
+unlike bash and unlike search, and it is what makes a search result more than a sentence — search
+answers with a title and two lines, and this reads the page behind them.
+
+It is on by default because it cannot change anything and cannot reach anything but the public
+internet: loopback, private ranges, the cloud metadata endpoint and the special-use ranges are
+refused in the dialer, on every redirect hop. Pages come back as text — headings, lists, code
+blocks, and links resolved to absolute URLs so the model can follow one by calling the tool
+again. `text/markdown` is asked for first, which Cloudflare and Vercel answer by converting at
+the edge for roughly 80% fewer tokens.
+
+Turn it off with `fetch: false` for the one risk the guard cannot cover: a fetched page is
+written by a stranger and read by the model as instructions, so it can ask for another URL with
+something from the conversation in its query string. With `bash: true` that channel already
+exists through `run_command`; with bash off, this is the only one. The banner says `fetch off`
+when it is off, since a model that cannot read a page it just found needs the reason on screen.
+
+Sites do refuse automated clients. This one identifies itself honestly rather than impersonating
+a browser — every current source agrees that negotiated access is what gets an agent through and
+that a spoofed user agent is what gets an address banned — so a 403 from an anti-bot layer is
+reported as one, with the suggestion to try another source, rather than as the page not existing.
 
 ## Tool approval
 

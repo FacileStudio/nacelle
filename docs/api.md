@@ -370,6 +370,7 @@ func (s *Set) ReadOnly() ([]nacelle.Tool, error) // read, find, search — nothi
 
 func Jardin() ([]nacelle.Tool, error)
 func WebSearch(endpoint string) ([]nacelle.Tool, error)
+func WebFetch() ([]nacelle.Tool, error)
 ```
 
 `Tools()` returns: `read_file`, `write_file`, `edit_file` (exact-match replace, refuses an
@@ -396,6 +397,22 @@ thing inside it. The instance needs `json` in `search.formats` in its `settings.
 off by default — the error says so by name, as does the one for the limiter's 403. Results are
 capped at `DefaultSearchResults` and are untrusted text from strangers, which is worth weighing
 when deciding what else to mount beside it.
+
+`WebFetch()` returns one tool, `web_fetch`, which reads a single page by URL: `text/markdown`
+first in the `Accept` header (Cloudflare and Vercel convert at the edge when asked, for roughly
+80% fewer tokens), HTML otherwise, rendered to text keeping headings, lists, code blocks and
+links resolved against the page's own URL. Non-text types are refused by name rather than
+returned as bytes, and a page that renders itself with JavaScript is reported as such instead of
+coming back empty.
+
+It is the only tool in this package whose destination the model names, so the address check is
+in the dialer's `Control` hook — after resolution, before connect, on every redirect hop, which
+is the only placement that is neither a hostname check nor a race against the second DNS lookup.
+It refuses loopback, private, link-local (including `169.254.169.254`), unspecified, multicast
+and the special-use ranges `net/netip` has no predicate for, among them `198.18.0.0/15`, which
+has been a real bypass elsewhere. Pages are parsed with `html.Parse` rather than tokenised,
+because real pages leave tags unclosed and only the tree-construction algorithm closes them the
+way a browser does.
 
 ## `tui`
 

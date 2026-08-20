@@ -23,12 +23,15 @@ func fromEnv() Config {
 		Effort:        os.Getenv(EnvPrefix + "EFFORT"),
 		Root:          os.Getenv(EnvPrefix + "ROOT"),
 		System:        os.Getenv(EnvPrefix + "SYSTEM"),
-		Search:        envString(EnvPrefix + "SEARCH"),
 		Bash:          envBool(EnvPrefix + "BASH"),
 		Thinking:      envBool(EnvPrefix + "THINKING"),
 		ApproveTools:  envBool(EnvPrefix + "APPROVE_TOOLS"),
 		MaxIterations: envInt(EnvPrefix + "MAX_ITERATIONS"),
 		SkillDirs:     envList(EnvPrefix + "SKILL_DIRS"),
+		Web: Web{
+			Search: envString(EnvPrefix + "SEARCH"),
+			Fetch:  envBool(EnvPrefix + "FETCH"),
+		},
 		Discovery: Discovery{
 			Jardin:         envBool(EnvPrefix + "JARDIN"),
 			ProjectContext: envBool(EnvPrefix + "PROJECT_CONTEXT"),

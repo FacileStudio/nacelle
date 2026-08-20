@@ -34,16 +34,11 @@ type Config struct {
 	MaxIterations *int     `yaml:"max_iterations"`
 	SkillDirs     []string `yaml:"skill_dirs"`
 
-	// Search is the base URL of a SearXNG instance the model may query,
-	// and empty means no web search at all — the default, since any
-	// instance shipped as one would be somebody else's machine.
-	//
-	// A pointer for the reason the toggles below are, and not for the
-	// reason the strings above are not: empty is a real answer here, so a
-	// layer saying "no search this run" and a layer saying nothing about
-	// search are different instructions. As a plain string they were the
-	// same one, and `-search ""` was a silent no-op.
-	Search *string `yaml:"search"`
+	// Web is embedded rather than named, so every field on it is still
+	// reached as config.Search, for the reason Discovery is: it keeps this
+	// struct's own field count from growing every time the list does.
+	// yaml:",inline" keeps the keys at the file's top level.
+	Web `yaml:",inline"`
 
 	// Discovery is embedded rather than named so every field on it is still
 	// reached as config.Jardin, not config.Discovery.Jardin — the grouping
@@ -53,17 +48,6 @@ type Config struct {
 	// every key stays at ~/.nacelle.yml's top level, exactly where it was
 	// before this existed.
 	Discovery `yaml:",inline"`
-}
-
-// Discovery is every toggle for something this client finds on its own
-// rather than being told: jardin's tools, project and global context,
-// skills. See Config's own doc comment for why it is a separate type at
-// all.
-type Discovery struct {
-	Jardin         *bool `yaml:"jardin"`
-	ProjectContext *bool `yaml:"project_context"`
-	Skills         *bool `yaml:"skills"`
-	TrustSkills    *bool `yaml:"trust_skills"`
 }
 
 // defaults is the bottom layer, and the only one that answers everything.
@@ -90,9 +74,9 @@ func defaults() Config {
 	bash, thinking, jardin, projectContext, skills, trustSkills, approveTools :=
 		false, false, true, true, true, false, false
 	iterations := 40
-	search := ""
+	search, fetch := "", true
 	return Config{
-		Search:        &search,
+		Web:           Web{Search: &search, Fetch: &fetch},
 		Backend:       "anthropic",
 		Root:          ".",
 		System:        defaultSystem,
@@ -121,6 +105,9 @@ func (c *Config) merge(over Config) {
 	}
 	if over.Search != nil {
 		c.Search = over.Search
+	}
+	if over.Fetch != nil {
+		c.Fetch = over.Fetch
 	}
 	if len(over.SkillDirs) > 0 {
 		c.SkillDirs = over.SkillDirs

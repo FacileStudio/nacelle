@@ -227,13 +227,15 @@ Commands run with a scrubbed environment (`PATH` and `HOME`, nothing else), in t
 process group so a timeout kills the children too, with every output capped and truncation
 announced rather than silent.
 
-Two tools sit outside the confined set because they answer questions the working directory
+Three tools sit outside the confined set because they answer questions the working directory
 cannot. `tools.Jardin()` reaches this machine's recorded flows and wiki. `tools.WebSearch(url)`
-searches the web through a [SearXNG](https://docs.searxng.org) instance you host:
+searches the web through a [SearXNG](https://docs.searxng.org) instance you host, and
+`tools.WebFetch()` reads one of the pages it finds:
 
 ```go
 searching, err := tools.WebSearch(os.Getenv("SEARCH_URL"))  // "" builds nothing, and no error
-local = append(local, searching...)
+reading, err := tools.WebFetch()
+local = append(append(local, searching...), reading...)
 ```
 
 Both backends can search server-side and neither does it for free — $10 per 1,000 searches on
@@ -243,6 +245,19 @@ is an ordinary local tool rather than a request parameter. There is no default e
 there will not be one: this repository is public, and any instance shipped as a default would
 be somebody else's machine. As with the root, the endpoint comes from the host and never from
 a tool argument — the model supplies a query and nothing else.
+
+`web_fetch` is the one tool here whose destination the model chooses, which is the whole of
+SSRF, so the address check lives in the dialer's `Control` hook rather than on the URL: a
+hostname resolves to whatever its owner says today, and checking a resolved address before
+connecting is a race the second lookup wins. It refuses loopback, private, link-local — the
+cloud metadata endpoint included — and the special-use ranges `net/netip` has no predicate for,
+on every redirect hop. Pages come back as text with headings, lists, code and absolute links;
+it asks for `text/markdown` first, which Cloudflare and Vercel answer by converting at the edge
+for roughly 80% fewer tokens.
+
+Both are read-only and neither can be made safe against what it reads. A fetched page is text
+written by a stranger arriving where the model reads instructions, and it can ask for another
+URL with something from the conversation in the query string. Mount them knowing that.
 
 [`os.Root`]: https://pkg.go.dev/os#Root
 
