@@ -44,8 +44,15 @@ set, the TUI, and the gate, in the order they were built.
   servers sharing a name before either backend ever sees the config.
 - **`tui/`** — the SDK's first consumer, and the reason several of the entries below exist: a
   terminal exercises every event kind a backend can produce, and does it while someone is
-  watching. Scrolls with pgup/pgdown/up/down, following the stream only while already at the
-  bottom. Renders answers as markdown (`charm.land/glamour`), picking light or dark from the
+  watching. Scrolls with pgup/pgdown/up/down and the mouse wheel, following the stream only
+  while already at the bottom — and returning to the bottom whenever anything is sent, since
+  a question echoed off-screen looks like a client that dropped it. Reporting the wheel is
+  what the alternate screen costs: an alt-screen program has no scrollback of its own, so a
+  terminal left to handle the wheel itself scrolls nothing at all. The price is the
+  terminal's own click-drag selection, which comes back by holding shift. Prints the whole
+  transcript on the way out, after the alternate screen is handed back, so quitting leaves the
+  session in the terminal's scrollback instead of un-drawing it — the other half of the same
+  cost, and the reason this client can keep no session files and still not lose one. Renders answers as markdown (`charm.land/glamour`), picking light or dark from the
   terminal's own reported background rather than assuming one. Shows a spinner for the gap
   between a question and the first token. Reads `~/.nacelle.yml` beneath `NACELLE_*`
   environment variables beneath command-line flags, in that order, and holds no credentials —

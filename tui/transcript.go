@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -131,4 +132,36 @@ func (m *model) render() {
 	if follow {
 		m.viewport.GotoBottom()
 	}
+}
+
+// session is the whole transcript as the terminal should be left holding it,
+// and the empty string when there is no reason to leave it anything.
+//
+// This exists because of the alternate screen, and it is the cheaper half of
+// the only real objection to using one. An alt-screen program is handed a
+// blank page and hands the old one back untouched when it exits, so quitting
+// does not scroll the conversation away, it un-draws it: there is no
+// scrollback to reach for, and this client keeps no session files to fall back
+// on either. Printing this once, after the program has returned and the real
+// screen is back, is what turns a session that vanished into one the terminal
+// has — scrollable and selectable with nothing of this client's still running.
+//
+// Nothing is re-rendered. drawn is what was on screen, already wrapped to the
+// width the terminal still is, so anything else here would be a second answer
+// to a question paint has already settled — and a worse one, since it would
+// have to guess at a width nobody has reported since the last resize.
+//
+// A run nobody asked anything in is left alone. Launching in the wrong
+// directory and quitting straight back out is the common way to reach that,
+// and echoing the banner at someone who typed one key is noise, not a record.
+func (m *model) session() string {
+	if !slices.ContainsFunc(m.transcript, func(e entry) bool { return e.who == fromReader }) {
+		return ""
+	}
+
+	drawn := make([]string, 0, len(m.transcript))
+	for _, e := range m.transcript {
+		drawn = append(drawn, e.drawn)
+	}
+	return strings.Join(drawn, "\n\n") + "\n"
 }

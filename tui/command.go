@@ -27,7 +27,7 @@ var commands = map[string]command{
 //
 // A line starting with '/' that names no known command or skill still
 // counts as a command, reported back to the reader rather than sent to the
-// model: a typo like "/clera" is far more likely than a real question meant
+// model: a typo like "/cler" is far more likely than a real question meant
 // to start with a slash, the same trade-off every peer client with slash
 // commands makes.
 //
@@ -102,7 +102,8 @@ func (m *model) help() tea.Cmd {
 		"/skill:name [what to do] — run a loaded skill directly, instead of waiting for the model to decide to",
 		"",
 		"Ctrl+C cancels a run, or quits when idle. Ctrl+\\ force-quits.",
-		"Up/Down/PageUp/PageDown scroll the transcript.",
+		"Up/Down/PageUp/PageDown and the mouse wheel scroll the transcript; sending anything returns to the end.",
+		"Selecting text with the mouse needs shift held down, because the wheel is reported to this client instead of the terminal.",
 		"Typing / opens a dropdown of commands and skills — up/down move, tab/enter pick, esc closes it.",
 	}, "\n"))
 	return nil

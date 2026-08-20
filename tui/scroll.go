@@ -35,3 +35,24 @@ func (m *model) scroll(press tea.KeyPressMsg) bool {
 	}
 	return true
 }
+
+// wheel scrolls the transcript by mouse.
+//
+// This one is forwarded to the viewport rather than driven by hand, which
+// looks like the opposite of what scroll does and rests on the same reason:
+// the objection to forwarding was never the viewport's scrolling, it was its
+// keyboard. A wheel event collides with nothing the prompt wants, and
+// viewport.New already sets the three-line delta every other terminal
+// application scrolls by, so restating it here would only be a copy that can
+// drift.
+//
+// None of this arrives unasked. View has to put the terminal in a mouse mode
+// before a wheel message exists at all, and until it did, the wheel did
+// nothing in this client: the alternate screen has no scrollback of its own to
+// fall through to, so an unasked-for wheel is not degraded scrolling, it is
+// none. See View for what asking costs.
+func (m *model) wheel(press tea.MouseWheelMsg) tea.Cmd {
+	var cmd tea.Cmd
+	m.viewport, cmd = m.viewport.Update(press)
+	return cmd
+}
