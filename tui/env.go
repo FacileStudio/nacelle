@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 // EnvPrefix is what every setting's environment variable starts with.
@@ -26,6 +27,7 @@ func fromEnv() Config {
 		Thinking:      envBool(EnvPrefix + "THINKING"),
 		ApproveTools:  envBool(EnvPrefix + "APPROVE_TOOLS"),
 		MaxIterations: envInt(EnvPrefix + "MAX_ITERATIONS"),
+		SkillDirs:     envList(EnvPrefix + "SKILL_DIRS"),
 		Discovery: Discovery{
 			Mycelium:         envBool(EnvPrefix + "MYCELIUM"),
 			ProjectContext: envBool(EnvPrefix + "PROJECT_CONTEXT"),
@@ -64,4 +66,15 @@ func envInt(name string) *int {
 		return nil
 	}
 	return &value
+}
+
+// envList reads a colon-separated list, the same separator PATH itself uses
+// for the same kind of value, returning nil rather than a one-element slice
+// holding "" when the variable is unset or empty.
+func envList(name string) []string {
+	raw, ok := os.LookupEnv(name)
+	if !ok || raw == "" {
+		return nil
+	}
+	return strings.Split(raw, ":")
 }

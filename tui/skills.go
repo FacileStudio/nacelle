@@ -42,13 +42,16 @@ type skillsResult struct {
 }
 
 // loadSkills assembles every skill nacelle will tell the model about: every
-// skill under ~/.agents/skills/, and every skill under a trusted .agents/
-// skills/ found walking up from root. trustNew marks every project-local
-// skills directory found on this run as trusted before deciding what loads,
-// which is what -trust-skills asks for.
-func loadSkills(root string, trustNew bool) skillsResult {
+// skill under ~/.agents/skills/, every skill under a trusted .agents/
+// skills/ found walking up from root, and every skill under extraDirs
+// (-skill-dir / NACELLE_SKILL_DIRS / skill_dirs — another tool's own skills
+// folder, most often). trustNew marks every project-local skills directory
+// found on this run as trusted before deciding what loads, which is what
+// -trust-skills asks for.
+func loadSkills(root string, trustNew bool, extraDirs []string) skillsResult {
 	var found []skill
 	found = append(found, globalSkills()...)
+	found = append(found, extraSkills(extraDirs)...)
 
 	containers := projectSkillContainers(root)
 	store, err := loadTrust()

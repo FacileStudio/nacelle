@@ -96,7 +96,7 @@ func augmentSystem(config *Config) string {
 	if !*config.Skills {
 		return ""
 	}
-	result := loadSkills(config.Root, *config.TrustSkills)
+	result := loadSkills(config.Root, *config.TrustSkills, config.SkillDirs)
 	config.System += result.system
 	return result.notice
 }

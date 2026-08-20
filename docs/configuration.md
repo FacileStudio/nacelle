@@ -71,10 +71,10 @@ could tell apart.
 
 | Layer | Source | Notes |
 |---|---|---|
-| Flags | `-backend`, `-model`, `-effort`, `-root`, `-system`, `-bash`, `-thinking`, `-mycelium`, `-project-context`, `-skills`, `-trust-skills`, `-approve-tools`, `-max-iterations` | Only flags actually **typed** are collected, via `flag.Visit` — Go's `flag` package cannot otherwise tell a flag left alone from one passed its own default value |
-| Environment | `NACELLE_BACKEND`, `NACELLE_MODEL`, `NACELLE_EFFORT`, `NACELLE_ROOT`, `NACELLE_SYSTEM`, `NACELLE_BASH`, `NACELLE_THINKING`, `NACELLE_MYCELIUM`, `NACELLE_PROJECT_CONTEXT`, `NACELLE_SKILLS`, `NACELLE_TRUST_SKILLS`, `NACELLE_APPROVE_TOOLS`, `NACELLE_MAX_ITERATIONS` | A misspelt boolean (`NACELLE_BASH=yez`) is treated as unmentioned, not as `false`, and falls through to the layer below |
+| Flags | `-backend`, `-model`, `-effort`, `-root`, `-system`, `-bash`, `-thinking`, `-mycelium`, `-project-context`, `-skills`, `-trust-skills`, `-skill-dir`, `-approve-tools`, `-max-iterations` | Only flags actually **typed** are collected, via `flag.Visit` — Go's `flag` package cannot otherwise tell a flag left alone from one passed its own default value. `-skill-dir` is repeatable (`-skill-dir a -skill-dir b`); every other flag keeps only its last occurrence |
+| Environment | `NACELLE_BACKEND`, `NACELLE_MODEL`, `NACELLE_EFFORT`, `NACELLE_ROOT`, `NACELLE_SYSTEM`, `NACELLE_BASH`, `NACELLE_THINKING`, `NACELLE_MYCELIUM`, `NACELLE_PROJECT_CONTEXT`, `NACELLE_SKILLS`, `NACELLE_TRUST_SKILLS`, `NACELLE_SKILL_DIRS`, `NACELLE_APPROVE_TOOLS`, `NACELLE_MAX_ITERATIONS` | A misspelt boolean (`NACELLE_BASH=yez`) is treated as unmentioned, not as `false`, and falls through to the layer below. `NACELLE_SKILL_DIRS` is colon-separated, the same convention `PATH` itself uses for a list of directories |
 | File | `~/.nacelle.yml` | Preferences only, **no credentials** — those already have two homes: the environment, and the Anthropic SDK's own profile. `KnownFields(true)`: an unrecognised key (`max_iteration:`, one letter short) is refused rather than silently ignored |
-| Defaults | — | `backend: anthropic`, `root: .`, `bash: false`, `thinking: false`, `mycelium: true`, `project_context: true`, `skills: true`, `trust_skills: false`, `approve_tools: false`, `max_iterations: 40` |
+| Defaults | — | `backend: anthropic`, `root: .`, `bash: false`, `thinking: false`, `mycelium: true`, `project_context: true`, `skills: true`, `trust_skills: false`, `skill_dirs: []`, `approve_tools: false`, `max_iterations: 40` |
 
 `mycelium`, `project_context` and `skills` default **on**, unlike `bash`: each fails soft to
 nothing when there is nothing to find — no `mycelium` on `PATH`, no `AGENTS.md`/`CLAUDE.md`
@@ -101,6 +101,8 @@ mycelium: true
 project_context: true
 skills: true
 trust_skills: false
+skill_dirs:
+  - ~/.claude/skills
 approve_tools: false
 max_iterations: 40
 ```
@@ -129,14 +131,25 @@ sense to whichever agent finds it. None of this is trust-gated — see
 [architecture.md](architecture.md) for why a plain instruction file and a skill are not the
 same risk.
 
-**Skills** (`-skills`, `-trust-skills`, `tui/skills.go`), following the
+**Skills** (`-skills`, `-trust-skills`, `-skill-dir`, `tui/skills.go`), following the
 [Agent Skills specification](https://agentskills.io/specification): every `SKILL.md` under
-`~/.agents/skills/` (no trust needed, the user's own machine), plus every one under a
-**trusted** `.agents/skills/` found the same way the context walk works. Only a skill's `name`
-and `description` ever reach the system prompt; the model reads the rest with `read_file` once
-it decides a skill applies. `-trust-skills` trusts every project-local `.agents/skills/` found
-on that run and remembers the decision in `~/.nacelle/trust.json`, keyed by canonical
-directory — run it once per project, not on every launch.
+`~/.agents/skills/` (no trust needed, the user's own machine), every one under a **trusted**
+`.agents/skills/` found the same way the context walk works, and every one under a directory
+named by `-skill-dir` (repeatable), `NACELLE_SKILL_DIRS` (colon-separated) or `skill_dirs` in
+`~/.nacelle.yml`. Only a skill's `name` and `description` ever reach the system prompt; the
+model reads the rest with `read_file` once it decides a skill applies. `-trust-skills` trusts
+every project-local `.agents/skills/` found on that run and remembers the decision in
+`~/.nacelle/trust.json`, keyed by canonical directory — run it once per project, not on every
+launch.
+
+The spec defines the `SKILL.md` file, not where it has to live on disk — every tool picks its
+own directory (Claude Code reads `~/.claude/skills/`, pi reads `~/.agents/skills/` and its own
+`~/.pi/agent/skills/`), so `~/.agents/skills/` is nacelle's own choice, not a location any other
+tool already reads. `-skill-dir` is how nacelle sees a directory that belongs to one of those,
+without moving or copying anything into its own — the same problem pi itself solves with a
+`skills` array in `settings.json` pointed at `~/.claude/skills` or `~/.codex/skills`. No trust
+gate applies to it, same reasoning as `~/.agents/skills/` above: naming a directory here is
+something only the person running nacelle, on their own machine, can do in the first place.
 
 **Mycelium tools** (`-mycelium`, `tools.Mycelium`, [api.md](api.md#tools)). `list_flows`, `run_flow`
 and `search_memory`, when the `mycelium` binary is on `PATH`. Narrower and more legible than
