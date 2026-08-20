@@ -9,12 +9,14 @@ import (
 
 // writeLink emits the finished anchor, dropping the URL when it would only
 // repeat the text and keeping the text when there is no usable URL.
-func (w *textWriter) writeLink(text string) {
+func (w *textWriter) writeLink() {
+	text := strings.TrimSpace(w.link.String())
+	w.link.Reset()
+
 	rendered := text
 	if w.href != "" && text != "" && text != w.href {
 		rendered = "[" + text + "](" + w.href + ")"
 	}
-	w.href = ""
 	if rendered == "" {
 		return
 	}
