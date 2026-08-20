@@ -55,7 +55,7 @@ func clean(name string) (string, error) {
 
 type readInput struct {
 	Path   string `json:"path" jsonschema:"required,description=Path to the file relative to the working directory"`
-	Offset int    `json:"offset,omitempty" jsonschema:"description=First line to show, 1-based. Omit to start at the beginning"`
+	Offset int    `json:"offset,omitempty" jsonschema:"description=First line to show. Counting starts at 1. Omit to start at the beginning"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"description=How many lines to show. Omit for as many as fit"`
 }
 

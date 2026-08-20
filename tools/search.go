@@ -54,7 +54,7 @@ func (s *Set) globTool() (nacelle.Tool, error) {
 
 type grepInput struct {
 	Pattern string `json:"pattern" jsonschema:"required,description=A Go regular expression to search for"`
-	Glob    string `json:"glob,omitempty" jsonschema:"description=Only search files matching this glob, such as **/*.go"`
+	Glob    string `json:"glob,omitempty" jsonschema:"description=Only search files matching this glob — for example **/*.go"`
 }
 
 // grepTool builds the content search.
