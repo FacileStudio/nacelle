@@ -44,10 +44,7 @@ func banner(backend nacelle.Backend, config Config, found loaded) string {
 	if model == "" {
 		model = anthropic.DefaultModel
 	}
-	root, err := filepath.Abs(config.Root)
-	if err != nil {
-		root = config.Root
-	}
+	root := absolute(config.Root)
 	bash := "bash off"
 	if *config.Bash {
 		bash = "bash on"
@@ -71,4 +68,17 @@ func countedNoun(n int, noun string) string {
 		return "1 " + noun
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
+}
+
+// absolute is the root as a path that means the same thing from anywhere.
+// "-root ." reads identically from every directory nacelle was launched in
+// and so answers nothing on its own — neither for the person reading the
+// banner nor for the model reading the system prompt, which are the two
+// callers.
+func absolute(root string) string {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return root
+	}
+	return abs
 }

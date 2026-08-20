@@ -13,6 +13,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -22,8 +23,24 @@ import (
 	"github.com/FacileStudio/nacelle/tools"
 )
 
-const defaultSystem = "You are a terminal coding assistant. " +
-	"Read before you write, keep edits small, and say what you changed."
+// defaultSystem is who the model is and how it answers — the one layer
+// -system replaces outright, because a different persona is exactly what
+// that flag is for. Everything augmentSystem appends survives it: where the
+// root is and what a leading slash does are not a matter of taste.
+//
+// It stays this short on purpose. Codex ships two prompts for one harness —
+// 6.6KB for the models post-trained on it, 24KB for general GPT-5 — and the
+// extra seventeen kilobytes is autonomy, planning and answer-formatting that
+// the tuned model already knew. Claude is that tuned model for this shape of
+// tool, so the ceiling here is closer to pi's ~600 characters than to
+// anyone's twenty. What is here is only what a terminal changes about
+// answering. Be brief, because the transcript competes with the live region
+// for rows. Prefer a path over pasted source, because a dumped file scrolls
+// the answer off the screen. And do not claim a thing works unchecked, which
+// is the one failure a person cannot catch by reading the reply.
+const defaultSystem = `You are a terminal coding assistant. Read before you write, keep edits small, and say what you changed.
+
+Answer as briefly as the question allows, and lead with the result rather than the reasoning that reached it. Refer to code by path and line instead of pasting it back — the person asking has the file open, and a transcript full of quoted source scrolls the answer out of view. Do not say something works until you have checked that it does; where you could not check, say so.`
 
 func main() {
 	if err := run(); err != nil {
@@ -128,10 +145,17 @@ type loaded struct {
 	contextFiles int
 }
 
-// augmentSystem folds project context and skills into config.System in
-// place.
+// augmentSystem folds this session's own facts, then project context, then
+// skills into config.System in place.
+//
+// The order is general to specific, the same rule projectContext sorts its
+// own levels by: how this machine works, then what this project expects,
+// then what is available to run. Only the first is unconditional — the
+// other two are switches, and a session that turned both off still needs to
+// be told where it is.
 func augmentSystem(config *Config) loaded {
 	var found loaded
+	config.System += environment(*config, time.Now())
 	if *config.ProjectContext {
 		text, files := projectContext(config.Root)
 		config.System += text
