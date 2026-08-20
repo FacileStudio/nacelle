@@ -25,8 +25,21 @@ func TestSlashClearResetsTranscriptConversationAndSpent(t *testing.T) {
 	if m.spent != (nacelle.Usage{}) {
 		t.Errorf("spent = %+v, want it reset", m.spent)
 	}
-	if said := spoken(m); len(said) == 0 || !strings.Contains(said[len(said)-1], "cleared") {
-		t.Errorf("said = %v, want the last line to report the session was cleared", said)
+	if said := m.unprinted; len(said) != 1 || !strings.Contains(visible(said[0]), "cleared") {
+		t.Errorf("queued = %v, want everything else flushed and only the fresh banner left", said)
+	}
+}
+
+// The screen is cleared by scrolling it away, so the blank run has to cover
+// the whole window — a shorter one leaves the tail of the old session sitting
+// above the fresh banner, which is what "cleared" apparently not clearing
+// anything looked like.
+func TestScrolledAwayCoversTheWholeWindow(t *testing.T) {
+	if got := strings.Count(scrolledAway(40), "\n"); got != 40 {
+		t.Errorf("scrolledAway(40) = %d lines, want 40", got)
+	}
+	if got := scrolledAway(0); got == "" {
+		t.Error("scrolledAway(0) = \"\", want at least one line — insertAbove drops an empty string")
 	}
 }
 

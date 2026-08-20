@@ -82,14 +82,37 @@ func commandNames() []string {
 // before it. Scroll back and the old session is still there, which is what
 // somebody who cleared the wrong window will want.
 //
+// The screen is cleared by scrolling it away, not by tea.ClearScreen, which
+// did nothing here and is why this command appeared to reset the session
+// without resetting the window. bubbletea's inline renderer owns only the few
+// rows it draws, so its clearScreen erases that frame's own cell buffer and
+// never touches the transcript printed above it. Blank lines pushed through
+// the same insertAbove path every printed line already takes do reach the
+// terminal — and they scroll the old session up into the scrollback rather
+// than erasing it, which is the behaviour above, kept by accident of being
+// the only one available.
+//
+// The echoed "/clear" is flushed first so it goes up with everything else.
+// Left to Update's own drain it would print after the blank run and be the
+// one line of the old session still on the fresh screen.
+//
 // The banner is re-said rather than left gone: it is the only place the
 // backend and model are ever named, and it is what makes the fresh screen
 // legible as a fresh session rather than as a client that lost its place.
 func (m *model) clear() tea.Cmd {
 	m.conversation = nil
 	m.spent = nacelle.Usage{}
+	echoed := m.prints()
 	m.say(fromClient, m.banner+" · cleared")
-	return tea.ClearScreen
+	return tea.Sequence(echoed, tea.Println(scrolledAway(m.windowHeight)))
+}
+
+// scrolledAway is the run of blank lines that pushes a whole window of
+// finished session up out of sight. One line per row the terminal has, which
+// overshoots by however tall the live frame is — that overshoot is the gap in
+// the scrollback that reads as where one session ended and the next began.
+func scrolledAway(height int) string {
+	return strings.Repeat("\n", max(height, 1))
 }
 
 // help lists the client's own commands and keybindings, distinct from
