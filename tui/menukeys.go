@@ -35,6 +35,13 @@ func (m *model) refreshMenu() {
 // whether it consumed the press — everything it does not claim (typing a
 // character, backspace) falls through to the prompt as normal, which is
 // what keeps the filter itself editable while the menu is up.
+//
+// tab/enter and esc both close the dropdown, which changes menu.height() —
+// and unlike an ordinary character, neither one reaches prompt.Update, the
+// path that would otherwise call refreshMenu and its layout() for free. Skip
+// layout() here and the viewport stays sized for the dropdown that just
+// closed, short of the terminal's real bottom, which is exactly what made
+// the prompt look like it "jumped up" after picking an item.
 func (m *model) navigateMenu(press tea.KeyPressMsg) (bool, tea.Cmd) {
 	switch press.String() {
 	case "up":
@@ -48,6 +55,7 @@ func (m *model) navigateMenu(press tea.KeyPressMsg) (bool, tea.Cmd) {
 	default:
 		return false, nil
 	}
+	m.layout(m.windowHeight)
 	m.render()
 	return true, nil
 }
