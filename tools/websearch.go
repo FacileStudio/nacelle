@@ -123,15 +123,12 @@ type searchResponse struct {
 
 // webSearchInput is what the model fills in.
 //
-// The doubled backslash is load-bearing, because two things unescape this
-// string in turn. invopop/jsonschema splits the tag on unescaped commas, so
-// prose is cut at its first comma and the model reads only the clause before
-// it. That split is reached through reflect.StructTag.Get, which unquotes
-// first — and \, is not a valid Go escape, so writing one there blanks the
-// description entirely rather than halving it. \\, survives both, and
-// TestWebSearchDescriptionSurvivesItsComma fails on either mistake.
+// The description carries no comma, which is a rule for every tag in this
+// package rather than a preference here — see
+// TestNoDescriptionTagCarriesACommaThatWouldTruncateIt for what goes wrong
+// and why escaping is not the way out.
 type webSearchInput struct {
-	Query string `json:"query" jsonschema:"required,description=What to look for\\, phrased as you would type it into a search engine"`
+	Query string `json:"query" jsonschema:"required,description=What to look for as you would type it into a search engine"`
 }
 
 // searchTool builds the search.
