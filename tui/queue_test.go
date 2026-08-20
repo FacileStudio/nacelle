@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -145,5 +146,48 @@ func TestAnEmptyQueueDrawsNothingAndCostsNoRows(t *testing.T) {
 
 	if got := m.viewport.Height(); got != tall {
 		t.Errorf("viewport height = %d, want it unchanged at %d with nothing queued", got, tall)
+	}
+}
+
+// A queued command answers on the spot and starts no run, so a queue drained
+// once per settle stranded everything behind it — still drawn as queued,
+// still holding its row, and with nothing left that would ever send it.
+func TestAQueuedCommandDoesNotStrandTheQuestionsBehindIt(t *testing.T) {
+	m := busy(t)
+	m.prompt.SetValue("/help")
+	m.ask()
+	m.prompt.SetValue("the question behind it")
+	m.ask()
+
+	m.settle()
+	defer m.run.cancel()
+
+	if len(m.run.queued) != 0 {
+		t.Fatalf("queued = %v, want the queue drained past the command", m.run.queued)
+	}
+	if !strings.Contains(visible(m.viewport.View()), "the question behind it") {
+		t.Errorf("viewport = %q, want the question after the command actually asked", m.viewport.View())
+	}
+}
+
+// The queue is a reminder of what is waiting, not a second transcript.
+// Listing all of it made layout reserve a row per message, which squeezed the
+// transcript to nothing and pushed the prompt off the bottom of the screen.
+func TestALongQueueIsCountedRatherThanListedInFull(t *testing.T) {
+	m := busy(t)
+	defer m.run.cancel()
+	for i := range 30 {
+		m.prompt.SetValue(fmt.Sprintf("question %d", i))
+		m.ask()
+	}
+
+	if got := len(m.viewQueued()); got != queuedRows+1 {
+		t.Errorf("viewQueued drew %d rows, want %d listed plus one counting the rest", got, queuedRows+1)
+	}
+	if last := visible(m.viewQueued()[queuedRows]); !strings.Contains(last, "27 more") {
+		t.Errorf("last row = %q, want it counting the %d not listed", last, 30-queuedRows)
+	}
+	if drawnRows(m) > m.windowHeight {
+		t.Errorf("View drew %d rows into a %d-row window — the prompt is off-screen", drawnRows(m), m.windowHeight)
 	}
 }

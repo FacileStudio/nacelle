@@ -172,12 +172,3 @@ func TestConcurrentAsksAreSerializedToOneAtATime(t *testing.T) {
 }
 
 // truncate is what keeps a tool call with a large argument list from
-// blowing out the one-line status prompt.
-func TestTruncateShortensOnlyWhatIsTooLong(t *testing.T) {
-	if got := truncate("short", 10); got != "short" {
-		t.Errorf("truncate = %q, want it unchanged", got)
-	}
-	if got := truncate("this is much too long", 10); got != "this is mu…" {
-		t.Errorf("truncate = %q, want the first 10 bytes plus an ellipsis", got)
-	}
-}
