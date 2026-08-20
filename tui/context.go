@@ -21,7 +21,8 @@ type instructionFile struct {
 // projectContext finds every CLAUDE.md and AGENTS.md between root and the
 // filesystem root, plus ~/.agents/AGENTS.md if it exists, and returns them
 // concatenated as extra system-prompt text — most general first, most
-// specific last, empty string if none exist.
+// specific last, empty string if none exist — alongside how many files
+// that was, for the banner to summarize rather than repeat.
 //
 // It walks up from root rather than down from it, because the file that
 // matters is the one describing the project the client was launched inside,
@@ -50,12 +51,16 @@ type instructionFile struct {
 // ... are loaded regardless of project trust unless context loading is
 // disabled" — the trust boundary there is reserved for things that change
 // what the agent itself can do, which nothing this package reads today does.
-func projectContext(root string) string {
+func projectContext(root string) (string, int) {
 	levels := instructionLevels(root)
 	if global := globalInstructions(); len(global) > 0 {
 		levels = append(levels, global)
 	}
-	return renderLevels(levels)
+	count := 0
+	for _, level := range levels {
+		count += len(level)
+	}
+	return renderLevels(levels), count
 }
 
 // instructionLevels walks from root to the filesystem root, returning every

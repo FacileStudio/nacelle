@@ -35,7 +35,7 @@ func TestProjectContextOrdersRootToLeaf(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	got := projectContext(sub)
+	got, _ := projectContext(sub)
 
 	root, leaf := strings.Index(got, "suite-wide convention"), strings.Index(got, "specific to this package")
 	if root < 0 || leaf < 0 {
@@ -52,8 +52,12 @@ func TestProjectContextIsEmptyWithNoFilesFound(t *testing.T) {
 	noGlobalInstructions(t)
 	dir := t.TempDir()
 
-	if got := projectContext(dir); got != "" {
+	got, count := projectContext(dir)
+	if got != "" {
 		t.Errorf("context = %q, want empty with nothing found", got)
+	}
+	if count != 0 {
+		t.Errorf("count = %d, want 0 with nothing found", count)
 	}
 }
 
@@ -65,7 +69,7 @@ func TestProjectContextAcceptsEitherFilename(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	got := projectContext(dir)
+	got, _ := projectContext(dir)
 
 	if !strings.Contains(got, "just agents.md here") {
 		t.Errorf("context = %q, want the lone AGENTS.md picked up", got)
@@ -93,7 +97,7 @@ func TestProjectContextIncludesTheGlobalAgentsFile(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	got := projectContext(dir)
+	got, count := projectContext(dir)
 
 	global, project := strings.Index(got, "global preference"), strings.Index(got, "project preference")
 	if global < 0 || project < 0 {
@@ -104,6 +108,9 @@ func TestProjectContextIncludesTheGlobalAgentsFile(t *testing.T) {
 	}
 	if !strings.Contains(got, "Global instructions from") {
 		t.Errorf("context = %q, want the global file labelled as global, not as a project's own", got)
+	}
+	if count != 2 {
+		t.Errorf("count = %d, want 2 — the global file and the project's own", count)
 	}
 }
 
@@ -117,7 +124,7 @@ func TestProjectContextToleratesNoAgentsDirectory(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	got := projectContext(dir)
+	got, _ := projectContext(dir)
 
 	if !strings.Contains(got, "project preference") {
 		t.Errorf("context = %q, want the project file still picked up", got)

@@ -13,6 +13,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -44,7 +45,7 @@ func run() error {
 	}
 	defer func() { _ = set.Close() }()
 
-	notice, skills := augmentSystem(&config)
+	found := augmentSystem(&config)
 
 	approvalGate, approve := buildApprovals(config)
 
@@ -53,9 +54,9 @@ func run() error {
 		return err
 	}
 
-	client := newModel(agent, banner(backend, config), skills)
-	if notice != "" {
-		client.say(fromClient, notice)
+	client := newModel(agent, banner(backend, config, found), found.skills)
+	if found.notice != "" {
+		client.say(fromClient, found.notice)
 	}
 
 	program := tea.NewProgram(client)
@@ -86,21 +87,34 @@ func localTools(config Config) (*tools.Set, []nacelle.Tool, error) {
 	return set, local, nil
 }
 
+// loaded is what augmentSystem folds into config.System, and enough about
+// what it actually found to summarize back — in the notice when something
+// needs the person running this to act, in the banner every time, and in
+// []skill so /skill:name has something to resolve a name against. One
+// call, not a second walk of the same files just to count them.
+type loaded struct {
+	notice       string
+	skills       []skill
+	contextFiles int
+}
+
 // augmentSystem folds project context and skills into config.System in
-// place, and returns whatever the person running this should be told before
-// the transcript opens (empty when there is nothing to say) plus every
-// skill loaded, so the model can be told about them by name — for
-// /skill:name, not only by the system prompt's own summary of them.
-func augmentSystem(config *Config) (string, []skill) {
+// place.
+func augmentSystem(config *Config) loaded {
+	var found loaded
 	if *config.ProjectContext {
-		config.System += projectContext(config.Root)
+		text, files := projectContext(config.Root)
+		config.System += text
+		found.contextFiles = files
 	}
 	if !*config.Skills {
-		return "", nil
+		return found
 	}
-	result := loadSkills(config.Root, *config.TrustSkills, config.SkillDirs)
-	config.System += result.system
-	return result.notice, result.skills
+	skills := loadSkills(config.Root, *config.TrustSkills, config.SkillDirs)
+	config.System += skills.system
+	found.notice = skills.notice
+	found.skills = skills.skills
+	return found
 }
 
 // build assembles the agent the settings describe, and hands the backend back
@@ -147,15 +161,36 @@ func chosen(config Config) (nacelle.Backend, error) {
 	}
 }
 
-// banner is the line the transcript opens with.
+// banner is the two lines the transcript opens with.
 //
-// It names the backend and model before anything is typed, because the failure
-// that costs the most is discovering, after composing a question, that the
-// client was pointed at a provider you have no key for.
-func banner(backend nacelle.Backend, config Config) string {
+// The backend and model come first, because the failure that costs the most
+// is discovering, after composing a question, that the client was pointed
+// at a provider you have no key for. Root, skill count and how many
+// CLAUDE.md/AGENTS.md files loaded come second — none of it is decorative:
+// each is a real "is that actually on" question this client had no way to
+// answer before without a debug build.
+//
+// Root is resolved to an absolute path rather than echoed as typed, because
+// "-root ." reads the same from any directory nacelle happens to be
+// launched from and answers nothing on its own.
+func banner(backend nacelle.Backend, config Config, found loaded) string {
 	model := config.Model
 	if model == "" {
 		model = anthropic.DefaultModel
 	}
-	return fmt.Sprintf("%s · %s", backend.Name(), model)
+	root, err := filepath.Abs(config.Root)
+	if err != nil {
+		root = config.Root
+	}
+	return fmt.Sprintf("%s · %s\n%s · %s · %s", backend.Name(), model, root,
+		countedNoun(len(found.skills), "skill"), countedNoun(found.contextFiles, "context file"))
+}
+
+// countedNoun is "N noun" or "N nouns" — the one piece of English this
+// client bothers to pluralize, because the banner reads it on every launch.
+func countedNoun(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }

@@ -128,6 +128,12 @@ set, the TUI, and the gate, in the order they were built.
   cost, same client), `/help` (list commands and keybindings) and `/quit`. A leading `/` never
   reaches the model; an unrecognised command is reported rather than sent as a question, the
   same trade-off every peer client with slash commands makes.
+- **A two-line banner** (`tui/main.go`) — backend and model first, then the resolved `-root`,
+  how many skills loaded and how many `CLAUDE.md`/`AGENTS.md` files did. `projectContext` now
+  returns that file count alongside the rendered text (one walk, not a second just to count),
+  and `augmentSystem` returns both counts plus the skill list in one `loaded` result rather than
+  the two bare return values it had. Root is resolved to an absolute path, not echoed as typed —
+  `-root .` reads the same from anywhere and answers nothing on its own.
 - **A dropdown menu for `/`** (`tui/menu.go`, `tui/menukeys.go`) replaces the first cut of this
   that just wired `textinput`'s own ghost-text suggestions: typing `/` alone opens a list of
   every command and skill, each with its own description; more typed ranks it — prefix, then

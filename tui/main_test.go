@@ -1,0 +1,73 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestCountedNounPluralizes(t *testing.T) {
+	cases := map[int]string{0: "0 skills", 1: "1 skill", 2: "2 skills", 17: "17 skills"}
+	for n, want := range cases {
+		if got := countedNoun(n, "skill"); got != want {
+			t.Errorf("countedNoun(%d, \"skill\") = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// The banner is the one place all three real "is that actually on"
+// questions get answered at once — the model billed, the directory tools
+// can reach, and what actually got loaded into the system prompt.
+func TestBannerShowsBackendModelRootSkillsAndContextFiles(t *testing.T) {
+	got := banner(&answeringStub{}, Config{Model: "claude-opus-5", Root: "."},
+		loaded{skills: []skill{{name: "deploy"}, {name: "filet"}}, contextFiles: 2})
+
+	lines := strings.Split(got, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("banner = %q, want exactly two lines", got)
+	}
+	if !strings.Contains(lines[0], "stub") || !strings.Contains(lines[0], "claude-opus-5") {
+		t.Errorf("first line = %q, want the backend and model", lines[0])
+	}
+	if !strings.Contains(lines[1], "2 skills") || !strings.Contains(lines[1], "2 context files") {
+		t.Errorf("second line = %q, want the skill count and the context file count", lines[1])
+	}
+}
+
+// "-root ." reads the same from any directory this happens to be launched
+// from, which answers nothing — resolving it is the whole point of putting
+// root in the banner at all.
+func TestBannerResolvesRootToAnAbsolutePath(t *testing.T) {
+	got := banner(&answeringStub{}, Config{Root: "."}, loaded{})
+
+	if strings.Contains(got, "\n.") || strings.HasSuffix(strings.Split(got, "\n")[1], " . ") {
+		t.Errorf("banner = %q, want root resolved, not echoed as \".\"", got)
+	}
+}
+
+// augmentSystem is what actually produces the counts banner() reports —
+// this is the one place a real project context file and a real skill both
+// have to survive being loaded and counted from the same call.
+func TestAugmentSystemCountsContextFilesAndSkills(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("project preference"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	skillDir := t.TempDir()
+	writeSkill(t, filepath.Join(skillDir, "deploy"), "name: deploy\ndescription: ships the app")
+
+	config := defaults()
+	config.Root = root
+	config.SkillDirs = []string{skillDir}
+
+	found := augmentSystem(&config)
+
+	if found.contextFiles != 1 {
+		t.Errorf("contextFiles = %d, want 1", found.contextFiles)
+	}
+	if len(found.skills) != 1 || found.skills[0].name != "deploy" {
+		t.Errorf("skills = %+v, want the one skill under -skill-dir", found.skills)
+	}
+}
