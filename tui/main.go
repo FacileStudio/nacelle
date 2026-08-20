@@ -109,7 +109,7 @@ func localTools(config Config) (_ *tools.Set, local []nacelle.Tool, err error) {
 		local = append(local, jardinTools...)
 	}
 
-	searching, err := tools.WebSearch(config.Search)
+	searching, err := tools.WebSearch(*config.Search)
 	if err != nil {
 		return nil, nil, err
 	}

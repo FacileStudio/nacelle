@@ -50,7 +50,7 @@ func banner(backend nacelle.Backend, config Config, found loaded) string {
 	line := fmt.Sprintf("%s · %s\n%s · %s · %s · %s", backend.Name(), model, root,
 		countedNoun(len(found.skills), "skill"), countedNoun(found.contextFiles, "context file"), bash)
 
-	if config.Search != "" {
+	if *config.Search != "" {
 		line += " · search on"
 	}
 	return line

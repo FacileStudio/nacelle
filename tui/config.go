@@ -34,13 +34,16 @@ type Config struct {
 	MaxIterations *int     `yaml:"max_iterations"`
 	SkillDirs     []string `yaml:"skill_dirs"`
 
-	// Search is the base URL of a SearXNG instance the model may query.
+	// Search is the base URL of a SearXNG instance the model may query,
+	// and empty means no web search at all — the default, since any
+	// instance shipped as one would be somebody else's machine.
 	//
-	// Empty means no web search at all, and that is the default: there is
-	// no instance this client could pick on your behalf that would not be
-	// someone else's machine. It is a URL rather than a toggle so that one
-	// setting cannot disagree with another about whether search is on.
-	Search string `yaml:"search"`
+	// A pointer for the reason the toggles below are, and not for the
+	// reason the strings above are not: empty is a real answer here, so a
+	// layer saying "no search this run" and a layer saying nothing about
+	// search are different instructions. As a plain string they were the
+	// same one, and `-search ""` was a silent no-op.
+	Search *string `yaml:"search"`
 
 	// Discovery is embedded rather than named so every field on it is still
 	// reached as config.Jardin, not config.Discovery.Jardin — the grouping
@@ -87,7 +90,9 @@ func defaults() Config {
 	bash, thinking, jardin, projectContext, skills, trustSkills, approveTools :=
 		false, false, true, true, true, false, false
 	iterations := 40
+	search := ""
 	return Config{
+		Search:        &search,
 		Backend:       "anthropic",
 		Root:          ".",
 		System:        defaultSystem,
@@ -114,6 +119,9 @@ func (c *Config) merge(over Config) {
 	if over.MaxIterations != nil {
 		c.MaxIterations = over.MaxIterations
 	}
+	if over.Search != nil {
+		c.Search = over.Search
+	}
 	if len(over.SkillDirs) > 0 {
 		c.SkillDirs = over.SkillDirs
 	}
@@ -137,9 +145,6 @@ func (c *Config) mergeStrings(over Config) {
 	}
 	if over.System != "" {
 		c.System = over.System
-	}
-	if over.Search != "" {
-		c.Search = over.Search
 	}
 }
 

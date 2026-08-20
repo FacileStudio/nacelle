@@ -22,6 +22,10 @@ func asSettled(c Config) Config {
 		off := false
 		c.Bash = &off
 	}
+	if c.Search == nil {
+		none := ""
+		c.Search = &none
+	}
 	return c
 }
 
@@ -115,7 +119,7 @@ func TestTheBannerNamesSearchOnlyWhenAnInstanceIsSet(t *testing.T) {
 		t.Errorf("banner = %q, want no mention of search when none is configured", without)
 	}
 
-	with := banner(&answeringStub{}, asSettled(Config{Root: ".", Search: "https://furet.example"}), loaded{})
+	with := banner(&answeringStub{}, asSettled(Config{Root: ".", Search: ptr("https://furet.example")}), loaded{})
 	if !strings.Contains(with, "search on") {
 		t.Errorf("banner = %q, want it to confirm search is on", with)
 	}

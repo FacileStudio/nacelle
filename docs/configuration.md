@@ -185,6 +185,10 @@ explain.
 search: https://searx.example
 ```
 
+Passing `-search ""` (or `NACELLE_SEARCH=`) turns search off for one run without editing the
+file, which is why this setting is a pointer internally while the other strings are not: for
+everything else empty means "not mentioned", and here it means "not this run".
+
 An endpoint that could never work — no scheme, no host — stops the client at startup rather
 than quietly leaving the tool unmounted, because search silently missing looks exactly like a
 model that decided not to search, and nothing on screen would connect that to a typo here.
