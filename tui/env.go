@@ -23,6 +23,7 @@ func fromEnv() Config {
 		Effort:        os.Getenv(EnvPrefix + "EFFORT"),
 		Root:          os.Getenv(EnvPrefix + "ROOT"),
 		System:        os.Getenv(EnvPrefix + "SYSTEM"),
+		Search:        os.Getenv(EnvPrefix + "SEARCH"),
 		Bash:          envBool(EnvPrefix + "BASH"),
 		Thinking:      envBool(EnvPrefix + "THINKING"),
 		ApproveTools:  envBool(EnvPrefix + "APPROVE_TOOLS"),

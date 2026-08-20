@@ -71,3 +71,17 @@ func TestAugmentSystemCountsContextFilesAndSkills(t *testing.T) {
 		t.Errorf("skills = %+v, want the one skill under -skill-dir", found.skills)
 	}
 }
+
+// Search earns a word in the banner only when an instance is configured, so
+// a launch that silently has no search still reads as an ordinary launch.
+func TestTheBannerNamesSearchOnlyWhenAnInstanceIsSet(t *testing.T) {
+	without := banner(&answeringStub{}, Config{Root: "."}, loaded{})
+	if strings.Contains(without, "search on") {
+		t.Errorf("banner = %q, want no mention of search when none is configured", without)
+	}
+
+	with := banner(&answeringStub{}, Config{Root: ".", Search: "https://furet.example"}, loaded{})
+	if !strings.Contains(with, "search on") {
+		t.Errorf("banner = %q, want it to confirm search is on", with)
+	}
+}

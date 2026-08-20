@@ -69,7 +69,11 @@ func run() error {
 }
 
 // localTools opens the file/search/command tools and, when asked, adds
-// mycelium's — the caller owns closing the returned Set.
+// mycelium's and the web search — the caller owns closing the returned Set.
+//
+// WebSearch's error is returned unwrapped, unlike mycelium's. It already names
+// the endpoint and what is wrong with it, and a second "building the web
+// search tool" in front of that says nothing the reader has not just read.
 func localTools(config Config) (*tools.Set, []nacelle.Tool, error) {
 	set, err := tools.New(tools.Config{Root: config.Root, AllowBash: *config.Bash})
 	if err != nil {
@@ -87,6 +91,13 @@ func localTools(config Config) (*tools.Set, []nacelle.Tool, error) {
 		}
 		local = append(local, myceliumTools...)
 	}
+
+	searching, err := tools.WebSearch(config.Search)
+	if err != nil {
+		return nil, nil, err
+	}
+	local = append(local, searching...)
+
 	return set, local, nil
 }
 
@@ -173,6 +184,11 @@ func chosen(config Config) (nacelle.Backend, error) {
 // each is a real "is that actually on" question this client had no way to
 // answer before without a debug build.
 //
+// Search is named only when it is on. Being off has no symptom — nothing is
+// offered, so nothing goes wrong and there is nothing to explain — and naming
+// it every launch would be a permanent line about something most people
+// running this have not configured and did not ask about.
+//
 // Root is resolved to an absolute path rather than echoed as typed, because
 // "-root ." reads the same from any directory nacelle happens to be
 // launched from and answers nothing on its own.
@@ -185,8 +201,13 @@ func banner(backend nacelle.Backend, config Config, found loaded) string {
 	if err != nil {
 		root = config.Root
 	}
-	return fmt.Sprintf("%s · %s\n%s · %s · %s", backend.Name(), model, root,
+	line := fmt.Sprintf("%s · %s\n%s · %s · %s", backend.Name(), model, root,
 		countedNoun(len(found.skills), "skill"), countedNoun(found.contextFiles, "context file"))
+
+	if config.Search != "" {
+		line += " · search on"
+	}
+	return line
 }
 
 // countedNoun is "N noun" or "N nouns" — the one piece of English this

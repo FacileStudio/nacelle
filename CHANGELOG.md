@@ -92,6 +92,16 @@ set, the TUI, and the gate, in the order they were built.
   more legible access to this machine's [mycelium](https://github.com/FacileStudio/mycelium)
   flows and memory search than routing the same commands through `run_command` would. Absent
   mycelium on `PATH` is not an error; it returns no tools, the same as `AllowBash` being off.
+- **`tools.WebSearch`** — `web_search`, against a [SearXNG](https://docs.searxng.org) instance
+  you host. Both backends can search server-side and neither does it for free ($10 per 1,000
+  searches on Anthropic; no free tier on OpenRouter), while an instance you already run costs
+  nothing per query, keeps the queries on your own machine, and works the same on either
+  backend because it is an ordinary local tool. There is no default endpoint and an empty one
+  returns no tools and no error, the same as absent mycelium: this package is public, and any
+  instance shipped as a default would be somebody else's machine. The endpoint is a
+  constructor argument and never a tool argument, so a model cannot name the host a request
+  goes to. Configured in `tui/` by `search:` in `~/.nacelle.yml`, `NACELLE_SEARCH`, or
+  `-search`; the banner says `search on` when one is set.
 - **`tui/` reads `~/.agents/AGENTS.md`**, the [AGENTS.md standard](https://agentsstandard.com)'s
   own global-base path — the same file Codex, Cursor, Copilot, Gemini and pi (at its own
   equivalent) already read. Deliberately not a user's `~/.claude/CLAUDE.md`: that file assumes
