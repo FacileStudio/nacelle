@@ -22,6 +22,8 @@ func (m *model) resize(size tea.WindowSizeMsg) tea.Cmd {
 
 	m.viewport.SetWidth(size.Width)
 	m.prompt.SetWidth(size.Width)
+	m.prompt.MaxHeight = promptCap(size.Height)
+	m.prompt.SetHeight(m.prompt.Height())
 	m.layout(size.Height)
 
 	if widthChanged {
@@ -51,7 +53,7 @@ func (m *model) resize(size tea.WindowSizeMsg) tea.Cmd {
 // nothing but this would put right.
 func (m *model) layout(height int) {
 	follow := m.viewport.AtBottom()
-	m.viewport.SetHeight(max(height-1-m.prompt.Height()-m.menu.height()-len(m.run.queued), 1))
+	m.viewport.SetHeight(max(height-1-m.prompt.Height()-m.menu.height()-m.queuedHeight(), 1))
 	if follow {
 		m.viewport.GotoBottom()
 	}

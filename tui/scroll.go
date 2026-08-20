@@ -13,13 +13,19 @@ import (
 // would mean half the alphabet moved the transcript instead of reaching the
 // question being typed.
 //
-// What is left are the four keys a prompt has no use for on its own. Up and
-// down do double duty: key() only ever reaches scroll with them when the
-// dropdown menu (menu.go) is closed, since an open menu claims both first to
-// move its own selection — so scroll never actually has to choose between
-// the two, it only ever sees the keys the menu left it. Home, end, ctrl+u
-// and ctrl+d are all editing keys — taking those would fix scrolling by
-// breaking typing.
+// What is left are four keys the transcript is the better owner of. Up and
+// down do double duty twice over: key() only ever reaches scroll with them
+// when the dropdown menu (menu.go) is closed, since an open menu claims both
+// first to move its own selection, and composing() hands them back to the
+// prompt once it has grown past a row — so scroll only ever sees the ones
+// nothing with a stronger claim wanted. Home, end, ctrl+u and ctrl+d are all
+// editing keys; taking those would fix scrolling by breaking typing.
+//
+// pgup and pgdown are claimed unconditionally, which does now cost something:
+// the prompt is a textarea and has its own bindings for them, so a question
+// long enough to scroll inside itself cannot be paged through. That is the
+// deliberate trade — the transcript must stay reachable by keyboard at every
+// prompt height, and it is the only pair left that can guarantee it.
 func (m *model) scroll(press tea.KeyPressMsg) bool {
 	switch press.String() {
 	case "up":

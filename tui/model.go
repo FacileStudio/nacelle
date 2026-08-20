@@ -85,7 +85,12 @@ func newModel(agent *nacelle.Agent, banner string, skills []skill) *model {
 	return m
 }
 
-func (m *model) Init() tea.Cmd { return tea.Batch(textarea.Blink, tea.RequestBackgroundColor) }
+// Init asks the terminal what colour it is and nothing else. There is no
+// cursor-blink command because the prompt draws no cursor of its own — see
+// newPrompt's SetVirtualCursor(false); the caret on screen is the terminal's,
+// positioned by View, and a blink tick for a cursor nobody renders is a
+// timer that wakes the program up to change nothing.
+func (m *model) Init() tea.Cmd { return tea.RequestBackgroundColor }
 
 // Update routes each message to the one place that owns it. The cases stay
 // thin on purpose: everything that changes more than one field is a method, so

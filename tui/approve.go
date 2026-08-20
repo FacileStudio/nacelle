@@ -157,13 +157,3 @@ func wireApprovals(gate *approvals, program *tea.Program) {
 		gate.send = program.Send
 	}
 }
-
-// truncate shortens a tool's input for the one-line status prompt. A tool
-// call can carry arbitrarily large arguments, and the status line is one row
-// at the bottom of the screen, not somewhere a multi-line block belongs.
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "…"
-}

@@ -121,3 +121,23 @@ func TestOnlyTheFirstRowOfThePromptIsMarked(t *testing.T) {
 func promptInfo(line int) textarea.PromptInfo {
 	return textarea.PromptInfo{LineNumber: line, Focused: true}
 }
+
+// drawnRows is how many rows View actually paints, which must never exceed
+// the window it is painting into.
+func drawnRows(m *model) int { return strings.Count(m.View().Content, "\n") + 1 }
+
+// promptRows is a ceiling, not a promise: ten rows of prompt in an eight-row
+// pane drew twelve rows into eight, and what fell off the bottom was the
+// prompt, so the reader was typing into something they could not see.
+func TestThePromptNeverOutgrowsASmallWindow(t *testing.T) {
+	for _, height := range []int{6, 8, 12, 24} {
+		m := newModel(nil, "test · model", nil)
+		m.resize(tea.WindowSizeMsg{Width: 60, Height: height})
+		m.prompt.SetValue(strings.Repeat("word ", 300))
+		m.layout(m.windowHeight)
+
+		if got := drawnRows(m); got > height {
+			t.Errorf("window %d: View drew %d rows, want no more than the window holds", height, got)
+		}
+	}
+}

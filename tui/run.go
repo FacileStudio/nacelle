@@ -136,12 +136,35 @@ func (m *model) settle() tea.Cmd {
 	m.run.usage = nacelle.Usage{}
 
 	m.render()
+	return m.deliver()
+}
 
-	if len(m.run.queued) > 0 {
+// deliver sends what was typed while the last run was going, and keeps going
+// until something is actually running again.
+//
+// The loop is the whole point. dispatch has two outcomes and only one of them
+// leads back here: a question starts a run, which settles and takes the next
+// line, but a command answers on the spot and starts nothing. Popping a single
+// line per settle therefore stranded everything behind the first queued
+// /help — still drawn as queued, still holding its row, never sent and with
+// nothing left that would ever send it, which is precisely the disappearing
+// input this queue exists to prevent.
+//
+// Every command's own Cmd is collected rather than dropped, so a queued /quit
+// still quits, and the loop stops on run.busy rather than on a non-nil Cmd —
+// a command that returns work to do is not a command that started a run, and
+// reading it as one would strand the queue all over again.
+func (m *model) deliver() tea.Cmd {
+	var cmds []tea.Cmd
+	for len(m.run.queued) > 0 {
 		next := m.run.queued[0]
 		m.run.queued = m.run.queued[1:]
 		m.layout(m.windowHeight)
-		return m.dispatch(next)
+
+		cmds = append(cmds, m.dispatch(next))
+		if m.run.busy {
+			break
+		}
 	}
-	return nil
+	return tea.Batch(cmds...)
 }
