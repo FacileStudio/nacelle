@@ -181,6 +181,31 @@ func TestViewMenuIsEmptyWhenClosed(t *testing.T) {
 	}
 }
 
+// The selected row highlights via theme.question, which carries Padding(0, 1)
+// for its other job — the transcript's quoted-question pill. Reusing it
+// unstripped here shifted only the selected row's text one column right, so
+// whichever row happened to be selected read as " /clear" instead of
+// "/clear" while every unselected row below it did not.
+func TestViewMenuSelectedRowAlignsWithUnselectedRows(t *testing.T) {
+	m := sized()
+	m.prompt.SetValue("/")
+	m.refreshMenu()
+
+	first := strings.Split(visible(m.viewMenu()), "\n")[0]
+	if !strings.HasPrefix(first, "/clear") {
+		t.Errorf("first row = %q, want it to start with /clear, not a leading space", first)
+	}
+
+	m.navigateMenu(tea.KeyPressMsg{Code: tea.KeyDown})
+	lines := strings.Split(visible(m.viewMenu()), "\n")
+	if !strings.HasPrefix(lines[0], "/clear") {
+		t.Errorf("first row = %q after moving selection away, want it to stay aligned", lines[0])
+	}
+	if !strings.HasPrefix(lines[1], "/help") {
+		t.Errorf("second row = %q once selected, want it to start with /help, not a leading space", lines[1])
+	}
+}
+
 func TestViewMenuListsEveryVisibleMatch(t *testing.T) {
 	m := sized()
 	m.prompt.SetValue("/")
