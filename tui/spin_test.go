@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -12,8 +11,7 @@ import (
 
 // A request can sit a full second or more before its first token, and a
 // screen that has not moved since the question was echoed reads exactly like
-// a client that stopped responding. The spinner is the only thing on screen
-// that proves otherwise.
+// a client that stopped responding.
 func TestAskingShowsTheSpinnerBeforeAnythingArrives(t *testing.T) {
 	m := sized()
 	m.agent = answering(t)
@@ -21,85 +19,116 @@ func TestAskingShowsTheSpinnerBeforeAnythingArrives(t *testing.T) {
 	m.ask()
 	defer m.run.cancel()
 
-	if !m.run.waiting {
-		t.Fatal("waiting was not set the moment the question was sent")
-	}
-	if !strings.Contains(visible(m.viewport.View()), "waiting for a response") {
-		t.Errorf("viewport = %q, want the spinner line while nothing has arrived yet", m.viewport.View())
+	if !strings.Contains(visible(m.status()), "waiting for a response") {
+		t.Errorf("status = %q, want it saying so while nothing has arrived yet", visible(m.status()))
 	}
 }
 
-// Whatever comes back first — text, a tool call, an error — is the model no
-// longer being silent. The spinner's job ends there, not at the first token
-// specifically.
-func TestTheFirstEventEndsTheWaitWhicheverKindItIs(t *testing.T) {
+// The reported bug, and the reason the spinner moved out of the transcript.
+// It used to stop at the first event of any kind, so every gap after that one
+// — a tool running, the model called again with its result — was a still
+// screen indistinguishable from a client that had died.
+func TestTheSpinnerSurvivesTheFirstEvent(t *testing.T) {
 	m := sized()
-	m.run.waiting = true
+	m.agent = answering(t)
+	m.prompt.SetValue("go on then")
+	m.ask()
+	defer m.run.cancel()
 
 	m.consume(result{event: nacelle.Event{Kind: nacelle.KindText, Text: "h"}})
 
-	if m.run.waiting {
-		t.Error("waiting was still true after the first event arrived")
+	if !m.run.busy {
+		t.Fatal("the run stopped being busy on its first event, so this proves nothing")
 	}
-	if strings.Contains(visible(m.viewport.View()), "waiting for a response") {
-		t.Errorf("viewport = %q, want the spinner line gone once real content starts", m.viewport.View())
+	msg := m.spin.Tick().(spinner.TickMsg)
+	if cmd := m.spun(msg); cmd == nil {
+		t.Error("the spinner stopped re-arming after the first event, while the run was still going")
 	}
 }
 
-// An error is still an answer to "is anything happening" — the spinner never
-// promised good news, only that the wait was over.
-func TestAnErrorAlsoEndsTheWait(t *testing.T) {
+// Knowing something is happening is not the same as knowing what. A slow
+// build under run_command and a wedged client look identical otherwise, and
+// this client's own command timeout is measured in minutes.
+func TestTheStatusLineNamesTheToolThatIsRunning(t *testing.T) {
 	m := sized()
-	m.run.waiting = true
+	m.run.busy = true
 
-	m.consume(result{err: errors.New("boom")})
+	m.absorb(nacelle.Event{Kind: nacelle.KindToolCall, Tool: &nacelle.ToolEvent{ID: "a", Name: "read_file"}})
 
-	if m.run.waiting {
-		t.Error("waiting was still true after the run's first result was an error")
+	if status := visible(m.status()); !strings.Contains(status, "running read_file") {
+		t.Errorf("status = %q, want it naming the tool between its call and its result", status)
 	}
 }
 
-// A run whose stream closes without yielding anything at all — an immediate
-// cancel, or a backend that errors before its first yield — never reaches
-// consume, so the spinner has to be stopped from settle too, or it spins for
-// a question already abandoned.
-func TestSettleClearsWaitingEvenIfNothingEverArrived(t *testing.T) {
+// The SDK's own runner executes a turn's tools concurrently, so counting them
+// by call id is what keeps the count honest when several are in flight.
+func TestTheStatusLineCountsSeveralToolsAtOnce(t *testing.T) {
+	m := sized()
+	m.run.busy = true
+
+	m.absorb(nacelle.Event{Kind: nacelle.KindToolCall, Tool: &nacelle.ToolEvent{ID: "a", Name: "read_file"}})
+	m.absorb(nacelle.Event{Kind: nacelle.KindToolCall, Tool: &nacelle.ToolEvent{ID: "b", Name: "search_files"}})
+
+	if status := visible(m.status()); !strings.Contains(status, "running 2 tools") {
+		t.Errorf("status = %q, want it counting both calls in flight", status)
+	}
+}
+
+// A tool that has answered is not still running, and a status line that says
+// it is would be worse than one that said nothing.
+func TestAToolStopsBeingNamedOnceItsResultArrives(t *testing.T) {
+	m := sized()
+	m.run.busy = true
+
+	m.absorb(nacelle.Event{Kind: nacelle.KindToolCall, Tool: &nacelle.ToolEvent{ID: "a", Name: "read_file"}})
+	m.absorb(nacelle.Event{Kind: nacelle.KindToolResult, Tool: &nacelle.ToolEvent{ID: "a", Name: "read_file"}})
+
+	if status := visible(m.status()); strings.Contains(status, "running read_file") {
+		t.Errorf("status = %q, want the finished tool no longer named as running", status)
+	}
+}
+
+// A run capped at its iteration limit reports the tools it stopped short of
+// and runs none of them, and an abandoned one never reaches their results at
+// all — so the set has to be emptied rather than trusted to drain.
+func TestSettleForgetsToolsThatNeverAnswered(t *testing.T) {
 	m := sized()
 	m.run.cancel = func() {}
-	m.run.waiting = true
+	m.run.busy = true
+	m.absorb(nacelle.Event{Kind: nacelle.KindToolCall, Tool: &nacelle.ToolEvent{ID: "a", Name: "read_file"}})
 
 	m.settle()
 
-	if m.run.waiting {
-		t.Error("waiting survived a run that produced nothing before settling")
+	if len(m.run.running) != 0 {
+		t.Errorf("running = %v, want nothing left named as running after the run ended", m.run.running)
 	}
 }
 
 // The library's Update always hands back a Cmd that re-arms the next frame.
 // Not returning it is the only way the loop stops, so this is the one place
 // that behaviour is worth locking down directly.
-func TestTheSpinnerKeepsTickingWhileWaiting(t *testing.T) {
+func TestTheSpinnerKeepsTickingWhileTheRunIsBusy(t *testing.T) {
 	m := sized()
-	m.run.waiting = true
+	m.run.busy = true
 
 	msg, ok := m.spin.Tick().(spinner.TickMsg)
 	if !ok {
 		t.Fatal("Tick did not produce a spinner.TickMsg")
 	}
 	if cmd := m.spun(msg); cmd == nil {
-		t.Fatal("the spinner did not re-arm its next tick while still waiting")
+		t.Fatal("the spinner did not re-arm its next tick while the run was still going")
 	}
 }
 
-func TestTheSpinnerStopsTickingOnceTheWaitIsOver(t *testing.T) {
+func TestTheSpinnerStopsTickingOnceTheRunIsOver(t *testing.T) {
 	m := sized()
-	m.run.waiting = false
+	m.run.busy = false
 
 	msg, ok := m.spin.Tick().(spinner.TickMsg)
 	if !ok {
 		t.Fatal("Tick did not produce a spinner.TickMsg")
 	}
 	if cmd := m.spun(msg); cmd != nil {
-		t.Error("the spinner kept re-arming after the wait ended")
+		t.Error("the spinner kept re-arming after the run ended")
 	}
 }

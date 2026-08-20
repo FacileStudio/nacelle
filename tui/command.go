@@ -102,6 +102,7 @@ func (m *model) help() tea.Cmd {
 		"/skill:name [what to do] — run a loaded skill directly, instead of waiting for the model to decide to",
 		"",
 		"Ctrl+C cancels a run, or quits when idle. Ctrl+\\ force-quits.",
+		"Enter during a run queues the line and sends it once the run finishes; ctrl+c drops whatever is queued.",
 		"Up/Down/PageUp/PageDown and the mouse wheel scroll the transcript; sending anything returns to the end.",
 		"Selecting text with the mouse needs shift held down, because the wheel is reported to this client instead of the terminal.",
 		"Typing / opens a dropdown of commands and skills — up/down move, tab/enter pick, esc closes it.",

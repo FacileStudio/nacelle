@@ -32,9 +32,15 @@ func (m *model) resize(size tea.WindowSizeMsg) tea.Cmd {
 	return nil
 }
 
-// layout is the one place the transcript's height is computed, so a resize
-// and the dropdown opening or closing can never disagree about how tall it
-// is.
+// layout is the one place the transcript's height is computed, so a resize,
+// the dropdown opening or closing, and a message being queued or delivered
+// can never disagree about how tall it is.
+//
+// The 2 is the status line and the prompt, which are always drawn. Everything
+// after it is a row only sometimes on screen, and each is reserved by the
+// same rule: one row per line View will actually draw. Queued messages are
+// one line each because viewQueued truncates them to the width rather than
+// letting them wrap.
 func (m *model) layout(height int) {
-	m.viewport.SetHeight(max(height-2-m.menu.height(), 1))
+	m.viewport.SetHeight(max(height-2-m.menu.height()-len(m.run.queued), 1))
 }

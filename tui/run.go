@@ -22,9 +22,18 @@ import (
 // replaces: a counter carried over from the last run would double-count its
 // total against this run's turns.
 //
-// waiting is true from the moment a question is sent until the first event
-// comes back, success or error — otherwise a screen that has not moved since
-// the question was echoed looks exactly like a hung client, not a slow one.
+// running is every tool between its call and its result, keyed by call id so
+// several at once are counted right — the SDK's own runner executes a turn's
+// tools concurrently. It is what lets the status line name what it is waiting
+// on instead of only that it is waiting, and it is emptied by settle rather
+// than trusted to drain: a run capped at its iteration limit, or abandoned
+// mid-tool, reaches no result for the calls it stopped short of.
+//
+// queued is what was typed while a run was still going, delivered when it
+// settles. Refusing input until a run finishes is the behaviour this replaces,
+// and it was worse than it sounds: the prompt silently ignored enter, so the
+// only way to know a question had not been asked was to notice nothing
+// happening. pi calls this a follow-up message and delivers it the same way.
 //
 // pending is set only when -approve-tools is on and a call is waiting on a
 // decision — nil otherwise, so status() and key() only change behaviour for
@@ -38,10 +47,25 @@ type inflight struct {
 	stop        nacelle.Stop
 	interrupted time.Time
 	busy        bool
-	waiting     bool
-	asked       []nacelle.Part
-	answered    []nacelle.Part
 	pending     *approvalRequest
+	queued      []string
+	running     map[string]string
+
+	// turn is embedded rather than named so both fields still read as
+	// m.run.asked and m.run.answered — the grouping exists only to keep
+	// inflight's own field count from growing every time this list does,
+	// the same reason Config embeds Discovery in config.go.
+	turn
+}
+
+// turn is the assistant turn being built for the conversation: the tools it
+// asked for, and the results collected to answer them. They are one state
+// machine — see conversation.go, which is the only thing that drives them —
+// and separate from everything above, which is about the run rather than
+// about what will be sent back.
+type turn struct {
+	asked    []nacelle.Part
+	answered []nacelle.Part
 }
 
 // send starts a run over text — a plain question as typed, or a
@@ -50,16 +74,14 @@ type inflight struct {
 // leftover stop reason mislabels this answer truncated, a leftover usage
 // double-counts, and a leftover interruption quits a fresh run outright.
 //
-// render() runs again here, after waiting is set: ask()'s own echo already
-// rendered once with waiting still false, and nothing else redraws the
-// viewport before the first event arrives, so the spinner line would
-// otherwise never appear until something else happened to trigger it.
+// running is emptied here rather than only in settle so a run never inherits
+// the last one's unanswered calls and reports them as its own.
 func (m *model) send(text string) tea.Cmd {
 	m.run.stop = ""
 	m.run.usage = nacelle.Usage{}
 	m.run.interrupted = time.Time{}
 	m.run.asked, m.run.answered = nil, nil
-	m.run.waiting = true
+	m.run.running = map[string]string{}
 	m.conversation = append(m.conversation, nacelle.UserText(text))
 	m.render()
 
@@ -74,12 +96,7 @@ func (m *model) send(text string) tea.Cmd {
 // answer is committed before the error is — an error printed first would
 // tell the reader the request failed, then show the half sentence it
 // interrupted, the wrong order to read a failure in.
-//
-// waiting ends here, on the very first result whatever kind it is: an error
-// is still an answer to "is anything happening," and the spinner's job was
-// only ever to cover the silence before that first response.
 func (m *model) consume(next result) tea.Cmd {
-	m.run.waiting = false
 	if next.err != nil {
 		m.flush()
 		m.say(fromFailure, next.err.Error())
@@ -96,14 +113,21 @@ func (m *model) consume(next result) tea.Cmd {
 // here, not left standing, so the next question starts from a clean counter
 // and the status line keeps showing a total that only grows.
 //
-// waiting and pending are cleared here too, not only on their own paths: a
+// pending and running are cleared here too, not only on their own paths: a
 // stream that closes without yielding anything never reaches either one, and
-// nothing should be left spinning, or asking a question, about a dead run.
+// nothing should be left asking a question, or named as still running, about
+// a dead run.
+//
+// Whatever was typed while this run was going is delivered last, once the
+// state above is clean — send is what the dispatch reaches, and it would
+// otherwise be handed a run that has not finished tidying up after itself.
+// One at a time, because dispatching the next queued line starts a run that
+// settles again and takes the one after it.
 func (m *model) settle() tea.Cmd {
 	m.run.cancel()
 	m.run.busy = false
-	m.run.waiting = false
 	m.run.pending = nil
+	m.run.running = map[string]string{}
 
 	m.closeResults()
 	m.dropUnanswered()
@@ -112,5 +136,12 @@ func (m *model) settle() tea.Cmd {
 	m.run.usage = nacelle.Usage{}
 
 	m.render()
+
+	if len(m.run.queued) > 0 {
+		next := m.run.queued[0]
+		m.run.queued = m.run.queued[1:]
+		m.layout(m.windowHeight)
+		return m.dispatch(next)
+	}
 	return nil
 }
