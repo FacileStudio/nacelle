@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestFuzzyMatchFindsAnOrderPreservingSubsequence(t *testing.T) {
@@ -112,5 +114,53 @@ func TestCommandMenuHeightCapsAtMaxMenuItems(t *testing.T) {
 
 	if got := mm.height(); got != maxMenuItems {
 		t.Errorf("height() = %d, want it capped at %d", got, maxMenuItems)
+	}
+}
+
+// The dropdown has to get out of the way once the name is spelled out in
+// full, because while it is up it wins enter ahead of ask(): a typed-out
+// "/clear" answered the first enter by re-filling the prompt with what was
+// already there and only sent on the second.
+func TestRefreshMenuClosesOnceACommandIsTypedOutInFull(t *testing.T) {
+	m := sized()
+	m.prompt.SetValue("/clear")
+
+	m.refreshMenu()
+
+	if m.menu.open() {
+		t.Errorf("filtered = %+v, want the menu closed with nothing left to complete", m.menu.filtered)
+	}
+}
+
+// One more character is back to filtering, so closing on an exact match
+// never hides a longer name that happens to start with a shorter one.
+func TestRefreshMenuReopensWhenTypingPastAnExactMatch(t *testing.T) {
+	m := sized()
+	m.menu.items = []menuItem{{value: "/skill:review"}, {value: "/skill:review-pr"}}
+
+	m.prompt.SetValue("/skill:review")
+	m.refreshMenu()
+	if m.menu.open() {
+		t.Fatal("menu stayed open on an exact match")
+	}
+
+	m.prompt.SetValue("/skill:review-")
+	m.refreshMenu()
+	if !m.menu.open() {
+		t.Error("menu did not come back once the line no longer named a candidate outright")
+	}
+}
+
+// key() is where the two paths actually meet: with the menu closed, enter
+// belongs to ask() again and the line goes.
+func TestKeyEnterSendsAFullyTypedCommandInsteadOfRepickingIt(t *testing.T) {
+	m := sized()
+	m.prompt.SetValue("/clear")
+	m.refreshMenu()
+
+	m.key(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if got := m.prompt.Value(); got != "" {
+		t.Errorf("prompt = %q after enter, want the command sent rather than picked again", got)
 	}
 }
