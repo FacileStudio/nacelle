@@ -23,6 +23,7 @@ func (d *dirList) Set(v string) error { *d = append(*d, v); return nil }
 // one every time that list does.
 type declared struct {
 	backend, model, effort, root, system *string
+	search                               *string
 	bash, thinking, approveTools         *bool
 	iterations                           *int
 	skillDirs                            *dirList
@@ -50,8 +51,10 @@ func declareFlags(fallback Config) declared {
 		effort:    flag.String("effort", fallback.Effort, "low, medium, high, xhigh or max"),
 		root:      flag.String("root", fallback.Root, "directory the file tools may reach"),
 		system:    flag.String("system", fallback.System, "system prompt"),
-		bash:      flag.Bool("bash", *fallback.Bash, "let the model run commands"),
-		thinking:  flag.Bool("thinking", *fallback.Thinking, "stream the model's reasoning"),
+		search: flag.String("search", fallback.Search,
+			"base URL of a SearXNG instance to search the web through; empty means no web search"),
+		bash:     flag.Bool("bash", *fallback.Bash, "let the model run commands"),
+		thinking: flag.Bool("thinking", *fallback.Thinking, "stream the model's reasoning"),
 		approveTools: flag.Bool("approve-tools", *fallback.ApproveTools,
 			"ask before every tool call runs, y/a/n; off by default, every call runs unasked"),
 		iterations: flag.Int("max-iterations", *fallback.MaxIterations, "how many times the model may be asked"),
@@ -78,6 +81,7 @@ func typedSetters(f declared) map[string]func(*Config) {
 		"effort":          func(c *Config) { c.Effort = *f.effort },
 		"root":            func(c *Config) { c.Root = *f.root },
 		"system":          func(c *Config) { c.System = *f.system },
+		"search":          func(c *Config) { c.Search = *f.search },
 		"bash":            func(c *Config) { c.Bash = f.bash },
 		"thinking":        func(c *Config) { c.Thinking = f.thinking },
 		"mycelium":          func(c *Config) { c.Mycelium = f.mycelium },
