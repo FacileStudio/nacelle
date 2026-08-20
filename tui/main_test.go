@@ -20,7 +20,8 @@ func TestCountedNounPluralizes(t *testing.T) {
 // questions get answered at once — the model billed, the directory tools
 // can reach, and what actually got loaded into the system prompt.
 func TestBannerShowsBackendModelRootSkillsAndContextFiles(t *testing.T) {
-	got := banner(&answeringStub{}, Config{Model: "claude-opus-5", Root: "."},
+	off := false
+	got := banner(&answeringStub{}, Config{Model: "claude-opus-5", Root: ".", Bash: &off},
 		loaded{skills: []skill{{name: "deploy"}, {name: "filet"}}, contextFiles: 2})
 
 	lines := strings.Split(got, "\n")
@@ -33,13 +34,29 @@ func TestBannerShowsBackendModelRootSkillsAndContextFiles(t *testing.T) {
 	if !strings.Contains(lines[1], "2 skills") || !strings.Contains(lines[1], "2 context files") {
 		t.Errorf("second line = %q, want the skill count and the context file count", lines[1])
 	}
+	if !strings.Contains(lines[1], "bash off") {
+		t.Errorf("second line = %q, want it to say whether the model can run commands", lines[1])
+	}
+}
+
+// The symptom of bash being off arrives from the model — "I have no terminal"
+// — not from this client, so the banner has to be the thing that connects it
+// back to the switch that caused it.
+func TestBannerSaysWhenBashIsOn(t *testing.T) {
+	on := true
+	got := banner(&answeringStub{}, Config{Root: ".", Bash: &on}, loaded{})
+
+	if !strings.Contains(got, "bash on") {
+		t.Errorf("banner = %q, want it to say bash is on", got)
+	}
 }
 
 // "-root ." reads the same from any directory this happens to be launched
 // from, which answers nothing — resolving it is the whole point of putting
 // root in the banner at all.
 func TestBannerResolvesRootToAnAbsolutePath(t *testing.T) {
-	got := banner(&answeringStub{}, Config{Root: "."}, loaded{})
+	off := false
+	got := banner(&answeringStub{}, Config{Root: ".", Bash: &off}, loaded{})
 
 	if strings.Contains(got, "\n.") || strings.HasSuffix(strings.Split(got, "\n")[1], " . ") {
 		t.Errorf("banner = %q, want root resolved, not echoed as \".\"", got)

@@ -58,9 +58,11 @@ set, the TUI, and the gate, in the order they were built.
   Enter during a run queues the line and sends it when the run finishes, instead of being
   silently ignored. The prompt wraps and grows with what is typed, up to ten rows, rather than
   scrolling sideways and appearing to type over itself; alt+enter starts a new line without
-  sending, and up/down move within the prompt once it is taller than a row. Renders answers as markdown (`charm.land/glamour`), picking light or dark from the
-  terminal's own reported background rather than assuming one. Shows a spinner for the gap
-  between a question and the first token. Reads `~/.nacelle.yml` beneath `NACELLE_*`
+  sending, and up/down move within the prompt once it is taller than a row. The transcript ends
+  on a blank row so the last line of an answer does not sit against the status line, and the
+  banner says whether bash is on — the symptom of it being off arrives from the model ("I have
+  no terminal"), not from anything this client used to print. Renders answers as markdown (`charm.land/glamour`), picking light or dark from the
+  terminal's own reported background rather than assuming one. Reads `~/.nacelle.yml` beneath `NACELLE_*`
   environment variables beneath command-line flags, in that order, and holds no credentials —
   those already have two homes.
 - **`Message` widened into a content-part union** — `{Role, Parts []Part}`, where `Part` is a

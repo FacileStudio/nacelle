@@ -192,6 +192,15 @@ func chosen(config Config) (nacelle.Backend, error) {
 // Root is resolved to an absolute path rather than echoed as typed, because
 // "-root ." reads the same from any directory nacelle happens to be
 // launched from and answers nothing on its own.
+//
+// Whether bash is on is named last and named after the flag, because the
+// symptom of it being off arrives from the model rather than from this
+// client: asked to build something, it answers that it has no terminal and
+// cannot run a command. That is true and deliberate — run_command is
+// unconfined, so it stays a decision — but nothing on screen connected it to
+// a line in ~/.nacelle.yml written once and forgotten. Saying "bash off"
+// where the model's own capabilities are listed is the shortest path from
+// that answer back to the switch that causes it.
 func banner(backend nacelle.Backend, config Config, found loaded) string {
 	model := config.Model
 	if model == "" {
@@ -201,8 +210,12 @@ func banner(backend nacelle.Backend, config Config, found loaded) string {
 	if err != nil {
 		root = config.Root
 	}
-	line := fmt.Sprintf("%s · %s\n%s · %s · %s", backend.Name(), model, root,
-		countedNoun(len(found.skills), "skill"), countedNoun(found.contextFiles, "context file"))
+	bash := "bash off"
+	if *config.Bash {
+		bash = "bash on"
+	}
+	line := fmt.Sprintf("%s · %s\n%s · %s · %s · %s", backend.Name(), model, root,
+		countedNoun(len(found.skills), "skill"), countedNoun(found.contextFiles, "context file"), bash)
 
 	if config.Search != "" {
 		line += " · search on"
