@@ -204,8 +204,8 @@ defer set.Close()
 local, err := set.Tools()   // or set.ReadOnly() for an agent that only answers questions
 ```
 
-`read_file`, `write_file`, `edit_file`, `find_files`, `search_files`, and `run_command` when
-`AllowBash` is set. Every file operation goes through [`os.Root`], so a path resolving outside
+`read_file`, `write_file`, `edit_file`, `list_files`, `find_files`, `search_files`, and
+`run_command` when `AllowBash` is set. Every file operation goes through [`os.Root`], so a path resolving outside
 the root is refused by a kernel-backed check rather than a string comparison — which is what
 closes symlink escapes, `..` that survives normalisation, and the check-then-use window.
 
@@ -226,6 +226,23 @@ Three rules it is worth knowing before extending it:
 Commands run with a scrubbed environment (`PATH` and `HOME`, nothing else), in their own
 process group so a timeout kills the children too, with every output capped and truncation
 announced rather than silent.
+
+Two tools sit outside the confined set because they answer questions the working directory
+cannot. `tools.Jardin()` reaches this machine's recorded flows and wiki. `tools.WebSearch(url)`
+searches the web through a [SearXNG](https://docs.searxng.org) instance you host:
+
+```go
+searching, err := tools.WebSearch(os.Getenv("SEARCH_URL"))  // "" builds nothing, and no error
+local = append(local, searching...)
+```
+
+Both backends can search server-side and neither does it for free — $10 per 1,000 searches on
+Anthropic, no free tier on OpenRouter — while an instance you already run costs nothing per
+query, keeps the queries on your own machine, and works the same on either backend because it
+is an ordinary local tool rather than a request parameter. There is no default endpoint and
+there will not be one: this repository is public, and any instance shipped as a default would
+be somebody else's machine. As with the root, the endpoint comes from the host and never from
+a tool argument — the model supplies a query and nothing else.
 
 [`os.Root`]: https://pkg.go.dev/os#Root
 
