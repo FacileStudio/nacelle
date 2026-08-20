@@ -42,7 +42,7 @@ func TestSearchComesFromTheFileAndEveryLayerAboveOutranksIt(t *testing.T) {
 		t.Errorf("search = %q, want the environment to win", *config.Search)
 	}
 
-	if config, err = settings(Config{Search: ptr("https://from-the-flag.example")}); err != nil {
+	if config, err = settings(Config{Web: Web{Search: ptr("https://from-the-flag.example")}}); err != nil {
 		t.Fatalf("settings: %v", err)
 	}
 	if *config.Search != "https://from-the-flag.example" {
@@ -82,7 +82,7 @@ func TestAnUnusableSearchEndpointStopsTheClient(t *testing.T) {
 func TestSearchCanBeTurnedOffForOneRunByAnEmptyFlag(t *testing.T) {
 	written(t, "search: https://from-the-file.example\n")
 
-	config, err := settings(Config{Search: ptr("")})
+	config, err := settings(Config{Web: Web{Search: ptr("")}})
 	if err != nil {
 		t.Fatalf("settings: %v", err)
 	}
@@ -110,5 +110,42 @@ func TestAnAbsentSearchVariableFallsThroughButAnEmptyOneOverrides(t *testing.T) 
 	}
 	if *config.Search != "" {
 		t.Errorf("search = %q, want an empty variable to turn it off", *config.Search)
+	}
+}
+
+// Fetch is the one web setting that is on unless someone says otherwise, so
+// the test that matters is that a file can turn it off — the same distinction
+// as search, in the opposite direction.
+func TestFetchIsOnByDefaultAndTheFileCanTurnItOff(t *testing.T) {
+	written(t, "")
+
+	config, err := settings(Config{})
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	if !*config.Fetch {
+		t.Error("fetch = false, want reading a page to be available without asking")
+	}
+
+	written(t, "fetch: false\n")
+	if config, err = settings(Config{}); err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	if *config.Fetch {
+		t.Error("fetch = true, want the file able to turn it off")
+	}
+}
+
+func TestTheBannerNamesFetchOnlyWhenItIsOff(t *testing.T) {
+	on, off := true, false
+
+	quiet := banner(&answeringStub{}, asSettled(Config{Root: ".", Web: Web{Fetch: &on}}), loaded{})
+	if strings.Contains(quiet, "fetch") {
+		t.Errorf("banner = %q, want nothing said about fetch when it is on", quiet)
+	}
+
+	loud := banner(&answeringStub{}, asSettled(Config{Root: ".", Web: Web{Fetch: &off}}), loaded{})
+	if !strings.Contains(loud, "fetch off") {
+		t.Errorf("banner = %q, want the reason a page cannot be read on screen", loud)
 	}
 }

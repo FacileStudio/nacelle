@@ -106,6 +106,21 @@ set, the TUI, and the gate, in the order they were built.
   constructor argument and never a tool argument, so a model cannot name the host a request
   goes to. Configured in `tui/` by `search:` in `~/.nacelle.yml`, `NACELLE_SEARCH`, or
   `-search`; the banner says `search on` when one is set.
+- **`tools.WebFetch`** — `web_fetch`, which reads one of the pages search finds. A search result
+  is a title and two sentences; this is the page behind it, as text with headings, lists, code
+  blocks and links resolved to absolute URLs so the model can follow one. It asks for
+  `text/markdown` first, which Cloudflare and Vercel answer by converting at the edge for roughly
+  80% fewer tokens, and identifies itself honestly rather than impersonating a browser, so a 403
+  from an anti-bot layer is reported as one with somewhere else to try. It is the only tool here
+  whose destination the model names, so the address check is in the dialer's `Control` hook —
+  after resolution, before connect, every redirect hop — refusing loopback, private, link-local
+  including the cloud metadata endpoint, and the special-use ranges `net/netip` has no predicate
+  for. In `tui/` it is on by default; `fetch: false` (`NACELLE_FETCH`, `-fetch`) turns it off,
+  and the banner says `fetch off` when it is.
+- **`golang.org/x/net`**, for `html.Parse`. The first new dependency here in a while, and the
+  alternative was hand-writing an HTML tokeniser — which is how the page renderer got its one
+  real bug: real pages leave tags unclosed, and only the tree-construction algorithm closes them
+  the way a browser does.
 - **`tui/` reads `~/.agents/AGENTS.md`**, the [AGENTS.md standard](https://agentsstandard.com)'s
   own global-base path — the same file Codex, Cursor, Copilot, Gemini and pi (at its own
   equivalent) already read. Deliberately not a user's `~/.claude/CLAUDE.md`: that file assumes
