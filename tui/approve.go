@@ -131,7 +131,6 @@ func (m *model) decide(press tea.KeyPressMsg) tea.Cmd {
 	pending := m.run.pending
 	m.run.pending = nil
 	pending.decision <- decision
-	m.render()
 	return nil
 }
 

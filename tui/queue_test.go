@@ -53,7 +53,7 @@ func TestAQueuedMessageIsShownWithoutJoiningTheTranscript(t *testing.T) {
 	m.prompt.SetValue("waiting its turn")
 	m.ask()
 
-	if strings.Contains(visible(m.viewport.View()), "waiting its turn") {
+	if strings.Contains(onScreen(m), "waiting its turn") {
 		t.Error("a queued line reached the transcript, where it reads as already asked")
 	}
 	if !strings.Contains(visible(strings.Join(m.viewQueued(), "\n")), "waiting its turn") {
@@ -73,8 +73,8 @@ func TestSettleDeliversTheQueuedMessage(t *testing.T) {
 	if len(m.run.queued) != 0 {
 		t.Errorf("queued = %v, want it emptied once delivered", m.run.queued)
 	}
-	if !strings.Contains(visible(m.viewport.View()), "the second question") {
-		t.Errorf("viewport = %q, want the delivered question echoed into the transcript", m.viewport.View())
+	if !strings.Contains(onScreen(m), "the second question") {
+		t.Errorf("screen = %q, want the delivered question echoed into the transcript", onScreen(m))
 	}
 }
 
@@ -88,8 +88,8 @@ func TestAQueuedCommandIsStillACommand(t *testing.T) {
 	m.settle()
 	defer m.run.cancel()
 
-	if !strings.Contains(visible(m.viewport.View()), "start a new session") {
-		t.Errorf("viewport = %q, want the delivered /help to have run as a command", m.viewport.View())
+	if !strings.Contains(onScreen(m), "start a new session") {
+		t.Errorf("screen = %q, want the delivered /help to have run as a command", onScreen(m))
 	}
 	if m.run.busy {
 		t.Error("a delivered /help started a run, so it was sent to the model as text")
@@ -110,8 +110,8 @@ func TestCancellingDropsTheQueueRatherThanStartingIt(t *testing.T) {
 	if len(m.run.queued) != 0 {
 		t.Fatalf("queued = %v, want it dropped when the run was cancelled", m.run.queued)
 	}
-	if !strings.Contains(visible(m.viewport.View()), "dropped, not sent") {
-		t.Errorf("viewport = %q, want the drop reported rather than silent", m.viewport.View())
+	if !strings.Contains(onScreen(m), "dropped, not sent") {
+		t.Errorf("screen = %q, want the drop reported rather than silent", onScreen(m))
 	}
 }
 
@@ -120,15 +120,15 @@ func TestCancellingDropsTheQueueRatherThanStartingIt(t *testing.T) {
 func TestQueuedMessagesTakeTheirRowsOutOfTheTranscript(t *testing.T) {
 	m := busy(t)
 	defer m.run.cancel()
-	before := m.viewport.Height()
+	before := m.liveRows
 
 	m.prompt.SetValue("one")
 	m.ask()
 	m.prompt.SetValue("two")
 	m.ask()
 
-	if got := m.viewport.Height(); got != before-2 {
-		t.Errorf("viewport height = %d, want %d — one row reserved per queued message", got, before-2)
+	if got := m.liveRows; got != before-2 {
+		t.Errorf("live rows = %d, want %d — one row reserved per queued message", got, before-2)
 	}
 }
 
@@ -141,11 +141,11 @@ func TestAnEmptyQueueDrawsNothingAndCostsNoRows(t *testing.T) {
 	}
 
 	m.absorb(nacelle.Event{Kind: nacelle.KindText, Text: "unrelated"})
-	tall := m.viewport.Height()
+	tall := m.liveRows
 	m.layout(m.windowHeight)
 
-	if got := m.viewport.Height(); got != tall {
-		t.Errorf("viewport height = %d, want it unchanged at %d with nothing queued", got, tall)
+	if got := m.liveRows; got != tall {
+		t.Errorf("live rows = %d, want it unchanged at %d with nothing queued", got, tall)
 	}
 }
 
@@ -165,8 +165,8 @@ func TestAQueuedCommandDoesNotStrandTheQuestionsBehindIt(t *testing.T) {
 	if len(m.run.queued) != 0 {
 		t.Fatalf("queued = %v, want the queue drained past the command", m.run.queued)
 	}
-	if !strings.Contains(visible(m.viewport.View()), "the question behind it") {
-		t.Errorf("viewport = %q, want the question after the command actually asked", m.viewport.View())
+	if !strings.Contains(onScreen(m), "the question behind it") {
+		t.Errorf("screen = %q, want the question after the command actually asked", onScreen(m))
 	}
 }
 

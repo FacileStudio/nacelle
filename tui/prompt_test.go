@@ -13,6 +13,24 @@ import (
 const long = "this is a deliberately long question, far wider than the window it is " +
 	"being typed into, so a prompt that refuses to wrap has nowhere to put it"
 
+// Up and down now always belong to the prompt: there is no transcript in this
+// client to scroll, so nothing competes for them and a wrapped question is
+// editable at every height.
+func TestUpAndDownReachThePrompt(t *testing.T) {
+	m := sized()
+	m.prompt.SetValue(long)
+
+	if handled, _ := m.key(pressUp()); handled {
+		t.Error("up was claimed by the client, want it left to the prompt")
+	}
+}
+
+// pressUp is an up-arrow as bubbletea delivers it, checked against the
+// library's own name so a rename fails here rather than silently unbinding.
+func pressUp() tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: tea.KeyUp}
+}
+
 // The reported bug. A single-line input slid sideways as it filled, so a long
 // question scrolled out of view a character at a time and looked like it was
 // typing over itself.
@@ -33,7 +51,7 @@ func TestALongQuestionWrapsInsteadOfScrollingSideways(t *testing.T) {
 // is one row tall.
 func TestAGrowingPromptTakesItsRowsFromTheTranscript(t *testing.T) {
 	m := sized()
-	before := m.viewport.Height()
+	before := m.liveRows
 
 	m.prompt.SetValue(long)
 	m.layout(m.windowHeight)
@@ -42,8 +60,8 @@ func TestAGrowingPromptTakesItsRowsFromTheTranscript(t *testing.T) {
 	if grew < 1 {
 		t.Fatal("the prompt did not grow, so this proves nothing")
 	}
-	if got := m.viewport.Height(); got != before-grew {
-		t.Errorf("viewport height = %d, want %d — one row given up per row the prompt gained", got, before-grew)
+	if got := m.liveRows; got != before-grew {
+		t.Errorf("live rows = %d, want %d — one row given up per row the prompt gained", got, before-grew)
 	}
 }
 
@@ -63,45 +81,15 @@ func TestThePromptStopsGrowingAtItsCap(t *testing.T) {
 func TestSendingGivesThePromptsRowsBack(t *testing.T) {
 	m := sized()
 	m.agent = answering(t)
-	tall := m.viewport.Height()
+	tall := m.liveRows
 
 	m.prompt.SetValue(long)
 	m.layout(m.windowHeight)
 	m.ask()
 	defer m.run.cancel()
 
-	if got := m.viewport.Height(); got != tall {
-		t.Errorf("viewport height = %d, want the full %d back once the prompt was cleared", got, tall)
-	}
-}
-
-// A one-row prompt has no use for up and down, so they scroll. A taller one
-// does: without them the cursor cannot reach the line above it.
-func TestUpAndDownGoToThePromptOnlyWhileItIsTallerThanOneRow(t *testing.T) {
-	m := filled()
-	up := pressing(t, tea.KeyUp, "up")
-
-	if !m.scroll(up) {
-		t.Error("up did not scroll the transcript while the prompt was a single row")
-	}
-
-	m.prompt.SetValue(long)
-	if !m.composing() {
-		t.Fatal("the prompt did not grow, so this proves nothing")
-	}
-	if m.scroll(up) {
-		t.Error("up scrolled the transcript instead of reaching a prompt with more than one line")
-	}
-}
-
-// pgup and pgdown never move, so the transcript stays reachable by keyboard
-// whatever the prompt is doing.
-func TestPageKeysStayWithTheTranscriptWhileComposing(t *testing.T) {
-	m := filled()
-	m.prompt.SetValue(long)
-
-	if !m.scroll(pressing(t, tea.KeyPgUp, "pgup")) {
-		t.Error("pgup stopped scrolling the transcript once the prompt had grown")
+	if got := m.liveRows; got != tall {
+		t.Errorf("live rows = %d, want the full %d back once the prompt was cleared", got, tall)
 	}
 }
 

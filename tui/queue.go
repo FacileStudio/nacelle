@@ -62,7 +62,7 @@ func (m *model) viewQueued() []string {
 		shown, hidden = shown[:queuedRows], len(shown)-queuedRows
 	}
 
-	width := max(m.viewport.Width(), 1)
+	width := max(m.width, 1)
 	lines := make([]string, 0, m.queuedHeight())
 	for _, text := range shown {
 		lines = append(lines, m.theme.waiting.Render(truncate("queued · "+text, width)))

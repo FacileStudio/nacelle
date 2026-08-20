@@ -6,7 +6,6 @@ import (
 
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
 
@@ -27,9 +26,23 @@ const forceQuit = 3 * time.Second
 // exists only to keep model's own field count from growing by one every
 // time this list does.
 type commandState struct {
-	skills       map[string]skill
-	menu         commandMenu
+	skills map[string]skill
+	menu   commandMenu
+}
+
+// screen is what this client knows about the terminal it is drawing into:
+// how wide, how tall, and how many of those rows the live region may use for
+// a run's streaming output once the status line, the prompt, the queue and
+// the dropdown have taken theirs.
+//
+// liveRows exists because the live region is repainted in place on every
+// delta, so it has to fit on the screen. Content taller than the terminal
+// cannot be redrawn where it stands, and an inline program that tries is one
+// that corrupts its own output.
+type screen struct {
+	width        int
 	windowHeight int
+	liveRows     int
 }
 
 // model is the whole client: a transcript, a prompt, and at most one run in
@@ -41,10 +54,9 @@ type model struct {
 	agent  *nacelle.Agent
 	banner string
 
-	viewport viewport.Model
-	prompt   textarea.Model
+	prompt    textarea.Model
+	unprinted []string
 
-	transcript   []entry
 	conversation []nacelle.Message
 	spent        nacelle.Usage
 
@@ -53,6 +65,7 @@ type model struct {
 	spin   spinner.Model
 
 	commandState
+	screen
 	run inflight
 }
 
@@ -64,23 +77,20 @@ type model struct {
 func newModel(agent *nacelle.Agent, banner string, skills []skill) *model {
 	byName := bySkillName(skills)
 
-	prompt := newPrompt()
-	view := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
-
 	m := &model{
-		agent:    agent,
-		banner:   banner,
-		viewport: view,
-		prompt:   prompt,
-		theme:    themed(true),
-		spin:     spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		agent:  agent,
+		banner: banner,
+		prompt: newPrompt(),
+		theme:  themed(true),
+		spin:   spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		screen: screen{width: 80, liveRows: 1},
 		commandState: commandState{
 			skills: byName,
 			menu:   commandMenu{items: menuItems(byName)},
 		},
 		run: inflight{cancel: func() {}, running: map[string]string{}},
 	}
-	m.pretty = prettier(m.theme.markdown, m.viewport.Width())
+	m.pretty = prettier(m.theme.markdown, m.width)
 	m.say(fromClient, banner)
 	return m
 }
@@ -96,35 +106,43 @@ func (m *model) Init() tea.Cmd { return tea.RequestBackgroundColor }
 // thin on purpose: everything that changes more than one field is a method, so
 // this reads as a table of what can happen rather than as the logic itself.
 func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	return m, tea.Sequence(m.route(message), m.prints())
+}
+
+// route is Update's own body, split out so that draining the print queue is
+// one seam rather than a line repeated down every branch.
+//
+// Sequence, not Batch: a batch makes no promise about order, and the cmd
+// being routed may be tea.Quit — a quit that wins the race takes the last
+// thing said with it, which for ctrl+c is the notice explaining what was
+// dropped.
+func (m *model) route(message tea.Msg) tea.Cmd {
 	switch message := message.(type) {
 	case tea.WindowSizeMsg:
-		return m, m.resize(message)
+		return m.resize(message)
 	case tea.KeyPressMsg:
 		if handled, cmd := m.key(message); handled {
-			return m, cmd
+			return cmd
 		}
-	case tea.MouseWheelMsg:
-		return m, m.wheel(message)
 	case tea.BackgroundColorMsg:
 		m.theme = themed(message.IsDark())
 		m.restyle()
-		return m, nil
+		return nil
 	case spinner.TickMsg:
-		return m, m.spun(message)
+		return m.spun(message)
 	case approvalRequest:
 		m.run.pending = &message
-		m.render()
-		return m, nil
+		return nil
 	case result:
-		return m, m.consume(message)
+		return m.consume(message)
 	case finished:
-		return m, m.settle()
+		return m.settle()
 	}
 
 	var cmd tea.Cmd
 	m.prompt, cmd = m.prompt.Update(message)
 	m.refreshMenu()
-	return m, cmd
+	return cmd
 }
 
 // key handles this client's bindings, reporting whether it consumed the
@@ -160,7 +178,6 @@ func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 		m.run.pending = nil
 		m.run.cancel()
 		m.dropQueued()
-		m.render()
 		return true, nil
 	}
 	if m.run.pending != nil {
@@ -175,7 +192,7 @@ func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 	case "enter":
 		return true, m.ask()
 	}
-	return m.scroll(press), nil
+	return false, nil
 }
 
 // ask takes whatever is in the prompt: sent now, or queued behind the run
@@ -203,7 +220,6 @@ func (m *model) ask() tea.Cmd {
 	if m.run.busy {
 		m.run.queued = append(m.run.queued, question)
 		m.layout(m.windowHeight)
-		m.render()
 		return nil
 	}
 	m.layout(m.windowHeight)
@@ -219,7 +235,6 @@ func (m *model) ask() tea.Cmd {
 // "/help" is still a command, which it would not be if the queue fed send
 // directly.
 func (m *model) dispatch(line string) tea.Cmd {
-	m.viewport.GotoBottom()
 	m.say(fromReader, line)
 
 	if cmd, ok := m.parseCommand(line); ok {

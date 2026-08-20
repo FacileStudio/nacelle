@@ -17,7 +17,7 @@ func TestAnAnswerIsRenderedAsMarkdownRatherThanShownRaw(t *testing.T) {
 	m := sized()
 	m.say(fromModel, "this is **bold** and this is `code`")
 
-	drawn := m.transcript[len(m.transcript)-1].drawn
+	drawn := m.unprinted[len(m.unprinted)-1]
 	if strings.Contains(drawn, "**") || strings.Contains(ansi.Strip(drawn), "**") {
 		t.Errorf("drawn = %q, want the markdown syntax gone, not printed literally", drawn)
 	}
@@ -34,8 +34,8 @@ func TestOnlyTheReaderSQuestionCarriesABackground(t *testing.T) {
 	m.say(fromReader, "what is in go.mod?")
 	m.say(fromModel, "the module declaration")
 
-	question := m.transcript[len(m.transcript)-2].drawn
-	answer := m.transcript[len(m.transcript)-1].drawn
+	question := m.unprinted[len(m.unprinted)-2]
+	answer := m.unprinted[len(m.unprinted)-1]
 
 	if !strings.Contains(question, "48;2;") {
 		t.Errorf("question = %q, want a background so it is findable while scrolling back", question)
@@ -49,18 +49,23 @@ func TestOnlyTheReaderSQuestionCarriesABackground(t *testing.T) {
 }
 
 // A palette picked for a dark terminal is grey on grey on a light one, so the
-// client asks rather than guesses, and redraws everything already on screen
-// once the terminal answers.
+// client asks rather than guesses.
+//
+// It changes what is said from then on, not what was said before. Lines
+// already printed belong to the terminal's scrollback and cannot be repainted
+// — the same reason a resize no longer reflows them, and the trade the
+// inline client makes to hand scrolling back to the terminal.
 func TestTheTerminalSBackgroundPicksThePalette(t *testing.T) {
 	m := sized()
 	m.say(fromReader, "one question")
+	before := m.unprinted[len(m.unprinted)-1]
 
-	before := m.transcript[len(m.transcript)-1].drawn
 	m.Update(tea.BackgroundColorMsg{Color: color.White})
-	after := m.transcript[len(m.transcript)-1].drawn
+	m.say(fromReader, "one question")
+	after := m.unprinted[len(m.unprinted)-1]
 
 	if before == after {
-		t.Error("the transcript did not change once the terminal reported a light background")
+		t.Error("the palette did not change once the terminal reported a light background")
 	}
 	if m.theme.markdown != "light" {
 		t.Errorf("markdown style = %q, want light for a light terminal", m.theme.markdown)

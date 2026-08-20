@@ -61,10 +61,7 @@ func run() error {
 
 	program := tea.NewProgram(client)
 	wireApprovals(approvalGate, program)
-	final, err := program.Run()
-	if last, ok := final.(*model); ok {
-		fmt.Print(last.session())
-	}
+	_, err = program.Run()
 	return err
 }
 

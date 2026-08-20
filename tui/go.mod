@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	charm.land/bubbles/v2 v2.1.1
-	charm.land/bubbletea/v2 v2.0.8
+	charm.land/bubbletea/v2 v2.0.9
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/FacileStudio/nacelle v0.0.0-20260820143628-fa1b07ec5309
 	go.yaml.in/yaml/v4 v4.0.0-rc.2

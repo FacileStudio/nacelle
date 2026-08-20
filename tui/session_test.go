@@ -47,7 +47,7 @@ func TestAStreamErrorIsCommittedAfterTheAnswerItInterrupted(t *testing.T) {
 	m.absorb(nacelle.Event{Kind: nacelle.KindText, Text: "half an answer"})
 	m.consume(result{err: errors.New("the stream fell over")})
 
-	screen := visible(m.viewport.View())
+	screen := onScreen(m)
 	answer, failure := strings.Index(screen, "half an answer"), strings.Index(screen, "fell over")
 	if answer < 0 || failure < 0 {
 		t.Fatalf("screen = %q, want both the answer and the error on it", screen)
@@ -67,7 +67,7 @@ func TestReasoningIsShownApartAndKeptOutOfTheConversation(t *testing.T) {
 	m.absorb(nacelle.Event{Kind: nacelle.KindText, Text: "the answer"})
 	m.settle()
 
-	screen := visible(m.viewport.View())
+	screen := onScreen(m)
 	if !strings.Contains(screen, "let me think") || !strings.Contains(screen, "the answer") {
 		t.Fatalf("screen = %q, want the reasoning and the answer both visible", screen)
 	}
@@ -86,9 +86,8 @@ func TestReasoningIsOnScreenWhileItIsStillStreaming(t *testing.T) {
 	m := sized()
 	m.run.busy = true
 	m.absorb(nacelle.Event{Kind: nacelle.KindThinking, Text: "weighing it up"})
-	m.render()
 
-	if !strings.Contains(m.viewport.View(), "weighing it up") {
-		t.Errorf("screen = %q, want the reasoning visible as it arrives", m.viewport.View())
+	if !strings.Contains(onScreen(m), "weighing it up") {
+		t.Errorf("screen = %q, want the reasoning visible as it arrives", onScreen(m))
 	}
 }

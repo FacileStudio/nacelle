@@ -11,26 +11,33 @@ import (
 	"github.com/FacileStudio/nacelle"
 )
 
-// View draws the transcript, the dropdown menu when it has anything to
-// show, one status line, and the prompt.
+// View draws only what is still changing: whatever a run is streaming right
+// now, one status line, any queued messages, the dropdown menu when it has
+// something to show, and the prompt. Everything finished has already been
+// printed and belongs to the terminal.
+//
+// There is no alternate screen and no mouse mode, and dropping both is the
+// point rather than an omission. An alt-screen program is handed a blank page
+// with no scrollback of its own, so it has to own scrolling, which means
+// capturing the wheel, which means taking click-drag selection too, which
+// means tmux's copy-mode reaches nothing and quitting un-draws the whole
+// session. Every one of those was reported here as its own separate
+// complaint, and every one of them is the same decision. Giving the page back
+// answers all of them at once: the terminal scrolls, selects, searches and
+// keeps the session, because the session is ordinary terminal output again.
+//
+// What it costs is reflow. A printed line is the terminal's, so a resize
+// rewraps it the way the terminal rewraps everything else rather than the way
+// this client would have. That is the trade every other tool in the terminal
+// already makes, including the shell this was launched from.
 //
 // The cursor is positioned by hand because the prompt renders inside a larger
 // frame: the component reports where its cursor sits within itself, and only
 // the caller knows how many rows are above it. above is exactly those rows —
 // computed once and reused for both the body and the cursor offset, so the
 // two can never disagree about how tall the menu drew this frame.
-//
-// The mouse mode is what the alternate screen costs, and it is not optional
-// alongside it. An alt-screen program has no scrollback of its own, so a
-// terminal that is not reporting the wheel leaves this client with no mouse
-// scrolling at all rather than with the terminal's — which is what it had
-// until this line, and it read as scrolling being switched off. Asking for
-// cell motion is the narrowest mode that carries the wheel; there is no
-// wheel-only mode to ask for instead. The price is the terminal's own
-// click-drag selection, which every mouse-reporting application pays and
-// every terminal lets you take back by holding shift.
 func (m *model) View() tea.View {
-	above := []string{m.viewport.View(), m.status()}
+	above := append(m.streaming(), m.status())
 	above = append(above, m.viewQueued()...)
 	if menu := m.viewMenu(); menu != "" {
 		above = append(above, menu)
@@ -38,8 +45,6 @@ func (m *model) View() tea.View {
 	body := strings.Join(append(above, m.prompt.View()), "\n")
 
 	view := tea.NewView(body)
-	view.AltScreen = true
-	view.MouseMode = tea.MouseModeCellMotion
 	if position := m.prompt.Cursor(); position != nil {
 		position.Y += lipgloss.Height(strings.Join(above, "\n"))
 		view.Cursor = position
@@ -57,12 +62,11 @@ func (m *model) View() tea.View {
 const abandoned nacelle.Stop = "abandoned"
 
 // status is the one line that is always true: what the session has cost so
-// far, whether a run is still going, whether the answer above it is whole, and
-// whether the reader is looking at the end of it.
+// far, whether a run is still going, and whether the answer above it is whole.
 //
-// The last of those is what scrolling costs. A reader parked halfway up while
-// a run streams sees a screen that has stopped moving, which is exactly what a
-// client that hung looks like, so the line says which of the two it is.
+// It no longer reports being scrolled back, because there is no longer any
+// such state to report — the terminal owns scrolling, and a client that has
+// been scrolled away from does not know it and does not need to.
 //
 // The count is spent plus the run in flight, which is the session total.
 // Anything else jumps around: a per-run counter that survives into the next
@@ -96,23 +100,17 @@ func (m *model) status() string {
 	if total.Cost > 0 {
 		line += fmt.Sprintf(" · $%.4f", total.Cost)
 	}
-	if !m.viewport.AtBottom() {
-		line += " · scrolled back, pgdn to catch up"
-	}
-	return lipgloss.NewStyle().Faint(true).Render(truncate(line, max(m.viewport.Width(), 1)))
+	return lipgloss.NewStyle().Faint(true).Render(truncate(line, max(m.width, 1)))
 }
 
 // working is what a busy run is doing, spun so the line moves even when
 // nothing else on screen does.
 //
-// The spinner lives here rather than at the end of the transcript, where it
-// used to, because what it reports outgrew where it was drawn. It covered
-// only the gap before the first event: after that the screen went still for
-// every gap that followed — a tool running, the model called again with its
-// result — and a client that has stopped moving is indistinguishable from one
-// that has stopped working. That is the whole complaint it answers, and the
-// status line is the one row that is always on screen to answer it on, even
-// scrolled back, which the end of the transcript is not.
+// The spinner lives on the status line because that is a row this client
+// still owns. It covered only the gap before the first event once: after that
+// the screen went still for every gap that followed — a tool running, the
+// model called again with its result — and a client that has stopped moving
+// is indistinguishable from one that has stopped working.
 //
 // Naming the tool is the difference between knowing something is happening
 // and knowing what. A run_command waiting on a slow build and a wedged client
