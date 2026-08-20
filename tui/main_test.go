@@ -7,6 +7,24 @@ import (
 	"testing"
 )
 
+// asSettled fills the pointer fields settings() always fills, so a test can
+// name only what it cares about.
+//
+// banner dereferences Config.Bash, the way localTools does and the way every
+// consumer of a Config does — a Config that never went through settings() is
+// not a lighter version of one, it is an invalid one. A literal that omits a
+// pointer field therefore panics rather than failing, taking the whole test
+// binary with it, and it has now caught two tests written by two people who
+// each had no reason to know. This is cheaper than either of them finding out
+// again.
+func asSettled(c Config) Config {
+	if c.Bash == nil {
+		off := false
+		c.Bash = &off
+	}
+	return c
+}
+
 func TestCountedNounPluralizes(t *testing.T) {
 	cases := map[int]string{0: "0 skills", 1: "1 skill", 2: "2 skills", 17: "17 skills"}
 	for n, want := range cases {
@@ -21,7 +39,7 @@ func TestCountedNounPluralizes(t *testing.T) {
 // can reach, and what actually got loaded into the system prompt.
 func TestBannerShowsBackendModelRootSkillsAndContextFiles(t *testing.T) {
 	off := false
-	got := banner(&answeringStub{}, Config{Model: "claude-opus-5", Root: ".", Bash: &off},
+	got := banner(&answeringStub{}, asSettled(Config{Model: "claude-opus-5", Root: ".", Bash: &off}),
 		loaded{skills: []skill{{name: "deploy"}, {name: "filet"}}, contextFiles: 2})
 
 	lines := strings.Split(got, "\n")
@@ -44,7 +62,7 @@ func TestBannerShowsBackendModelRootSkillsAndContextFiles(t *testing.T) {
 // back to the switch that caused it.
 func TestBannerSaysWhenBashIsOn(t *testing.T) {
 	on := true
-	got := banner(&answeringStub{}, Config{Root: ".", Bash: &on}, loaded{})
+	got := banner(&answeringStub{}, asSettled(Config{Root: ".", Bash: &on}), loaded{})
 
 	if !strings.Contains(got, "bash on") {
 		t.Errorf("banner = %q, want it to say bash is on", got)
@@ -56,7 +74,7 @@ func TestBannerSaysWhenBashIsOn(t *testing.T) {
 // root in the banner at all.
 func TestBannerResolvesRootToAnAbsolutePath(t *testing.T) {
 	off := false
-	got := banner(&answeringStub{}, Config{Root: ".", Bash: &off}, loaded{})
+	got := banner(&answeringStub{}, asSettled(Config{Root: ".", Bash: &off}), loaded{})
 
 	if strings.Contains(got, "\n.") || strings.HasSuffix(strings.Split(got, "\n")[1], " . ") {
 		t.Errorf("banner = %q, want root resolved, not echoed as \".\"", got)
@@ -92,12 +110,12 @@ func TestAugmentSystemCountsContextFilesAndSkills(t *testing.T) {
 // Search earns a word in the banner only when an instance is configured, so
 // a launch that silently has no search still reads as an ordinary launch.
 func TestTheBannerNamesSearchOnlyWhenAnInstanceIsSet(t *testing.T) {
-	without := banner(&answeringStub{}, Config{Root: "."}, loaded{})
+	without := banner(&answeringStub{}, asSettled(Config{Root: "."}), loaded{})
 	if strings.Contains(without, "search on") {
 		t.Errorf("banner = %q, want no mention of search when none is configured", without)
 	}
 
-	with := banner(&answeringStub{}, Config{Root: ".", Search: "https://furet.example"}, loaded{})
+	with := banner(&answeringStub{}, asSettled(Config{Root: ".", Search: "https://furet.example"}), loaded{})
 	if !strings.Contains(with, "search on") {
 		t.Errorf("banner = %q, want it to confirm search is on", with)
 	}
