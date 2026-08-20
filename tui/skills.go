@@ -34,11 +34,14 @@ type skillFrontmatter struct {
 }
 
 // skillsResult is what loading skills produces: text for the system prompt,
-// and a note for the person watching, when a project has skills sitting
-// there unloaded because nobody has trusted them yet.
+// a note for the person watching when a project has skills sitting there
+// unloaded because nobody has trusted them yet, and the skills themselves —
+// so a caller that wants to run one directly, not just tell the model it
+// exists, does not have to load them a second time.
 type skillsResult struct {
 	system string
 	notice string
+	skills []skill
 }
 
 // loadSkills assembles every skill nacelle will tell the model about: every
@@ -78,7 +81,7 @@ func loadSkills(root string, trustNew bool, extraDirs []string) skillsResult {
 		found = append(found, skillsIn(dir)...)
 	}
 
-	return skillsResult{system: renderSkills(found), notice: skillNotice(skipped, saveErr)}
+	return skillsResult{system: renderSkills(found), notice: skillNotice(skipped, saveErr), skills: found}
 }
 
 // globalSkills reads every skill under ~/.agents/skills/ — the same

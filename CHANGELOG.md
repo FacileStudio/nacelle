@@ -110,6 +110,13 @@ set, the TUI, and the gate, in the order they were built.
   same problem pi itself solves with a `skills` array in its own settings. No trust gate,
   same reasoning as the global `~/.agents/skills/` above: naming a directory here is something
   only the person running nacelle, on their own machine, can already do.
+- **`/skill:name`** runs a loaded skill directly, instead of waiting on the model to decide on
+  its own that it applies — the same shortcut pi's own `/skill:name` offers. Sends the skill's
+  `SKILL.md` content as the question; anything typed after the name is appended as
+  `User: <text>`, pi's own convention, so `/skill:pdf-tools extract the tables` tells the skill
+  what to do rather than only that it applies. Namespaced under `skill:` on purpose — the three
+  built-in commands (`/clear`, `/help`, `/quit`) can never collide with a skill of the same
+  name. Unlike those three, `/skill:name` **does** start a run.
 - **`Config.Approve`** — a per-call tool approval hook (`func(ctx, name, input) bool`), plumbed
   through `Request` and `ToolSink` rather than added as a `RunTool` parameter. Nil, the default
   on both `Config{}` and `tui/`'s `-approve-tools=false`, means every call runs unasked; a

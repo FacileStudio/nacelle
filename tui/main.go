@@ -44,7 +44,7 @@ func run() error {
 	}
 	defer func() { _ = set.Close() }()
 
-	notice := augmentSystem(&config)
+	notice, skills := augmentSystem(&config)
 
 	approvalGate, approve := buildApprovals(config)
 
@@ -53,7 +53,7 @@ func run() error {
 		return err
 	}
 
-	client := newModel(agent, banner(backend, config))
+	client := newModel(agent, banner(backend, config), skills)
 	if notice != "" {
 		client.say(fromClient, notice)
 	}
@@ -88,17 +88,19 @@ func localTools(config Config) (*tools.Set, []nacelle.Tool, error) {
 
 // augmentSystem folds project context and skills into config.System in
 // place, and returns whatever the person running this should be told before
-// the transcript opens — empty when there is nothing to say.
-func augmentSystem(config *Config) string {
+// the transcript opens (empty when there is nothing to say) plus every
+// skill loaded, so the model can be told about them by name — for
+// /skill:name, not only by the system prompt's own summary of them.
+func augmentSystem(config *Config) (string, []skill) {
 	if *config.ProjectContext {
 		config.System += projectContext(config.Root)
 	}
 	if !*config.Skills {
-		return ""
+		return "", nil
 	}
 	result := loadSkills(config.Root, *config.TrustSkills, config.SkillDirs)
 	config.System += result.system
-	return result.notice
+	return result.notice, result.skills
 }
 
 // build assembles the agent the settings describe, and hands the backend back
