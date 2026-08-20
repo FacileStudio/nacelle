@@ -62,8 +62,26 @@ What is not built, flagged rather than silently dropped. None is ordered, and no
   subprocess MCP server cannot be reached at all, and `openrouter` refuses any MCP config
   outright under the capability rule, so that backend gets zero MCP tools whatever the transport.
   It is also the answer to "how does a user add a tool without forking the binary" — the peers
-  answer that with MCP, not a built-in web search and not a plugin ABI. Raised 2026-08-20 while
-  comparing against Crush and pi; recommended, not decided.
+  answer that with MCP, not a plugin ABI. Raised 2026-08-20 while comparing against Crush and pi;
+  recommended, not decided.
+- **Server-side web search, as a paid alternative to `tools.WebSearch`.** Not ordered, and not a
+  gap — `tools.WebSearch` already covers this need for free against an instance you run. This is
+  the option for someone who would rather pay than host a service. Both backends have it
+  natively: Anthropic's `web_search_20260209` is a request parameter and `anthropic-sdk-go`
+  already ships `BetaWebSearchTool20260209Param`, and OpenRouter takes `plugins: [{id: "web"}]`
+  through the `option.WithJSONSet` escape hatch `requestOptions` already uses. It would fit
+  `Capabilities` the way MCP does.
+
+  What it costs, measured 2026-08-20 and the reason it is the alternative rather than the plan:
+  **$10 per 1,000 searches** on Anthropic plus tokens for retrieved content, and no free tier on
+  OpenRouter (~$0.007/request on its Exa default). It is also per-backend work twice over, where
+  a local tool is written once and runs on both.
+
+  Real work if it is ever picked up: `anthropic/calls.go`'s `isToolUse` does not handle
+  `server_tool_use` / `web_search_tool_result` blocks, which is the same gap behind the known
+  `mcp_tool_use` orphan; and `stopOf` parks `pause_turn` in `StopOther`, which server-side search
+  makes reachable in practice rather than in theory — a long search would end a run as an
+  unnameable stop with a half-finished answer.
 - **A total-time budget on `RetryOptions`.** The SDK sleeps on `Retry-After` before nacelle ever
   sees the error as transient, so three nacelle attempts over three HTTP retries is nine requests
   and six unbounded sleeps — roughly six minutes under `Retry-After: 60`, against a documented

@@ -34,6 +34,14 @@ type Config struct {
 	MaxIterations *int     `yaml:"max_iterations"`
 	SkillDirs     []string `yaml:"skill_dirs"`
 
+	// Search is the base URL of a SearXNG instance the model may query.
+	//
+	// Empty means no web search at all, and that is the default: there is
+	// no instance this client could pick on your behalf that would not be
+	// someone else's machine. It is a URL rather than a toggle so that one
+	// setting cannot disagree with another about whether search is on.
+	Search string `yaml:"search"`
+
 	// Discovery is embedded rather than named so every field on it is still
 	// reached as config.Jardin, not config.Discovery.Jardin — the grouping
 	// exists only to keep this struct's own field count from growing by one
@@ -129,6 +137,9 @@ func (c *Config) mergeStrings(over Config) {
 	}
 	if over.System != "" {
 		c.System = over.System
+	}
+	if over.Search != "" {
+		c.Search = over.Search
 	}
 }
 
