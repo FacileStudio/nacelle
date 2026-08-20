@@ -70,7 +70,7 @@ func TestSlashQuitReturnsTeaQuit(t *testing.T) {
 // an unrecognised command is reported rather than sent to the model as text.
 func TestAnUnknownSlashCommandIsReportedAndDoesNotReachTheModel(t *testing.T) {
 	m := sized()
-	m.prompt.SetValue("/clera")
+	m.prompt.SetValue("/cler")
 
 	m.ask()
 
@@ -78,7 +78,7 @@ func TestAnUnknownSlashCommandIsReportedAndDoesNotReachTheModel(t *testing.T) {
 		t.Error("an unknown command reached the model's conversation")
 	}
 	lines := spoken(m)
-	if len(lines) != 2 || !strings.Contains(lines[1], "/clera") || !strings.Contains(lines[1], "/help") {
+	if len(lines) != 2 || !strings.Contains(lines[1], "/cler") || !strings.Contains(lines[1], "/help") {
 		t.Errorf("transcript = %v, want the echoed input plus a line naming the bad command and pointing at /help", lines)
 	}
 }

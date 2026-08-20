@@ -19,6 +19,16 @@ import (
 // the caller knows how many rows are above it. above is exactly those rows —
 // computed once and reused for both the body and the cursor offset, so the
 // two can never disagree about how tall the menu drew this frame.
+//
+// The mouse mode is what the alternate screen costs, and it is not optional
+// alongside it. An alt-screen program has no scrollback of its own, so a
+// terminal that is not reporting the wheel leaves this client with no mouse
+// scrolling at all rather than with the terminal's — which is what it had
+// until this line, and it read as scrolling being switched off. Asking for
+// cell motion is the narrowest mode that carries the wheel; there is no
+// wheel-only mode to ask for instead. The price is the terminal's own
+// click-drag selection, which every mouse-reporting application pays and
+// every terminal lets you take back by holding shift.
 func (m *model) View() tea.View {
 	above := []string{m.viewport.View(), m.status()}
 	if menu := m.viewMenu(); menu != "" {
@@ -28,6 +38,7 @@ func (m *model) View() tea.View {
 
 	view := tea.NewView(body)
 	view.AltScreen = true
+	view.MouseMode = tea.MouseModeCellMotion
 	if position := m.prompt.Cursor(); position != nil {
 		position.Y += lipgloss.Height(strings.Join(above, "\n"))
 		view.Cursor = position

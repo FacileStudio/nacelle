@@ -212,3 +212,33 @@ it's open, `up`/`down` move the selection instead of scrolling the transcript, `
 the prompt with the highlighted entry (plus a trailing space, and without submitting — most
 useful with `/skill:name`'s own trailing argument) and `esc` closes it, leaving what was typed
 alone. A second, ordinary `enter` is what actually sends it.
+
+### Scrolling
+
+`up`/`down` move the transcript a line, `pgup`/`pgdown` a page, and the mouse wheel three lines
+at a time. The stream is followed only while the transcript is already at its end, so reading
+back mid-run keeps the screen where it was put rather than yanking it down on every delta; the
+status line says so while it lasts. Sending anything — a question, a command, a `/skill:name` —
+returns to the end and starts following again, because an echo that lands off-screen makes
+pressing enter look like it did nothing.
+
+The client asks the terminal to report the wheel, and that is not free: it takes over
+click-drag selection, which comes back by **holding shift** while dragging. There is no
+wheel-only mouse mode to ask for instead, and not asking is worse than it sounds — the client
+runs on the alternate screen, which has no scrollback of its own, so a terminal left to handle
+the wheel itself has nothing to scroll and the wheel simply does nothing.
+
+### Quitting
+
+`ctrl+c` when nothing is running, `ctrl+\` at any time, and `/quit` all end the session, and all
+three print the whole transcript to the terminal on the way out — after the alternate screen has
+been handed back, so it lands in the terminal's own scrollback where it can be scrolled and
+selected with nothing of this client's still running.
+
+That print is the other half of what the alternate screen costs. A program given a blank page
+hands the old one back untouched when it exits, so quitting does not scroll the conversation
+away, it un-draws it — and this client keeps no session files to recover it from. Printing it
+once is what turns a session that vanished into one the terminal has.
+
+A run nobody asked anything in prints nothing, so launching in the wrong directory and quitting
+straight back out leaves no trace.

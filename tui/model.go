@@ -102,6 +102,8 @@ func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if handled, cmd := m.key(message); handled {
 			return m, cmd
 		}
+	case tea.MouseWheelMsg:
+		return m, m.wheel(message)
 	case tea.BackgroundColorMsg:
 		m.theme = themed(message.IsDark())
 		m.restyle()
@@ -180,12 +182,21 @@ func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 // command's own reply and a /skill:name's expanded question would otherwise
 // need their own echo, the way /clear already had to work around wiping its
 // own before this existed.
+//
+// Sending is also the one thing that ends being scrolled back, and it has to
+// be, because render only follows a reader already at the bottom. Without
+// this, asking a question while parked halfway up put both the echo of it and
+// the whole answer off-screen: the visible result of pressing enter was the
+// prompt going empty and nothing else, which reads as the client having
+// dropped the question. Scrolling away says "let me read"; sending says
+// "I'm done reading", and only the second one is worth guessing at.
 func (m *model) ask() tea.Cmd {
 	question := strings.TrimSpace(m.prompt.Value())
 	if question == "" || m.run.busy {
 		return nil
 	}
 	m.prompt.Reset()
+	m.viewport.GotoBottom()
 	m.say(fromReader, question)
 
 	if cmd, ok := m.parseCommand(question); ok {

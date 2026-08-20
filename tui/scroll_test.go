@@ -94,6 +94,66 @@ func TestTheStatusLineSaysWhenTheReaderIsScrolledBack(t *testing.T) {
 	}
 }
 
+// The wheel is how a terminal application is scrolled, and an alt-screen one
+// has no terminal scrollback to fall through to when it does not handle it.
+func TestTheMouseWheelScrollsTheTranscript(t *testing.T) {
+	m := filled()
+	bottom := m.viewport.YOffset()
+	if bottom == 0 {
+		t.Fatal("the transcript fits on screen, so this proves nothing")
+	}
+
+	m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+
+	if got := m.viewport.YOffset(); got >= bottom {
+		t.Errorf("offset = %d, want it above the bottom at %d", got, bottom)
+	}
+}
+
+// A wheel message the model never routes is a wheel that does nothing, which
+// is the state this client shipped in — so assert on Update, not on wheel.
+func TestTheMouseWheelScrollsBackDownAgain(t *testing.T) {
+	m := filled()
+	m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	parked := m.viewport.YOffset()
+
+	m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
+
+	if got := m.viewport.YOffset(); got <= parked {
+		t.Errorf("offset = %d, want it below where the wheel left it at %d", got, parked)
+	}
+}
+
+// Asking a question while scrolled back used to put the echo of it, and the
+// whole answer under it, off-screen — so pressing enter emptied the prompt and
+// visibly did nothing else.
+func TestSendingReturnsAScrolledBackReaderToTheEnd(t *testing.T) {
+	m := filled()
+	m.agent = answering(t)
+	defer m.run.cancel()
+
+	m.scroll(pressing(t, tea.KeyPgUp, "pgup"))
+	if m.viewport.AtBottom() {
+		t.Fatal("pgup did not scroll back, so this proves nothing")
+	}
+
+	m.prompt.SetValue("a question asked from halfway up")
+	m.ask()
+
+	if !strings.Contains(visible(m.viewport.View()), "a question asked from halfway up") {
+		t.Errorf("viewport = %q, want the question that was just sent on screen", m.viewport.View())
+	}
+}
+
+// The mouse mode is load-bearing, not decoration: with none set the terminal
+// never reports a wheel event, so every test above passes against a client
+// whose wheel is dead in the one place it is actually used.
+func TestTheViewAsksTheTerminalForMouseEvents(t *testing.T) {
+	if mode := filled().View().MouseMode; mode != tea.MouseModeCellMotion {
+		t.Errorf("MouseMode = %v, want %v so the wheel is reported at all", mode, tea.MouseModeCellMotion)
+	}
+}
+
 // The viewport's own bindings are written for a pager that owns the keyboard —
 // j, k, f, b, u, d and space all scroll it. Handing it the press would mean
 // half the alphabet moved the transcript instead of reaching the question.
