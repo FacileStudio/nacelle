@@ -37,7 +37,9 @@ func (m *model) resize(size tea.WindowSizeMsg) tea.Cmd {
 // the dropdown opening or closing, and a message being queued or delivered
 // can never disagree about how tall it is.
 //
-// The 1 is the status line, the only row that is always exactly one. The
+// The 2 is the status line and the blank row kept above it, the only rows
+// that are always exactly one each — see View for why the blank one earns its
+// place. The
 // prompt is asked how tall it is rather than assumed to be one row: it grows
 // with what has been typed, so a long question takes rows from the live
 // region while it is being written and gives them back when it is sent.
@@ -50,5 +52,5 @@ func (m *model) resize(size tea.WindowSizeMsg) tea.Cmd {
 // is still arriving. That is a preview and nothing depends on it: the whole
 // answer is printed, rendered, the moment the run commits it.
 func (m *model) layout(height int) {
-	m.liveRows = max(height-1-m.prompt.Height()-m.menu.height()-m.queuedHeight(), 1)
+	m.liveRows = max(height-2-m.prompt.Height()-m.menu.height()-m.queuedHeight(), 1)
 }

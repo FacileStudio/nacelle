@@ -95,6 +95,9 @@ func (w *textWriter) walk(node *html.Node, depth int) {
 
 // open starts an element.
 func (w *textWriter) open(node *html.Node) {
+	if w.href != "" && structural(node.Data) {
+		w.writeLink()
+	}
 	switch {
 	case node.Data == "br":
 		w.out.WriteString("\n")
@@ -112,15 +115,31 @@ func (w *textWriter) open(node *html.Node) {
 	}
 }
 
+// structural reports whether an element breaks the line, which is what makes
+// it unable to sit inside a markdown link.
+func structural(name string) bool {
+	return blockElements[name] || headingLevel[name] > 0
+}
+
 // shut ends an element, and is where a link becomes markdown: the text had to
 // be collected first, because it sits between the tag carrying the URL and the
 // tag ending it.
+//
+// A link is flushed at every block boundary as well, not only at </a>. HTML5
+// lets an anchor wrap headings and paragraphs, which is how a documentation
+// index builds its cards, and buffering across one of those put the heading
+// markup in the output while its text was still being collected — an orphan
+// "##" on its own line, then every block's text run together inside one link.
+// Flushing per block gives each its own link to the same place, which is both
+// correct markdown and what a model needs to follow the card.
 func (w *textWriter) shut(name string) {
+	if w.href != "" && structural(name) {
+		w.writeLink()
+	}
 	switch {
 	case name == "a":
-		text := strings.TrimSpace(w.link.String())
-		w.link.Reset()
-		w.writeLink(text)
+		w.writeLink()
+		w.href = ""
 	case name == "pre":
 		if w.pre > 0 {
 			w.pre--

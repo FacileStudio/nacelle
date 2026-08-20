@@ -31,13 +31,19 @@ import (
 // this client would have. That is the trade every other tool in the terminal
 // already makes, including the shell this was launched from.
 //
+// The blank row above the status line is deliberate. Everything finished has
+// been printed already, so without it the status sits hard against the last
+// line of the answer and reads as part of it — a token count apparently
+// belonging to the sentence above. One empty row is what separates the client
+// talking about the run from the run's own output.
+//
 // The cursor is positioned by hand because the prompt renders inside a larger
 // frame: the component reports where its cursor sits within itself, and only
 // the caller knows how many rows are above it. above is exactly those rows —
 // computed once and reused for both the body and the cursor offset, so the
 // two can never disagree about how tall the menu drew this frame.
 func (m *model) View() tea.View {
-	above := append(m.streaming(), m.status())
+	above := append(m.streaming(), "", m.status())
 	above = append(above, m.viewQueued()...)
 	if menu := m.viewMenu(); menu != "" {
 		above = append(above, menu)

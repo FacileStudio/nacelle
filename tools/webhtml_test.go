@@ -21,15 +21,12 @@ func rendered(t *testing.T, page string) string {
 //
 // Real pages do not close all their tags — go.dev's own release notes open
 // five <nav> elements and close two — because the HTML5 parsing algorithm
-// closes them and browsers implement it. A tokeniser reports what was written,
-// so a skip counter driven by one never comes back down and swallows every
-// remaining element. The page came back holding nothing but its title, and it
-// looked like a page that simply had no content.
-// The shape is go.dev's own: <nav> left open inside a <header> and an
-// <aside>, with the article a sibling of both. A parser closes each nav when
-// its parent closes, so the article is reached normally. A tokeniser sees
-// three opens and one close, leaves its skip counter at two, and returns a
-// page containing nothing but the title.
+// closes them and browsers implement it. The shape here is go.dev's own: a
+// <nav> left open inside a <header> and an <aside>, with the article a
+// sibling of both. A parser closes each nav when its parent closes, so the
+// article is reached normally. A tokeniser sees three opens and one close,
+// leaves its skip counter at two, and returns a page holding nothing but its
+// title — which reads as a page that simply had no content.
 func TestContentSurvivesAnUnclosedSkippedElement(t *testing.T) {
 	out := rendered(t, `<html><head><title>Doc</title></head><body>
 		<header><nav><a href="/a">Nav one</a></header>
@@ -116,5 +113,27 @@ func TestScriptAndStyleNeverReachTheModel(t *testing.T) {
 	}
 	if !strings.Contains(out, "Just this.") {
 		t.Errorf("output = %q, want the prose kept", out)
+	}
+}
+
+// HTML5 lets an anchor wrap headings and paragraphs, which is how a
+// documentation index builds its cards — and it is exactly the page an agent
+// fetches to decide what to read next. Buffering the link text across those
+// blocks put the heading markup in the output while its text was still being
+// collected, so the page opened with an orphan "##" and then ran every
+// block's text together inside one link.
+func TestALinkWrappingBlocksBecomesOneLinkPerBlock(t *testing.T) {
+	out := rendered(t, `<a href="/guide"><h2>Getting started</h2><p>How to begin.</p></a>`)
+
+	if !strings.Contains(out, "## [Getting started](https://example.com/guide)") {
+		t.Errorf("output = %q, want the heading to carry its own link", out)
+	}
+	if !strings.Contains(out, "[How to begin.](https://example.com/guide)") {
+		t.Errorf("output = %q, want the paragraph to carry the same link", out)
+	}
+	for _, wrong := range []string{"Getting started How to begin.", "##\n"} {
+		if strings.Contains(out, wrong) {
+			t.Errorf("output contains %q, the shape of the bug this replaces\n---\n%s", wrong, out)
+		}
 	}
 }
