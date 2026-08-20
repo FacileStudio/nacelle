@@ -151,6 +151,18 @@ func (m *model) settle() tea.Cmd {
 // still quits, and the loop stops on run.busy rather than on a non-nil Cmd —
 // a command that returns work to do is not a command that started a run, and
 // reading it as one would strand the queue all over again.
+//
+// Sequence, not Batch, for the reason prints() and route() both give: a batch
+// makes no promise about the order its commands run in, and /clear returns one
+// that prints. Two queued /clears under a batch can interleave their blank
+// runs with each other's transcript, which is a scrambled screen rather than a
+// cleared one. Batch was safe only while every command returned something
+// order-independent, and that stopped being true without the type changing.
+//
+// What makes sequencing safe here is the break above: send's own Cmd blocks on
+// the results channel, so a run-starting line must be the last thing in cmds
+// or everything behind it would wait for the run's first event. Breaking on
+// run.busy is what guarantees that, and it is now load-bearing twice.
 func (m *model) deliver() tea.Cmd {
 	var cmds []tea.Cmd
 	for len(m.run.queued) > 0 {
@@ -163,5 +175,5 @@ func (m *model) deliver() tea.Cmd {
 			break
 		}
 	}
-	return tea.Batch(cmds...)
+	return tea.Sequence(cmds...)
 }
