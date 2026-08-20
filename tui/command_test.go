@@ -100,7 +100,7 @@ func TestACommandNeverStartsARunEvenWithNoAgent(t *testing.T) {
 }
 
 func TestParseCommandIgnoresTextWithoutALeadingSlash(t *testing.T) {
-	if _, ok := parseCommand("clear the transcript please"); ok {
+	if _, ok := sized().parseCommand("clear the transcript please"); ok {
 		t.Error("text with no leading slash was treated as a command")
 	}
 }

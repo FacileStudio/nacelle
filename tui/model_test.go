@@ -31,7 +31,7 @@ func spoken(m *model) []string {
 
 // sized is a model with a window, because everything that renders needs one.
 func sized() *model {
-	m := newModel(nil, "test · model")
+	m := newModel(nil, "test · model", nil)
 	m.resize(tea.WindowSizeMsg{Width: 80, Height: 24})
 	return m
 }

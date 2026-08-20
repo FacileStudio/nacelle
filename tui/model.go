@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"strings"
 	"time"
 
@@ -39,51 +38,22 @@ type model struct {
 	pretty *glamour.TermRenderer
 	spin   spinner.Model
 
-	run inflight
-}
-
-// inflight is the one run this client allows at a time: how to hear from it,
-// how to abandon it, what it has produced, and what it has cost.
-//
-// Reasoning gets a buffer of its own: sharing the answer's put the last
-// thought against the first word with no separator, and worse, committed the
-// reasoning to the conversation — re-sending a chain of thought every later
-// turn that the provider bills for and does not want replayed.
-//
-// usage is this run alone, because KindTurn accumulates and KindDone
-// replaces: a counter carried over from the last run would double-count its
-// total against this run's turns.
-//
-// waiting is true from the moment a question is sent until the first event
-// comes back, success or error — otherwise a screen that has not moved since
-// the question was echoed looks exactly like a hung client, not a slow one.
-//
-// pending is set only when -approve-tools is on and a call is waiting on a
-// decision — nil otherwise, so status() and key() only change behaviour for
-// someone who asked for a gate at all.
-type inflight struct {
-	results     <-chan result
-	cancel      context.CancelFunc
-	answer      strings.Builder
-	reasoning   strings.Builder
-	usage       nacelle.Usage
-	stop        nacelle.Stop
-	interrupted time.Time
-	busy        bool
-	waiting     bool
-	asked       []nacelle.Part
-	answered    []nacelle.Part
-	pending     *approvalRequest
+	skills map[string]skill
+	run    inflight
 }
 
 // newModel builds the client. The banner names the backend and model, so
 // which provider is billed is visible before typing, not after it fails.
-func newModel(agent *nacelle.Agent, banner string) *model {
+// skills is every skill loaded this run — kept keyed by name so
+// /skill:name is a lookup, not a scan, every time it's typed.
+func newModel(agent *nacelle.Agent, banner string, skills []skill) *model {
+	byName := bySkillName(skills)
+
 	prompt := textinput.New()
 	prompt.Placeholder = "Ask something. Ctrl+C to stop or quit, Ctrl+\\ to force it."
 	prompt.Prompt = "> "
 	prompt.SetVirtualCursor(false)
-	suggestCommands(&prompt)
+	suggestCommands(&prompt, byName)
 	prompt.Focus()
 	view := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 
@@ -94,6 +64,7 @@ func newModel(agent *nacelle.Agent, banner string) *model {
 		prompt:   prompt,
 		theme:    themed(true),
 		spin:     spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		skills:   byName,
 		run:      inflight{cancel: func() {}},
 	}
 	m.pretty = prettier(m.theme.markdown, m.viewport.Width())
@@ -176,75 +147,20 @@ func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 
 // ask sends whatever is in the prompt, unless a run is already going.
 //
-// Everything from the last run is cleared here, nowhere else: a leftover
-// stop reason mislabels this answer truncated, a leftover usage
-// double-counts, and a leftover interruption quits a fresh run outright.
+// The prompt is echoed once, up front, for every non-empty line — a
+// command's own reply and a /skill:name's expanded question would otherwise
+// need their own echo, the way /clear already had to work around wiping its
+// own before this existed.
 func (m *model) ask() tea.Cmd {
 	question := strings.TrimSpace(m.prompt.Value())
 	if question == "" || m.run.busy {
 		return nil
 	}
 	m.prompt.Reset()
-	if cmd, ok := parseCommand(question); ok {
-		m.say(fromReader, question)
+	m.say(fromReader, question)
+
+	if cmd, ok := m.parseCommand(question); ok {
 		return cmd(m)
 	}
-	m.run.stop = ""
-	m.run.usage = nacelle.Usage{}
-	m.run.interrupted = time.Time{}
-	m.run.asked, m.run.answered = nil, nil
-	m.run.waiting = true
-	m.say(fromReader, question)
-	m.conversation = append(m.conversation, nacelle.UserText(question))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	m.run.cancel = cancel
-	m.run.busy = true
-	m.run.results = start(ctx, m.agent, m.conversation)
-	return tea.Batch(waitFor(m.run.results), m.spin.Tick)
-}
-
-// consume folds one result into the transcript and waits for the next. The
-// answer is committed before the error is — an error printed first would
-// tell the reader the request failed, then show the half sentence it
-// interrupted, the wrong order to read a failure in.
-//
-// waiting ends here, on the very first result whatever kind it is: an error
-// is still an answer to "is anything happening," and the spinner's job was
-// only ever to cover the silence before that first response.
-func (m *model) consume(next result) tea.Cmd {
-	m.run.waiting = false
-	if next.err != nil {
-		m.flush()
-		m.say(fromFailure, next.err.Error())
-		return waitFor(m.run.results)
-	}
-	m.record(next.event)
-	m.absorb(next.event)
-	m.render()
-	return waitFor(m.run.results)
-}
-
-// settle ends a run: whatever streamed is committed, what it cost joins the
-// session total, and the prompt opens again. Usage is folded into spent
-// here, not left standing, so the next question starts from a clean counter
-// and the status line keeps showing a total that only grows.
-//
-// waiting and pending are cleared here too, not only on their own paths: a
-// stream that closes without yielding anything never reaches either one, and
-// nothing should be left spinning, or asking a question, about a dead run.
-func (m *model) settle() tea.Cmd {
-	m.run.cancel()
-	m.run.busy = false
-	m.run.waiting = false
-	m.run.pending = nil
-
-	m.closeResults()
-	m.dropUnanswered()
-	m.closeTurn(m.run.stop)
-	m.spent = m.spent.Add(m.run.usage)
-	m.run.usage = nacelle.Usage{}
-
-	m.render()
-	return nil
+	return m.send(question)
 }

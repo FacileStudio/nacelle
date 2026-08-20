@@ -175,20 +175,32 @@ a normal tool-result error block for the model to see, the same as any other fai
 ## Slash commands
 
 Typing `/` at the start of a line names one of the client's own commands instead of a
-question — none of these reach the model or start a run:
+question:
 
 | Command | Does |
 |---|---|
-| `/clear` | Reset the transcript, the conversation sent to the model, and the running cost total. Same client, new session. |
-| `/help` | List the commands above and the keybindings (scrolling, ctrl+c/ctrl+\). |
-| `/quit` | Quit. |
+| `/clear` | Reset the transcript, the conversation sent to the model, and the running cost total. Same client, new session. Never starts a run. |
+| `/help` | List the commands above and the keybindings (scrolling, ctrl+c/ctrl+\). Never starts a run. |
+| `/quit` | Quit. Never starts a run. |
+| `/skill:name [what to do]` | Run a loaded skill directly — **does** start a run, unlike the three above. |
 
-An unrecognised command (a typo like `/clera`) is reported back rather than sent to the model
-as a literal question — the same trade-off every peer client with slash commands makes, on the
-same reasoning: a real question is far less likely to start with a slash than a mistyped
-command is.
+An unrecognised command or skill (a typo like `/clera`, or a `/skill:name` that names nothing
+loaded) is reported back rather than sent to the model as a literal question — the same
+trade-off every peer client with slash commands makes, on the same reasoning: a real question is
+far less likely to start with a slash than a mistyped command is.
 
-The prompt suggests as you type: a matching command name completes in dim ghost text ahead of
-the cursor, `tab` accepts it, and `ctrl+n`/`ctrl+p` cycle between matches when more than one
-name fits what has been typed so far. Up/down do not cycle suggestions — they stay bound to
-scrolling the transcript, same as always.
+`/skill:name` sends that skill's own `SKILL.md` content as the question, instead of waiting for
+the model to decide on its own that the skill applies and read it with `read_file` — the same
+shortcut pi's own `/skill:name` offers, for the same reason: "models don't always" make that
+call themselves. Anything typed after the name is appended as `User: <that text>`, the same
+convention pi uses, so `/skill:pdf-tools extract the tables` tells the skill what to do with
+itself rather than only that it applies. Every loaded skill counts, from `~/.agents/skills/`,
+a trusted project `.agents/skills/`, or a `-skill-dir` — one namespace, `skill:`, so a skill
+named `clear` or `help` can never collide with the three commands above.
+
+The prompt suggests as you type: a matching command or `/skill:name` completes in dim ghost text
+ahead of the cursor, `tab` accepts it, and `ctrl+n`/`ctrl+p` cycle between matches when more than
+one fits what has been typed so far. Up/down do not cycle suggestions — they stay bound to
+scrolling the transcript, same as always. Matching is a plain case-insensitive prefix (the
+underlying widget's own rule, not configurable here) — `/skill:review` will not surface a skill
+named `hunk-review`, only one starting with what was typed.

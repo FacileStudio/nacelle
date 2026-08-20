@@ -23,19 +23,34 @@ var commands = map[string]command{
 
 // parseCommand reports the command a line names, and whether the line named
 // one at all. Only the first word is read, so "/clear" and "/clear now" both
-// match — nothing here yet takes an argument.
+// match the same client command — "/skill:name and-this" is the one case
+// with an argument, forwarded to runSkill as everything after the name.
 //
-// A line starting with '/' that names no known command still counts as a
-// command, reported back to the reader rather than sent to the model: a typo
-// like "/clera" is far more likely than a real question meant to start with
-// a slash, the same trade-off every peer client with slash commands makes.
-func parseCommand(line string) (command, bool) {
+// A line starting with '/' that names no known command or skill still
+// counts as a command, reported back to the reader rather than sent to the
+// model: a typo like "/clera" is far more likely than a real question meant
+// to start with a slash, the same trade-off every peer client with slash
+// commands makes.
+//
+// This is a method, not the free function it was, because a skill's own
+// name is only known at this run's construction — m.skills — unlike
+// commands, fixed at compile time.
+func (m *model) parseCommand(line string) (command, bool) {
 	if !strings.HasPrefix(line, "/") {
 		return nil, false
 	}
-	name, _, _ := strings.Cut(line[1:], " ")
+	name, rest, _ := strings.Cut(line[1:], " ")
 	if cmd, ok := commands[name]; ok {
 		return cmd, true
+	}
+	if skillName, ok := strings.CutPrefix(name, "skill:"); ok {
+		if s, ok := m.skills[skillName]; ok {
+			return runSkill(s, rest), true
+		}
+		return func(m *model) tea.Cmd {
+			m.say(fromClient, "unknown skill "+skillName+" — try /help")
+			return nil
+		}, true
 	}
 	return func(m *model) tea.Cmd {
 		m.say(fromClient, "unknown command "+line+" — try /help")
@@ -56,13 +71,14 @@ func commandNames() []string {
 	return names
 }
 
-// suggestCommands turns commandNames into completion: a match ghosts in
-// ahead of the cursor as it's typed, tab accepts it. Kept next to commands
-// itself rather than in newModel, so the prompt's own construction does not
-// need to know the two are related.
-func suggestCommands(prompt *textinput.Model) {
+// suggestCommands turns commandNames, plus a "/skill:name" for every loaded
+// skill, into completion: a match ghosts in ahead of the cursor as it's
+// typed, tab accepts it. Kept next to commands itself rather than in
+// newModel, so the prompt's own construction does not need to know the two
+// are related.
+func suggestCommands(prompt *textinput.Model, skills map[string]skill) {
 	prompt.ShowSuggestions = true
-	prompt.SetSuggestions(commandNames())
+	prompt.SetSuggestions(append(commandNames(), skillCommandNames(skills)...))
 }
 
 // clear starts a new session in the same client: the transcript, the
@@ -93,6 +109,7 @@ func (m *model) help() tea.Cmd {
 		"/clear — start a new session, same client",
 		"/help — show this message",
 		"/quit — quit",
+		"/skill:name [what to do] — run a loaded skill directly, instead of waiting for the model to decide to",
 		"",
 		"Ctrl+C cancels a run, or quits when idle. Ctrl+\\ force-quits.",
 		"Up/Down/PageUp/PageDown scroll the transcript.",
