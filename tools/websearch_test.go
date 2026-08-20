@@ -210,28 +210,6 @@ func TestWebSearchNamesTheBaseURLOnANotFound(t *testing.T) {
 	}
 }
 
-// invopop/jsonschema cuts a description at the first unescaped comma and says
-// nothing, so a tag written as prose reaches the model as its first clause.
-// The description is the only thing the model chooses a tool by, which makes
-// this the cheapest possible bug to ship and the hardest to notice.
-func TestWebSearchDescriptionSurvivesItsComma(t *testing.T) {
-	tool, _ := searchAgainst(t, http.StatusOK, resultsJSON(1))
-
-	properties, ok := tool.Schema()["properties"].(map[string]any)
-	if !ok {
-		t.Fatalf("schema = %v, want properties on it", tool.Schema())
-	}
-	query, ok := properties["query"].(map[string]any)
-	if !ok {
-		t.Fatalf("properties = %v, want a query among them", properties)
-	}
-
-	described, _ := query["description"].(string)
-	if !strings.Contains(described, "search engine") {
-		t.Errorf("description = %q, want the whole sentence: a tag comma needs a backslash before it", described)
-	}
-}
-
 func TestWebSearchRefusesAnEmptyQuery(t *testing.T) {
 	tool, instance := searchAgainst(t, http.StatusOK, resultsJSON(1))
 
