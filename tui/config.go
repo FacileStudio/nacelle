@@ -23,15 +23,16 @@ const ConfigFile = ".nacelle.yml"
 // it is a file that can never be committed to a dotfiles repo, which is the
 // only reason to want one of these on two machines.
 type Config struct {
-	Backend       string `yaml:"backend"`
-	Model         string `yaml:"model"`
-	Effort        string `yaml:"effort"`
-	Root          string `yaml:"root"`
-	System        string `yaml:"system"`
-	Bash          *bool  `yaml:"bash"`
-	Thinking      *bool  `yaml:"thinking"`
-	ApproveTools  *bool  `yaml:"approve_tools"`
-	MaxIterations *int   `yaml:"max_iterations"`
+	Backend       string   `yaml:"backend"`
+	Model         string   `yaml:"model"`
+	Effort        string   `yaml:"effort"`
+	Root          string   `yaml:"root"`
+	System        string   `yaml:"system"`
+	Bash          *bool    `yaml:"bash"`
+	Thinking      *bool    `yaml:"thinking"`
+	ApproveTools  *bool    `yaml:"approve_tools"`
+	MaxIterations *int     `yaml:"max_iterations"`
+	SkillDirs     []string `yaml:"skill_dirs"`
 
 	// Discovery is embedded rather than named so every field on it is still
 	// reached as config.Jardin, not config.Discovery.Jardin — the grouping
@@ -96,12 +97,17 @@ func defaults() Config {
 }
 
 // merge overwrites every setting the layer above actually mentions, and leaves
-// the rest alone.
+// the rest alone. SkillDirs reads "mentioned" the same way mergeStrings reads
+// an empty string: nothing yet lets a layer clear it on purpose, so an empty
+// slice only ever means a layer that never mentioned it.
 func (c *Config) merge(over Config) {
 	c.mergeStrings(over)
 	c.mergeToggles(over)
 	if over.MaxIterations != nil {
 		c.MaxIterations = over.MaxIterations
+	}
+	if len(over.SkillDirs) > 0 {
+		c.SkillDirs = over.SkillDirs
 	}
 }
 

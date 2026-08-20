@@ -155,7 +155,7 @@ func TestLoadSkillsSkipsUntrustedProjectSkills(t *testing.T) {
 	writeSkill(t, filepath.Join(root, ".agents", "skills", "risky"),
 		"name: risky\ndescription: not yet reviewed")
 
-	result := loadSkills(root, false)
+	result := loadSkills(root, false, nil)
 
 	if strings.Contains(result.system, "risky") {
 		t.Errorf("system = %q, want the untrusted skill left out", result.system)
@@ -174,12 +174,12 @@ func TestLoadSkillsWithTrustNewLoadsAndPersists(t *testing.T) {
 	writeSkill(t, filepath.Join(root, ".agents", "skills", "reviewed"),
 		"name: reviewed\ndescription: looked at it, seems fine")
 
-	trusting := loadSkills(root, true)
+	trusting := loadSkills(root, true, nil)
 	if !strings.Contains(trusting.system, "reviewed") {
 		t.Fatalf("system = %q, want the skill loaded on the trusting run", trusting.system)
 	}
 
-	again := loadSkills(root, false)
+	again := loadSkills(root, false, nil)
 	if !strings.Contains(again.system, "reviewed") {
 		t.Errorf("system = %q, want the skill still loaded on a later run with no flag, from the saved decision", again.system)
 	}

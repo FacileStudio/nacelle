@@ -102,6 +102,14 @@ set, the TUI, and the gate, in the order they were built.
   remembers the decision in `~/.nacelle/trust.json`, keyed by canonical directory — the first
   thing to give `~/.nacelle/` a reason to be a directory rather than the flat `~/.nacelle.yml`
   file it had been.
+- **`-skill-dir`** (repeatable), `NACELLE_SKILL_DIRS` (colon-separated) and `skill_dirs` in
+  `~/.nacelle.yml` — extra directories to load skills from, alongside `~/.agents/skills/`. The
+  Agent Skills specification defines the `SKILL.md` file, not where it lives on disk, so every
+  tool picks its own directory; this is how nacelle sees one that belongs to another tool (a
+  Claude Code `~/.claude/skills/`, say) without moving or copying anything into its own — the
+  same problem pi itself solves with a `skills` array in its own settings. No trust gate,
+  same reasoning as the global `~/.agents/skills/` above: naming a directory here is something
+  only the person running nacelle, on their own machine, can already do.
 - **`Config.Approve`** — a per-call tool approval hook (`func(ctx, name, input) bool`), plumbed
   through `Request` and `ToolSink` rather than added as a `RunTool` parameter. Nil, the default
   on both `Config{}` and `tui/`'s `-approve-tools=false`, means every call runs unasked; a

@@ -1,6 +1,17 @@
 package main
 
-import "flag"
+import (
+	"flag"
+	"strings"
+)
+
+// dirList collects one -skill-dir flag per occurrence. flag.String would
+// only keep the last one; this is the standard flag.Value escape hatch for a
+// flag meant to repeat.
+type dirList []string
+
+func (d *dirList) String() string     { return strings.Join(*d, ":") }
+func (d *dirList) Set(v string) error { *d = append(*d, v); return nil }
 
 // declared is every flag this command accepts, holding the pointer `flag`
 // fills each one in through — kept together so fromFlags can hand the whole
@@ -14,6 +25,7 @@ type declared struct {
 	backend, model, effort, root, system *string
 	bash, thinking, approveTools         *bool
 	iterations                           *int
+	skillDirs                            *dirList
 	discoveryFlags
 }
 
@@ -26,14 +38,20 @@ type discoveryFlags struct {
 // declareFlags registers every flag against fallback's values and returns
 // where `flag.Parse` will leave its answers.
 func declareFlags(fallback Config) declared {
+	skillDirs := new(dirList)
+	flag.Var(skillDirs, "skill-dir",
+		"extra directory to load skills from, alongside ~/.agents/skills (repeatable); "+
+			"e.g. -skill-dir ~/.claude/skills to see another tool's skills without moving them")
+
 	return declared{
-		backend:  flag.String("backend", fallback.Backend, "anthropic or openrouter"),
-		model:    flag.String("model", fallback.Model, "model id, defaulting to the backend's own"),
-		effort:   flag.String("effort", fallback.Effort, "low, medium, high, xhigh or max"),
-		root:     flag.String("root", fallback.Root, "directory the file tools may reach"),
-		system:   flag.String("system", fallback.System, "system prompt"),
-		bash:     flag.Bool("bash", *fallback.Bash, "let the model run commands"),
-		thinking: flag.Bool("thinking", *fallback.Thinking, "stream the model's reasoning"),
+		skillDirs: skillDirs,
+		backend:   flag.String("backend", fallback.Backend, "anthropic or openrouter"),
+		model:     flag.String("model", fallback.Model, "model id, defaulting to the backend's own"),
+		effort:    flag.String("effort", fallback.Effort, "low, medium, high, xhigh or max"),
+		root:      flag.String("root", fallback.Root, "directory the file tools may reach"),
+		system:    flag.String("system", fallback.System, "system prompt"),
+		bash:      flag.Bool("bash", *fallback.Bash, "let the model run commands"),
+		thinking:  flag.Bool("thinking", *fallback.Thinking, "stream the model's reasoning"),
 		approveTools: flag.Bool("approve-tools", *fallback.ApproveTools,
 			"ask before every tool call runs, y/a/n; off by default, every call runs unasked"),
 		iterations: flag.Int("max-iterations", *fallback.MaxIterations, "how many times the model may be asked"),
@@ -68,6 +86,7 @@ func typedSetters(f declared) map[string]func(*Config) {
 		"trust-skills":    func(c *Config) { c.TrustSkills = f.trustSkills },
 		"approve-tools":   func(c *Config) { c.ApproveTools = f.approveTools },
 		"max-iterations":  func(c *Config) { c.MaxIterations = f.iterations },
+		"skill-dir":       func(c *Config) { c.SkillDirs = []string(*f.skillDirs) },
 	}
 }
 

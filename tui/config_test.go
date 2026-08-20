@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -171,6 +172,38 @@ func TestJardinAndProjectContextDefaultOn(t *testing.T) {
 	}
 	if !*fallback.ProjectContext {
 		t.Error("project context = false, want it on by default")
+	}
+}
+
+// SkillDirs is the one setting that is a slice rather than a string or a
+// *bool, so it needed its own line in merge() — this proves that line
+// actually runs, the same way TestTheFileBeatsTheDefaults proves it for a
+// plain string.
+func TestSkillDirsComesFromTheFile(t *testing.T) {
+	written(t, "skill_dirs:\n  - /a/skills\n  - /b/skills\n")
+
+	config, err := settings(Config{})
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	if want := []string{"/a/skills", "/b/skills"}; !slices.Equal(config.SkillDirs, want) {
+		t.Errorf("skill dirs = %v, want %v", config.SkillDirs, want)
+	}
+}
+
+// NACELLE_SKILL_DIRS is colon-separated, the same convention PATH itself
+// uses for a list of directories, and it has to beat the file without
+// erasing an unrelated setting the file made.
+func TestSkillDirsFromTheEnvironmentAreColonSeparatedAndBeatTheFile(t *testing.T) {
+	written(t, "skill_dirs:\n  - /from/the/file\n")
+	t.Setenv(EnvPrefix+"SKILL_DIRS", "/a/skills:/b/skills")
+
+	config, err := settings(Config{})
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	if want := []string{"/a/skills", "/b/skills"}; !slices.Equal(config.SkillDirs, want) {
+		t.Errorf("skill dirs = %v, want the environment's list", config.SkillDirs)
 	}
 }
 
