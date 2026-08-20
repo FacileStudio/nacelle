@@ -110,6 +110,11 @@ func (m *model) paint(e entry) entry {
 // produced. The spinner used to be, and moved to the status line when it grew
 // from covering one gap to covering the whole run — see working() in view.go
 // for why the one row that is always on screen is where it belongs.
+//
+// The content ends on a blank row. Without it the last line of an answer sits
+// directly against the status line, and two unrelated things touching read as
+// one block — the end of what was said and the machinery underneath it need a
+// gap to be told apart at a glance.
 func (m *model) render() {
 	follow := m.viewport.AtBottom()
 	width := max(m.viewport.Width(), 1)
@@ -124,7 +129,7 @@ func (m *model) render() {
 	if streaming := m.run.answer.String(); streaming != "" {
 		body = append(body, m.theme.plain.Width(width).Render(streaming))
 	}
-	m.viewport.SetContent(strings.Join(body, "\n\n"))
+	m.viewport.SetContent(strings.Join(body, "\n\n") + "\n")
 
 	if follow {
 		m.viewport.GotoBottom()
