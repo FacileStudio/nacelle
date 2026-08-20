@@ -105,9 +105,10 @@ func TestParseCommandIgnoresTextWithoutALeadingSlash(t *testing.T) {
 	}
 }
 
-// commandNames is the prompt's only source of what to suggest — every
-// registered command has to reach it, "/"-prefixed, or it never comes up
-// while typing even though "/name" still works once entered by hand.
+// commandNames is the dropdown menu's only source of the client's own
+// commands (menuItems, in menu.go) — every registered command has to reach
+// it, "/"-prefixed, or it never appears there even though "/name" still
+// works once entered by hand.
 func TestCommandNamesListsEveryRegisteredCommandSlashPrefixed(t *testing.T) {
 	names := commandNames()
 	if len(names) != len(commands) {
@@ -120,14 +121,11 @@ func TestCommandNamesListsEveryRegisteredCommandSlashPrefixed(t *testing.T) {
 	}
 }
 
-// A prompt built by newModel is the one a reader actually types into, so the
-// suggestion list has to be wired there rather than merely exist.
-func TestNewModelWiresCommandNamesIntoThePromptsSuggestions(t *testing.T) {
+// A model built by newModel is the one a reader actually types into, so the
+// dropdown's candidate pool has to be wired there rather than merely exist.
+func TestNewModelWiresCommandsIntoTheMenu(t *testing.T) {
 	m := sized()
-	if !m.prompt.ShowSuggestions {
-		t.Error("prompt.ShowSuggestions = false, want suggestions on")
-	}
-	if got := m.prompt.AvailableSuggestions(); strings.Join(got, ",") != strings.Join(commandNames(), ",") {
-		t.Errorf("prompt suggestions = %v, want %v", got, commandNames())
+	if len(m.menu.items) != len(commands) {
+		t.Errorf("menu.items = %+v, want exactly the client's own commands with no skills loaded", m.menu.items)
 	}
 }

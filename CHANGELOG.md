@@ -127,9 +127,15 @@ set, the TUI, and the gate, in the order they were built.
 - **`tui/` slash commands** — `/clear` (reset the transcript, the conversation and the running
   cost, same client), `/help` (list commands and keybindings) and `/quit`. A leading `/` never
   reaches the model; an unrecognised command is reported rather than sent as a question, the
-  same trade-off every peer client with slash commands makes. The prompt suggests and completes
-  them as you type, built on `textinput`'s own suggestion list rather than a new component:
-  a match ghosts in ahead of the cursor, `tab` accepts it, `ctrl+n`/`ctrl+p` cycle multiple
-  matches, and up/down stay bound to scrolling the transcript.
+  same trade-off every peer client with slash commands makes.
+- **A dropdown menu for `/`** (`tui/menu.go`, `tui/menukeys.go`) replaces the first cut of this
+  that just wired `textinput`'s own ghost-text suggestions: typing `/` alone opens a list of
+  every command and skill, each with its own description; more typed ranks it — prefix, then
+  substring, then a fuzzy order-preserving match, hand-rolled rather than a new dependency, so
+  `/skill:rev` finds `review`, `facile-review` **and** `hunk-review`, not only a name starting
+  with what was typed. `up`/`down` move the selection while it's open instead of scrolling the
+  transcript; `tab`/`enter` fill the prompt (plus a trailing space) without submitting, `esc`
+  dismisses. `tui/model.go`'s own `layout()` reserves the dropdown's height out of the
+  transcript's, recomputed on every filter change, not only on a real terminal resize.
 
 [Unreleased]: https://github.com/FacileStudio/nacelle/commits/main

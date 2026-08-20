@@ -198,9 +198,11 @@ itself rather than only that it applies. Every loaded skill counts, from `~/.age
 a trusted project `.agents/skills/`, or a `-skill-dir` — one namespace, `skill:`, so a skill
 named `clear` or `help` can never collide with the three commands above.
 
-The prompt suggests as you type: a matching command or `/skill:name` completes in dim ghost text
-ahead of the cursor, `tab` accepts it, and `ctrl+n`/`ctrl+p` cycle between matches when more than
-one fits what has been typed so far. Up/down do not cycle suggestions — they stay bound to
-scrolling the transcript, same as always. Matching is a plain case-insensitive prefix (the
-underlying widget's own rule, not configurable here) — `/skill:review` will not surface a skill
-named `hunk-review`, only one starting with what was typed.
+Typing `/` alone opens a dropdown listing every command and skill, each skill with its own
+description; more typed narrows it, ranked best match first — a prefix beats a plain substring
+beats a fuzzy, order-preserving scatter of the same letters, so `/skill:rev` finds `review`,
+`facile-review` **and** `hunk-review`, not only a name that starts with what was typed. While
+it's open, `up`/`down` move the selection instead of scrolling the transcript, `tab`/`enter` fill
+the prompt with the highlighted entry (plus a trailing space, and without submitting — most
+useful with `/skill:name`'s own trailing argument) and `esc` closes it, leaving what was typed
+alone. A second, ordinary `enter` is what actually sends it.

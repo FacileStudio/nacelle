@@ -13,14 +13,13 @@ import (
 // would mean half the alphabet moved the transcript instead of reaching the
 // question being typed.
 //
-// What is left are the four keys a prompt has no use for. Up and down stay
-// claimed here even though the prompt now sets a suggestion list (the
-// "/"-command names): that list's own up/down binding is only a second way
-// to cycle a multi-match suggestion, and its other binding for the same
-// action, ctrl+n/ctrl+p, reaches the prompt untouched — nothing is lost by
-// leaving the transcript on the keys everyone reaches for first. Home, end,
-// ctrl+u and ctrl+d are all editing keys — taking those would fix scrolling
-// by breaking typing.
+// What is left are the four keys a prompt has no use for on its own. Up and
+// down do double duty: key() only ever reaches scroll with them when the
+// dropdown menu (menu.go) is closed, since an open menu claims both first to
+// move its own selection — so scroll never actually has to choose between
+// the two, it only ever sees the keys the menu left it. Home, end, ctrl+u
+// and ctrl+d are all editing keys — taking those would fix scrolling by
+// breaking typing.
 func (m *model) scroll(press tea.KeyPressMsg) bool {
 	switch press.String() {
 	case "up":

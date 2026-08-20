@@ -11,19 +11,25 @@ import (
 	"github.com/FacileStudio/nacelle"
 )
 
-// View draws the transcript, the prompt and one status line.
+// View draws the transcript, the dropdown menu when it has anything to
+// show, one status line, and the prompt.
 //
 // The cursor is positioned by hand because the prompt renders inside a larger
 // frame: the component reports where its cursor sits within itself, and only
-// the caller knows how many rows are above it.
+// the caller knows how many rows are above it. above is exactly those rows —
+// computed once and reused for both the body and the cursor offset, so the
+// two can never disagree about how tall the menu drew this frame.
 func (m *model) View() tea.View {
-	transcript := m.viewport.View()
-	body := strings.Join([]string{transcript, m.status(), m.prompt.View()}, "\n")
+	above := []string{m.viewport.View(), m.status()}
+	if menu := m.viewMenu(); menu != "" {
+		above = append(above, menu)
+	}
+	body := strings.Join(append(above, m.prompt.View()), "\n")
 
 	view := tea.NewView(body)
 	view.AltScreen = true
 	if position := m.prompt.Cursor(); position != nil {
-		position.Y += lipgloss.Height(transcript) + 1
+		position.Y += lipgloss.Height(strings.Join(above, "\n"))
 		view.Cursor = position
 	}
 	return view
