@@ -83,8 +83,8 @@ func newModel(agent *nacelle.Agent, banner string) *model {
 	prompt.Placeholder = "Ask something. Ctrl+C to stop or quit, Ctrl+\\ to force it."
 	prompt.Prompt = "> "
 	prompt.SetVirtualCursor(false)
+	suggestCommands(&prompt)
 	prompt.Focus()
-
 	view := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 
 	m := &model{

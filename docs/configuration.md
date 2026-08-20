@@ -174,3 +174,8 @@ An unrecognised command (a typo like `/clera`) is reported back rather than sent
 as a literal question — the same trade-off every peer client with slash commands makes, on the
 same reasoning: a real question is far less likely to start with a slash than a mistyped
 command is.
+
+The prompt suggests as you type: a matching command name completes in dim ghost text ahead of
+the cursor, `tab` accepts it, and `ctrl+n`/`ctrl+p` cycle between matches when more than one
+name fits what has been typed so far. Up/down do not cycle suggestions — they stay bound to
+scrolling the transcript, same as always.

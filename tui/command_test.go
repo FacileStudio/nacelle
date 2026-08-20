@@ -104,3 +104,30 @@ func TestParseCommandIgnoresTextWithoutALeadingSlash(t *testing.T) {
 		t.Error("text with no leading slash was treated as a command")
 	}
 }
+
+// commandNames is the prompt's only source of what to suggest — every
+// registered command has to reach it, "/"-prefixed, or it never comes up
+// while typing even though "/name" still works once entered by hand.
+func TestCommandNamesListsEveryRegisteredCommandSlashPrefixed(t *testing.T) {
+	names := commandNames()
+	if len(names) != len(commands) {
+		t.Fatalf("commandNames() = %v, want one entry per registered command", names)
+	}
+	for _, name := range names {
+		if _, ok := commands[strings.TrimPrefix(name, "/")]; !ok {
+			t.Errorf("commandNames() included %q, which names no registered command", name)
+		}
+	}
+}
+
+// A prompt built by newModel is the one a reader actually types into, so the
+// suggestion list has to be wired there rather than merely exist.
+func TestNewModelWiresCommandNamesIntoThePromptsSuggestions(t *testing.T) {
+	m := sized()
+	if !m.prompt.ShowSuggestions {
+		t.Error("prompt.ShowSuggestions = false, want suggestions on")
+	}
+	if got := m.prompt.AvailableSuggestions(); strings.Join(got, ",") != strings.Join(commandNames(), ",") {
+		t.Errorf("prompt suggestions = %v, want %v", got, commandNames())
+	}
+}

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"sort"
 	"strings"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/FacileStudio/nacelle"
@@ -41,6 +43,28 @@ func parseCommand(line string) (command, bool) {
 	}, true
 }
 
+// commandNames lists every registered command, "/"-prefixed and sorted, for
+// the prompt's own suggestion list — the one place that list is built, so a
+// command added to commands starts suggesting itself instead of only working
+// once someone remembers to wire it in twice.
+func commandNames() []string {
+	names := make([]string, 0, len(commands))
+	for name := range commands {
+		names = append(names, "/"+name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// suggestCommands turns commandNames into completion: a match ghosts in
+// ahead of the cursor as it's typed, tab accepts it. Kept next to commands
+// itself rather than in newModel, so the prompt's own construction does not
+// need to know the two are related.
+func suggestCommands(prompt *textinput.Model) {
+	prompt.ShowSuggestions = true
+	prompt.SetSuggestions(commandNames())
+}
+
 // clear starts a new session in the same client: the transcript, the
 // conversation sent to the model, and the running cost total are all reset.
 // Nothing about the process restarts, which is the whole point of it being a
@@ -72,6 +96,7 @@ func (m *model) help() tea.Cmd {
 		"",
 		"Ctrl+C cancels a run, or quits when idle. Ctrl+\\ force-quits.",
 		"Up/Down/PageUp/PageDown scroll the transcript.",
+		"Tab completes a /command; ctrl+n/ctrl+p cycle suggestions when more than one matches.",
 	}, "\n"))
 	return nil
 }
