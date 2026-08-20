@@ -191,3 +191,22 @@ func TestALongQueueIsCountedRatherThanListedInFull(t *testing.T) {
 		t.Errorf("View drew %d rows into a %d-row window — the prompt is off-screen", drawnRows(m), m.windowHeight)
 	}
 }
+
+// /clear returns a Cmd that prints, which is what made the queue's own drain
+// an ordering problem: under tea.Batch two queued /clears can interleave their
+// blank runs with each other's transcript, and a batch promises nothing about
+// order. Asserting on the message type is the only seam — a sequence's own msg
+// is unexported, so the check is that this is not a batch.
+func TestDeliverSequencesQueuedCommandsRatherThanBatchingThem(t *testing.T) {
+	m := sized()
+	m.run.queued = []string{"/clear", "/clear"}
+
+	cmd := m.deliver()
+
+	if cmd == nil {
+		t.Fatal("deliver returned nothing for two queued commands")
+	}
+	if _, batched := cmd().(tea.BatchMsg); batched {
+		t.Error("deliver batched its commands, want them sequenced — /clear prints, and a batch makes no promise about order")
+	}
+}
