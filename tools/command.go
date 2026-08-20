@@ -20,7 +20,7 @@ import (
 const grace = 2 * time.Second
 
 type commandInput struct {
-	Command string `json:"command" jsonschema:"required,description=The shell command to run, from the working directory"`
+	Command string `json:"command" jsonschema:"required,description=The shell command to run. It starts in the working directory"`
 	Timeout int    `json:"timeout,omitempty" jsonschema:"description=Seconds to allow before the command is killed. Omit for the default. A value above the configured ceiling is clamped to it"`
 }
 

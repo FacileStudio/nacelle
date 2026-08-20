@@ -178,7 +178,7 @@ func (s *Set) Tools() ([]nacelle.Tool, error) {
 // that cannot write is the cheapest guarantee available, and it costs nothing
 // to give an agent less.
 func (s *Set) ReadOnly() ([]nacelle.Tool, error) {
-	return buildAll(s.readTool, s.globTool, s.grepTool)
+	return buildAll(s.readTool, s.listTool, s.globTool, s.grepTool)
 }
 
 // buildAll collects tool constructors, failing on the first that cannot build

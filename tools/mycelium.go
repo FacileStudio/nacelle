@@ -44,7 +44,7 @@ func listFlowsTool() (nacelle.Tool, error) {
 }
 
 type runFlowInput struct {
-	Name string `json:"name" jsonschema:"required,description=The exact name of an existing flow, as listed by list_flows. This runs a named flow that already exists; it cannot create or edit one"`
+	Name string `json:"name" jsonschema:"required,description=The exact name of an existing flow as listed by list_flows. This runs a flow that already exists; it cannot create or edit one"`
 }
 
 func runFlowTool() (nacelle.Tool, error) {
@@ -60,7 +60,7 @@ func runFlowTool() (nacelle.Tool, error) {
 }
 
 type searchMemoryInput struct {
-	Query string `json:"query" jsonschema:"required,description=What to look for in the mycelium wiki, in plain words"`
+	Query string `json:"query" jsonschema:"required,description=What to look for in the mycelium wiki — plain words work best"`
 }
 
 func searchMemoryTool() (nacelle.Tool, error) {
