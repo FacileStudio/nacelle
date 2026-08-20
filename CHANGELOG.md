@@ -56,7 +56,9 @@ set, the TUI, and the gate, in the order they were built.
   line spins for the whole run and names what it is waiting on — a tool by name, or the model —
   rather than covering only the gap before the first event and leaving every gap after it still.
   Enter during a run queues the line and sends it when the run finishes, instead of being
-  silently ignored. Renders answers as markdown (`charm.land/glamour`), picking light or dark from the
+  silently ignored. The prompt wraps and grows with what is typed, up to ten rows, rather than
+  scrolling sideways and appearing to type over itself; alt+enter starts a new line without
+  sending, and up/down move within the prompt once it is taller than a row. Renders answers as markdown (`charm.land/glamour`), picking light or dark from the
   terminal's own reported background rather than assuming one. Shows a spinner for the gap
   between a question and the first token. Reads `~/.nacelle.yml` beneath `NACELLE_*`
   environment variables beneath command-line flags, in that order, and holds no credentials —

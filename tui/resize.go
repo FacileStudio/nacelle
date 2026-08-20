@@ -36,11 +36,23 @@ func (m *model) resize(size tea.WindowSizeMsg) tea.Cmd {
 // the dropdown opening or closing, and a message being queued or delivered
 // can never disagree about how tall it is.
 //
-// The 2 is the status line and the prompt, which are always drawn. Everything
-// after it is a row only sometimes on screen, and each is reserved by the
-// same rule: one row per line View will actually draw. Queued messages are
-// one line each because viewQueued truncates them to the width rather than
-// letting them wrap.
+// The 1 is the status line, the only row that is always exactly one. The
+// prompt is asked how tall it is rather than assumed to be one row: it grows
+// with what has been typed, so a long question takes rows from the transcript
+// while it is being written and gives them back when it is sent. Everything
+// after that is a row only sometimes on screen, reserved by the same rule —
+// one row per line View will actually draw. Queued messages are one line each
+// because viewQueued truncates them to the width rather than letting them
+// wrap.
+// A reader already at the end is kept there, the same rule render follows.
+// Shortening the viewport leaves its offset alone, so the last line slides
+// out of sight and the status line starts claiming the transcript is scrolled
+// back — which typing a second line into the prompt should not do, and which
+// nothing but this would put right.
 func (m *model) layout(height int) {
-	m.viewport.SetHeight(max(height-2-m.menu.height()-len(m.run.queued), 1))
+	follow := m.viewport.AtBottom()
+	m.viewport.SetHeight(max(height-1-m.prompt.Height()-m.menu.height()-len(m.run.queued), 1))
+	if follow {
+		m.viewport.GotoBottom()
+	}
 }
