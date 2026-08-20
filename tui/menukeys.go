@@ -23,6 +23,9 @@ func (m *model) refreshMenu() {
 		m.menu.dismissed = false
 	} else {
 		m.menu.filtered = filterMenu(m.menu.items, value)
+		if typedOut(m.menu.filtered, value) {
+			m.menu.filtered = nil
+		}
 		if m.menu.selected >= len(m.menu.filtered) {
 			m.menu.selected = 0
 		}

@@ -127,3 +127,25 @@ func fuzzyMatch(candidate, query string) bool {
 	}
 	return i == len(query)
 }
+
+// typedOut reports whether query already spells one of the candidates out in
+// full, leaving the dropdown nothing left to complete.
+//
+// A list that stays up after the whole name is typed is not merely
+// redundant, it eats the next keypress: the menu wins enter ahead of ask(),
+// so a fully typed "/clear" answers the first enter by re-filling the prompt
+// with what is already in it and only sends on the second. Closing on an
+// exact match is what makes typing a command out and pressing enter do the
+// obvious thing.
+//
+// One more character reopens it, which is what keeps this from hiding a
+// longer name that starts with a shorter one — "/skill:review" closes,
+// "/skill:review-" is back to filtering.
+func typedOut(items []menuItem, query string) bool {
+	for _, it := range items {
+		if it.value == query {
+			return true
+		}
+	}
+	return false
+}
