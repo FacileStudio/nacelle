@@ -95,8 +95,30 @@ func TestNavigateMenuTabSelectsWithoutStartingARun(t *testing.T) {
 	}
 }
 
+// Live-driving this turned up the same bug tab and esc share: closing the
+// dropdown without re-running layout() left the viewport sized for the menu
+// that just disappeared, so the prompt rendered short of the real bottom of
+// the terminal — it looked like it had "jumped up" to where the dropdown
+// used to be.
+func TestNavigateMenuTabRestoresViewportHeightAfterClosingTheMenu(t *testing.T) {
+	m := sized()
+	before := m.viewport.Height()
+	m.prompt.SetValue("/cl")
+	m.refreshMenu()
+	if m.viewport.Height() >= before {
+		t.Fatalf("viewport height = %d, want it shrunk below %d while the menu is open", m.viewport.Height(), before)
+	}
+
+	m.navigateMenu(tea.KeyPressMsg{Code: tea.KeyTab})
+
+	if got := m.viewport.Height(); got != before {
+		t.Errorf("viewport height = %d after selecting, want it restored to %d now the menu is closed", got, before)
+	}
+}
+
 func TestNavigateMenuEscDismissesWithoutChangingText(t *testing.T) {
 	m := sized()
+	before := m.viewport.Height()
 	m.prompt.SetValue("/cl")
 	m.refreshMenu()
 
@@ -110,6 +132,9 @@ func TestNavigateMenuEscDismissesWithoutChangingText(t *testing.T) {
 	}
 	if m.menu.open() {
 		t.Error("the menu stayed open after esc")
+	}
+	if got := m.viewport.Height(); got != before {
+		t.Errorf("viewport height = %d after esc, want it restored to %d now the menu is closed", got, before)
 	}
 }
 
