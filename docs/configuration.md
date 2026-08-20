@@ -118,9 +118,28 @@ users is a layer nobody has asked for the shape of.
 
 ## Context, skills and mycelium tools
 
-Three things the TUI reads beyond flags and the model's own tools, all in `tui/`, none of them
+Four things the TUI adds beyond flags and the model's own tools, all in `tui/`, none of them
 in the core `nacelle` package — the same "the library must never read configuration from disk"
 rule above applies to these too, not only to settings.
+
+**This session's own facts** (always on, `tui/environment.go`). Prepended to whatever `System`
+says, before context and skills, because it is the most general layer and the only one with no
+switch: the absolute working directory, that the file and search tools are confined to it and
+strip a leading `/` rather than refusing it, today's date, that the answer is rendered as
+markdown, and whether anyone reviews a tool call before it runs. Two clauses are conditional the
+way the banner's own lines are — the `run_command` path exception and the paragraph naming
+irreversible commands appear only under `-bash`, because explaining a tool the model was not
+given teaches it to skim the rest. These are facts the model cannot recover from any tool schema.
+Advice about *which* tool to reach for is deliberately not here; it lives in the tool
+descriptions, where it travels with the tool that needs it and costs nothing when that tool is
+not mounted.
+
+The persona above it (`defaultSystem`, `tui/main.go`) is the one layer `-system` replaces
+outright, and it stays deliberately short. Codex ships two prompts for one harness — 6.6&nbsp;KB
+for the models post-trained on it, 24&nbsp;KB for general GPT-5 — so prompt size mostly measures
+how much the model was *not* trained on your harness, and Claude is well inside the trained case
+for this shape of tool. What it carries is only what a terminal changes about answering: brevity,
+paths rather than pasted source, and not claiming something works unchecked.
 
 **Project and global context** (`-project-context`, `tui/context.go`). Every `CLAUDE.md` and
 `AGENTS.md` found walking up from `-root` to the filesystem root, plus `~/.agents/AGENTS.md` —
