@@ -78,6 +78,12 @@ func (m *model) selectMenuItem() {
 // viewMenu draws the dropdown, or "" when it has nothing to show — every
 // keystroke that does not start a line with '/' would otherwise insert a
 // blank line into View() for no reason.
+//
+// The selected row highlights via theme.question, unpadded: that style
+// carries Padding(0, 1) for its other job, the transcript's quoted-question
+// pill, and left as-is here it shifted only the selected row's text one
+// column right of every unselected row's, which render through theme.plain
+// and have no padding at all.
 func (m *model) viewMenu() string {
 	if !m.menu.open() {
 		return ""
@@ -89,7 +95,7 @@ func (m *model) viewMenu() string {
 	for i, it := range items {
 		style := m.theme.plain
 		if i == m.menu.selected {
-			style = m.theme.question
+			style = m.theme.question.Padding(0, 0)
 		}
 		rows[i] = style.Width(width).Render(menuRow(it, width))
 	}
