@@ -82,7 +82,7 @@ func newModel(agent *nacelle.Agent, banner string, skills []skill) *model {
 			skills: byName,
 			menu:   commandMenu{items: menuItems(byName)},
 		},
-		run: inflight{cancel: func() {}},
+		run: inflight{cancel: func() {}, running: map[string]string{}},
 	}
 	m.pretty = prettier(m.theme.markdown, m.viewport.Width())
 	m.say(fromClient, banner)
@@ -158,6 +158,7 @@ func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 		m.run.stop = abandoned
 		m.run.pending = nil
 		m.run.cancel()
+		m.dropQueued()
 		m.render()
 		return true, nil
 	}
@@ -192,15 +193,34 @@ func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 // "I'm done reading", and only the second one is worth guessing at.
 func (m *model) ask() tea.Cmd {
 	question := strings.TrimSpace(m.prompt.Value())
-	if question == "" || m.run.busy {
+	if question == "" {
 		return nil
 	}
 	m.prompt.Reset()
-	m.viewport.GotoBottom()
-	m.say(fromReader, question)
 
-	if cmd, ok := m.parseCommand(question); ok {
+	if m.run.busy {
+		m.run.queued = append(m.run.queued, question)
+		m.layout(m.windowHeight)
+		m.render()
+		return nil
+	}
+	return m.dispatch(question)
+}
+
+// dispatch echoes one line and routes it, as one of this client's own
+// commands or as a question for the model.
+//
+// It is separate from ask because it has two callers that agree on
+// everything after the prompt itself: a line typed now, and a line typed
+// while the last run was still going and delivered when it settled. A queued
+// "/help" is still a command, which it would not be if the queue fed send
+// directly.
+func (m *model) dispatch(line string) tea.Cmd {
+	m.viewport.GotoBottom()
+	m.say(fromReader, line)
+
+	if cmd, ok := m.parseCommand(line); ok {
 		return cmd(m)
 	}
-	return m.send(question)
+	return m.send(line)
 }

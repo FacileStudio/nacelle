@@ -31,6 +31,7 @@ import (
 // every terminal lets you take back by holding shift.
 func (m *model) View() tea.View {
 	above := []string{m.viewport.View(), m.status()}
+	above = append(above, m.viewQueued()...)
 	if menu := m.viewMenu(); menu != "" {
 		above = append(above, menu)
 	}
@@ -77,7 +78,7 @@ func (m *model) status() string {
 		state = cut
 	}
 	if m.run.busy {
-		state = "working"
+		state = m.working()
 		if time.Since(m.run.interrupted) < forceQuit {
 			state = "stopping · ctrl+c again, or ctrl+\\, to quit now"
 		}
@@ -98,7 +99,37 @@ func (m *model) status() string {
 	if !m.viewport.AtBottom() {
 		line += " · scrolled back, pgdn to catch up"
 	}
-	return lipgloss.NewStyle().Faint(true).Render(line)
+	return lipgloss.NewStyle().Faint(true).Render(truncate(line, max(m.viewport.Width(), 1)))
+}
+
+// working is what a busy run is doing, spun so the line moves even when
+// nothing else on screen does.
+//
+// The spinner lives here rather than at the end of the transcript, where it
+// used to, because what it reports outgrew where it was drawn. It covered
+// only the gap before the first event: after that the screen went still for
+// every gap that followed — a tool running, the model called again with its
+// result — and a client that has stopped moving is indistinguishable from one
+// that has stopped working. That is the whole complaint it answers, and the
+// status line is the one row that is always on screen to answer it on, even
+// scrolled back, which the end of the transcript is not.
+//
+// Naming the tool is the difference between knowing something is happening
+// and knowing what. A run_command waiting on a slow build and a wedged client
+// look identical without it, and this client's own timeout is measured in
+// minutes.
+func (m *model) working() string {
+	doing := "waiting for a response"
+	switch len(m.run.running) {
+	case 0:
+	case 1:
+		for _, name := range m.run.running {
+			doing = "running " + name
+		}
+	default:
+		doing = fmt.Sprintf("running %d tools", len(m.run.running))
+	}
+	return m.spin.View() + " " + doing
 }
 
 // absorb folds one event into what is on screen.
@@ -119,8 +150,10 @@ func (m *model) absorb(event nacelle.Event) {
 	case nacelle.KindThinking:
 		m.run.reasoning.WriteString(event.Text)
 	case nacelle.KindToolCall:
+		m.run.running[event.Tool.ID] = event.Tool.Name
 		m.say(fromTool, fmt.Sprintf("%s %s", event.Tool.Name, event.Tool.Input))
 	case nacelle.KindToolResult:
+		delete(m.run.running, event.Tool.ID)
 		m.say(fromResult, describe(event.Tool))
 	case nacelle.KindTurn:
 		m.run.usage = m.run.usage.Add(event.Usage)

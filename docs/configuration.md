@@ -228,6 +228,22 @@ wheel-only mouse mode to ask for instead, and not asking is worse than it sounds
 runs on the alternate screen, which has no scrollback of its own, so a terminal left to handle
 the wheel itself has nothing to scroll and the wheel simply does nothing.
 
+### While a run is going
+
+The status line spins for as long as the run lasts, and names what it is waiting on — `waiting for
+a response` before the model answers, `running read_file` between a tool's call and its result,
+`running 3 tools` when the backend runs a turn's tools at once. It is on the one row that is
+always drawn, so it stays visible while scrolled back through the transcript.
+
+This replaced a spinner that only covered the gap before the first event. Every gap after it — a
+tool running, the model called again with its result — left the screen still, and a client that has
+stopped moving reads exactly like one that has stopped working.
+
+**Enter still works while a run is going**: the line is queued, shown above the prompt, and sent
+once the run finishes. A queued `/help` is still a command. `ctrl+c` cancels the run and drops
+whatever is queued rather than starting it — it says how many it dropped, since the alternative is
+a message that silently never gets asked.
+
 ### Quitting
 
 `ctrl+c` when nothing is running, `ctrl+\` at any time, and `/quit` all end the session, and all

@@ -52,7 +52,11 @@ set, the TUI, and the gate, in the order they were built.
   terminal's own click-drag selection, which comes back by holding shift. Prints the whole
   transcript on the way out, after the alternate screen is handed back, so quitting leaves the
   session in the terminal's scrollback instead of un-drawing it — the other half of the same
-  cost, and the reason this client can keep no session files and still not lose one. Renders answers as markdown (`charm.land/glamour`), picking light or dark from the
+  cost, and the reason this client can keep no session files and still not lose one. The status
+  line spins for the whole run and names what it is waiting on — a tool by name, or the model —
+  rather than covering only the gap before the first event and leaving every gap after it still.
+  Enter during a run queues the line and sends it when the run finishes, instead of being
+  silently ignored. Renders answers as markdown (`charm.land/glamour`), picking light or dark from the
   terminal's own reported background rather than assuming one. Shows a spinner for the gap
   between a question and the first token. Reads `~/.nacelle.yml` beneath `NACELLE_*`
   environment variables beneath command-line flags, in that order, and holds no credentials —
