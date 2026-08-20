@@ -112,6 +112,9 @@ set, the TUI, and the gate, in the order they were built.
 - **`tui/` slash commands** — `/clear` (reset the transcript, the conversation and the running
   cost, same client), `/help` (list commands and keybindings) and `/quit`. A leading `/` never
   reaches the model; an unrecognised command is reported rather than sent as a question, the
-  same trade-off every peer client with slash commands makes.
+  same trade-off every peer client with slash commands makes. The prompt suggests and completes
+  them as you type, built on `textinput`'s own suggestion list rather than a new component:
+  a match ghosts in ahead of the cursor, `tab` accepts it, `ctrl+n`/`ctrl+p` cycle multiple
+  matches, and up/down stay bound to scrolling the transcript.
 
 [Unreleased]: https://github.com/FacileStudio/nacelle/commits/main
