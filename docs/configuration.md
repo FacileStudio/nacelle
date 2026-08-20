@@ -213,6 +213,20 @@ the prompt with the highlighted entry (plus a trailing space, and without submit
 useful with `/skill:name`'s own trailing argument) and `esc` closes it, leaving what was typed
 alone. A second, ordinary `enter` is what actually sends it.
 
+### The prompt
+
+The prompt wraps and grows as you type, up to ten rows, then scrolls inside itself. Every row it
+gains is a row the transcript gives up, and gets back the moment the question is sent. `alt+enter`
+(or `ctrl+j`) starts a new line without sending; `enter` always sends.
+
+It used to be a single-line input, which scrolled sideways instead of wrapping — a question wider
+than the terminal slid out of view a character at a time and read as though it were typing over
+itself.
+
+`up`/`down` follow the prompt: they scroll the transcript while the prompt is one row, and move
+the cursor between lines once it is taller, because otherwise a wrapped question cannot be edited.
+`pgup`/`pgdown` and the wheel always belong to the transcript, so it stays reachable either way.
+
 ### Scrolling
 
 `up`/`down` move the transcript a line, `pgup`/`pgdown` a page, and the mouse wheel three lines

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
-	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
@@ -42,7 +42,7 @@ type model struct {
 	banner string
 
 	viewport viewport.Model
-	prompt   textinput.Model
+	prompt   textarea.Model
 
 	transcript   []entry
 	conversation []nacelle.Message
@@ -64,11 +64,7 @@ type model struct {
 func newModel(agent *nacelle.Agent, banner string, skills []skill) *model {
 	byName := bySkillName(skills)
 
-	prompt := textinput.New()
-	prompt.Placeholder = "Ask something. Ctrl+C to stop or quit, Ctrl+\\ to force it."
-	prompt.Prompt = "> "
-	prompt.SetVirtualCursor(false)
-	prompt.Focus()
+	prompt := newPrompt()
 	view := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 
 	m := &model{
@@ -89,7 +85,7 @@ func newModel(agent *nacelle.Agent, banner string, skills []skill) *model {
 	return m
 }
 
-func (m *model) Init() tea.Cmd { return tea.Batch(textinput.Blink, tea.RequestBackgroundColor) }
+func (m *model) Init() tea.Cmd { return tea.Batch(textarea.Blink, tea.RequestBackgroundColor) }
 
 // Update routes each message to the one place that owns it. The cases stay
 // thin on purpose: everything that changes more than one field is a method, so
@@ -177,7 +173,8 @@ func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 	return m.scroll(press), nil
 }
 
-// ask sends whatever is in the prompt, unless a run is already going.
+// ask takes whatever is in the prompt: sent now, or queued behind the run
+// already going and delivered when it settles.
 //
 // The prompt is echoed once, up front, for every non-empty line — a
 // command's own reply and a /skill:name's expanded question would otherwise
@@ -204,6 +201,7 @@ func (m *model) ask() tea.Cmd {
 		m.render()
 		return nil
 	}
+	m.layout(m.windowHeight)
 	return m.dispatch(question)
 }
 

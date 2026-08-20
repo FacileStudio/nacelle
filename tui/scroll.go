@@ -23,8 +23,14 @@ import (
 func (m *model) scroll(press tea.KeyPressMsg) bool {
 	switch press.String() {
 	case "up":
+		if m.composing() {
+			return false
+		}
 		m.viewport.ScrollUp(1)
 	case "down":
+		if m.composing() {
+			return false
+		}
 		m.viewport.ScrollDown(1)
 	case "pgup":
 		m.viewport.PageUp()
@@ -35,6 +41,17 @@ func (m *model) scroll(press tea.KeyPressMsg) bool {
 	}
 	return true
 }
+
+// composing reports whether the prompt has grown past a single row, which is
+// what decides who owns up and down.
+//
+// A one-row prompt has no use for them, so they scroll the transcript — the
+// arrangement this client has always had. A prompt taller than that does:
+// without them the cursor cannot reach the line above it, and a question
+// being written is not editable, which is a worse loss than fine-grained
+// scrolling. pgup and pgdown never move, so the transcript is reachable
+// either way, and pi splits the same keys the same way for the same reason.
+func (m *model) composing() bool { return m.prompt.Height() > 1 }
 
 // wheel scrolls the transcript by mouse.
 //

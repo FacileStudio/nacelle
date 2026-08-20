@@ -103,6 +103,7 @@ func (m *model) help() tea.Cmd {
 		"",
 		"Ctrl+C cancels a run, or quits when idle. Ctrl+\\ force-quits.",
 		"Enter during a run queues the line and sends it once the run finishes; ctrl+c drops whatever is queued.",
+		"The prompt wraps and grows as you type. Alt+Enter (or ctrl+j) starts a new line without sending.",
 		"Up/Down/PageUp/PageDown and the mouse wheel scroll the transcript; sending anything returns to the end.",
 		"Selecting text with the mouse needs shift held down, because the wheel is reported to this client instead of the terminal.",
 		"Typing / opens a dropdown of commands and skills — up/down move, tab/enter pick, esc closes it.",
