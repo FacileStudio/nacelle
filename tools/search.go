@@ -59,7 +59,7 @@ type grepInput struct {
 
 // grepTool builds the content search.
 func (s *Set) grepTool() (nacelle.Tool, error) {
-	return nacelle.NewTool("search_files",
+	return nacelle.NewTool("search_content",
 		"Search file contents with a regular expression, returning matching lines with their file and line number. Narrow it with a glob when you know the file type. Use this to find where something is defined or used, rather than reading files one at a time.",
 		func(_ context.Context, in grepInput) (string, error) {
 			expression, err := regexp.Compile(in.Pattern)

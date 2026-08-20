@@ -18,7 +18,7 @@ func TestListShowsOneLevelWithItsDirectories(t *testing.T) {
 		"apps/deep/x.go": "",
 	})
 
-	out, err := call(t, set, "list_files", listInput{})
+	out, err := call(t, set, "list_directory", listInput{})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -26,7 +26,7 @@ func TestListShowsOneLevelWithItsDirectories(t *testing.T) {
 		t.Errorf("listing = %q, want the directory marked, sorted, and no descent into it", out)
 	}
 
-	nested, err := call(t, set, "list_files", listInput{Path: "apps"})
+	nested, err := call(t, set, "list_directory", listInput{Path: "apps"})
 	if err != nil {
 		t.Fatalf("nested list: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestListSkipsWhatASearchWouldSkip(t *testing.T) {
 		"src/main.go":         "",
 	})
 
-	out, err := call(t, set, "list_files", listInput{})
+	out, err := call(t, set, "list_directory", listInput{})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestListCannotEscapeTheRoot(t *testing.T) {
 
 	set := newSet(t, map[string]string{"in.txt": ""})
 	for _, name := range []string{"..", "../..", "../" + filepath.Base(outside), "a/../../b"} {
-		if got, err := call(t, set, "list_files", listInput{Path: name}); err == nil {
+		if got, err := call(t, set, "list_directory", listInput{Path: name}); err == nil {
 			t.Errorf("listed %q, which is outside the root: %q", name, got)
 		}
 	}
@@ -77,7 +77,7 @@ func TestListCannotEscapeTheRoot(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(set.Dir(), "escape")); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	if got, err := call(t, set, "list_files", listInput{Path: "escape"}); err == nil {
+	if got, err := call(t, set, "list_directory", listInput{Path: "escape"}); err == nil {
 		t.Fatalf("listed a directory outside the root through a symlink: %q", got)
 	}
 }

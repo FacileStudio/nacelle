@@ -67,7 +67,7 @@ func TestTheStatusLineCountsSeveralToolsAtOnce(t *testing.T) {
 	m.run.busy = true
 
 	m.absorb(nacelle.Event{Kind: nacelle.KindToolCall, Tool: &nacelle.ToolEvent{ID: "a", Name: "read_file"}})
-	m.absorb(nacelle.Event{Kind: nacelle.KindToolCall, Tool: &nacelle.ToolEvent{ID: "b", Name: "search_files"}})
+	m.absorb(nacelle.Event{Kind: nacelle.KindToolCall, Tool: &nacelle.ToolEvent{ID: "b", Name: "search_content"}})
 
 	if status := visible(m.status()); !strings.Contains(status, "running 2 tools") {
 		t.Errorf("status = %q, want it counting both calls in flight", status)

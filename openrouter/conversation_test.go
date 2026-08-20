@@ -118,7 +118,7 @@ func TestAMessageWithNothingLeftIsNotSent(t *testing.T) {
 // nothing to parse.
 func TestACallWithNoArgumentsIsSentAsAnEmptyObject(t *testing.T) {
 	sent := wire(t, []nacelle.Message{{Role: nacelle.RoleAssistant, Parts: []nacelle.Part{
-		nacelle.ToolCall{ID: "call_1", Name: "list_files", Finished: true},
+		nacelle.ToolCall{ID: "call_1", Name: "list_directory", Finished: true},
 	}}})
 
 	if !strings.Contains(sent, `"arguments":"{}"`) {

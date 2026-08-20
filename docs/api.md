@@ -374,8 +374,8 @@ func WebFetch() ([]nacelle.Tool, error)
 ```
 
 `Tools()` returns: `read_file`, `write_file`, `edit_file` (exact-match replace, refuses an
-ambiguous or absent match), `list_files` (one directory, subdirectories marked), `find_files`
-(glob, files only), `search_files` (grep), and — only when `AllowBash` — `run_command`. No tool takes a `path`, `cwd` or `root` argument the model could
+ambiguous or absent match), `list_directory` (one directory, subdirectories marked), `find_files`
+(glob, files only), `search_content` (grep), and — only when `AllowBash` — `run_command`. No tool takes a `path`, `cwd` or `root` argument the model could
 nominate itself; see [architecture.md](architecture.md#the-tool-call-loop) for why that
 specific restriction is load-bearing (CVE-2025-59532).
 
