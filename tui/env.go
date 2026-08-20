@@ -23,7 +23,7 @@ func fromEnv() Config {
 		Effort:        os.Getenv(EnvPrefix + "EFFORT"),
 		Root:          os.Getenv(EnvPrefix + "ROOT"),
 		System:        os.Getenv(EnvPrefix + "SYSTEM"),
-		Search:        os.Getenv(EnvPrefix + "SEARCH"),
+		Search:        envString(EnvPrefix + "SEARCH"),
 		Bash:          envBool(EnvPrefix + "BASH"),
 		Thinking:      envBool(EnvPrefix + "THINKING"),
 		ApproveTools:  envBool(EnvPrefix + "APPROVE_TOOLS"),
@@ -54,6 +54,21 @@ func envBool(name string) *bool {
 		return nil
 	}
 	return &value
+}
+
+// envString reads a setting whose empty value means something, returning nil
+// only when the variable is genuinely absent.
+//
+// This is where it parts company with envBool and envInt, which treat an empty
+// value as unset: an empty bool says nothing, but NACELLE_SEARCH= is a person
+// saying "not this run" and has to outrank the config file rather than fall
+// through to it.
+func envString(name string) *string {
+	raw, ok := os.LookupEnv(name)
+	if !ok {
+		return nil
+	}
+	return &raw
 }
 
 // envInt reads a count, with the same treatment of an unreadable value.
