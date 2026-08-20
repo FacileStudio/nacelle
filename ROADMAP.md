@@ -1,8 +1,8 @@
 # Roadmap
 
-Written 2026-08-19. A cold-start handoff: everything needed to pick up a track with no prior
-conversation. Ordering lives here; the reasoning behind each item lives in the commit that
-closes it.
+Written 2026-08-19, updated 2026-08-20. A cold-start handoff: everything needed to pick up a
+track with no prior conversation. Ordering lives here; the reasoning behind each item lives in
+the commit that closes it.
 
 **Done: Tracks A, B and C.** Every track that was planned is closed. What is left is unplanned —
 see "Where this is" below for what a next session would actually pick up. Closed items are kept
@@ -39,13 +39,38 @@ specification. Project-local skills are the one thing gated on trust
 plain instruction text `AGENTS.md`/`CLAUDE.md` hold, which stays ungated for the reason in
 `docs/architecture.md`'s "What is deliberately not here."
 
+The round after that closed the one item this file had ruled out: **per-call tool approval**.
+`Config.Approve` is checked in exactly one place, `RunTool` (`toolsink.go`), so a refusal is the
+same event on both backends — a `KindToolResult` carrying `Refused`, not a silent skip. That is
+also what answered the design objection recorded below: nothing had to intercept the vendor SDK's
+runner, because the callback blocks inside the tool call that runner already makes.
+`tui/approve.go` answers allow / allow-for-session / deny and waits on the run's own context, so
+ctrl+c rescues a forgotten prompt. Off by default (`-approve-tools`): by default agents yolo.
+
+**Slash commands** shipped in the same stretch — `/clear`, `/help`, `/quit` and `/skill:name`,
+with a fuzzy-matching dropdown while typing `/` rather than ghost text — plus `-skill-dir`, which
+loads another tool's skills instead of duplicating them.
+
 No tag; `v0.1.0` stays gated on Kori, which is itself blocked on Perception's MCP server, a
 Perception problem. **Do not sequence nacelle work around Kori.**
 
-What is not built, flagged rather than silently dropped: a global `~/.claude/CLAUDE.md` layer
-(deliberately out, same reasoning as skipping it for `AGENTS.md`'s own global path) and slash
-commands. Both real, both bigger and fuzzier than fit alongside the rest of either round; each
-needs its own scoping session before a `###` entry here would mean anything.
+What is not built, flagged rather than silently dropped. None is ordered, and none has earned a
+`###` entry yet — each needs its own scoping session first.
+
+- **A stdio transport in `mcp/`.** The library's largest real gap. `mcp.Server` has a `URL` and
+  no execution mode, so it wires only Anthropic's server-side remote connector: a local or
+  subprocess MCP server cannot be reached at all, and `openrouter` refuses any MCP config
+  outright under the capability rule, so that backend gets zero MCP tools whatever the transport.
+  It is also the answer to "how does a user add a tool without forking the binary" — the peers
+  answer that with MCP, not a built-in web search and not a plugin ABI. Raised 2026-08-20 while
+  comparing against Crush and pi; recommended, not decided.
+- **A total-time budget on `RetryOptions`.** The SDK sleeps on `Retry-After` before nacelle ever
+  sees the error as transient, so three nacelle attempts over three HTTP retries is nine requests
+  and six unbounded sleeps — roughly six minutes under `Retry-After: 60`, against a documented
+  8s ceiling. The only real bound is a context deadline, and neither `retry.go` nor the README
+  says so. Documenting the deadline is a two-line diff; a budget field is the larger version.
+- **A global `~/.claude/CLAUDE.md` layer.** Deliberately out, same reasoning as skipping it for
+  `AGENTS.md`'s own global path.
 
 ## Tracks
 
@@ -237,14 +262,13 @@ helps but does not settle it.
 - **A provider interface beyond the two backends.** Settled; revisit when a third is real.
 - **`sandbox/`.** Atelier drives it, and Atelier has not asked.
 - **Tagging `v0.1.0`.** Gated on Kori.
-- **Per-call tool approval (allow / allow-for-session / deny) in the TUI.** The pattern most
-  comparable harnesses have (Crush's permission dialog, Pi's approval loop) and the one
-  candidate from that comparison that would exercise the SDK rather than just decorate the
-  client — everything else in that category (sessions, panes, a model picker) fails the same
-  test the line below already applies. Not started: it needs a design decision the TUI cannot
-  make alone, since on the Anthropic backend the tool-call loop runs inside the vendor SDK's own
-  runner (`sdkTool.Execute`, `anthropic/adapt.go`) and a consumer-side pause has to block there,
-  not intercept a step nacelle's own loop controls the way OpenRouter's hand-rolled one does.
+- ~~**Per-call tool approval (allow / allow-for-session / deny) in the TUI.**~~ Built, on
+  request. The design decision it was waiting on turned out to have an answer: a consumer-side
+  pause does have to block inside the vendor SDK's runner (`sdkTool.Execute`,
+  `anthropic/adapt.go`), and it does — `RunTool` is inside the call that runner already makes, so
+  one gate there serves both backends and nothing intercepts the runner itself. Everything else
+  in that comparison (sessions, panes, a model picker) still fails the test the line below
+  applies.
 - **Sessions, profiles, themes, panes in the TUI.** None of them test the API, which is the
   only thing the TUI is for.
 - ~~A config file for the TUI. Flags until they hurt.~~ Built anyway, on request, after flags
