@@ -369,11 +369,12 @@ func (s *Set) Tools() ([]nacelle.Tool, error)    // everything, honouring Config
 func (s *Set) ReadOnly() ([]nacelle.Tool, error) // read, find, search — nothing that can write
 
 func Mycelium() ([]nacelle.Tool, error)
+func WebSearch(endpoint string) ([]nacelle.Tool, error)
 ```
 
 `Tools()` returns: `read_file`, `write_file`, `edit_file` (exact-match replace, refuses an
-ambiguous or absent match), `find_files` (glob), `search_files` (grep), and — only when
-`AllowBash` — `run_command`. No tool takes a `path`, `cwd` or `root` argument the model could
+ambiguous or absent match), `list_files` (one directory, subdirectories marked), `find_files`
+(glob, files only), `search_files` (grep), and — only when `AllowBash` — `run_command`. No tool takes a `path`, `cwd` or `root` argument the model could
 nominate itself; see [architecture.md](architecture.md#the-tool-call-loop) for why that
 specific restriction is load-bearing (CVE-2025-59532).
 
@@ -381,6 +382,20 @@ specific restriction is load-bearing (CVE-2025-59532).
 and `search_memory` when the `mycelium` binary is on `PATH`, or `nil, nil` when it is not. Each
 shells out via `exec.CommandContext` with argv arguments, never a shell string, so nothing the
 model puts in a flow name or a search query reaches a shell to be interpreted.
+
+`WebSearch(endpoint)` is independent of `Set` in the same way, and returns one tool,
+`web_search`, against a [SearXNG](https://docs.searxng.org) instance. An empty endpoint returns
+`nil, nil` — the `Mycelium()` convention for "not configured here" — while an endpoint that could
+never work (no scheme, no host) is an error at construction rather than a tool that fails on
+first use. There is deliberately no default: this module is public, so a default would send a
+stranger's queries to one operator's host.
+
+The endpoint is a constructor argument and never a tool argument, for the reason `Root` is:
+a model able to name the host a request goes to has been handed the boundary along with the
+thing inside it. The instance needs `json` in `search.formats` in its `settings.yml`, which is
+off by default — the error says so by name, as does the one for the limiter's 403. Results are
+capped at `DefaultSearchResults` and are untrusted text from strangers, which is worth weighing
+when deciding what else to mount beside it.
 
 ## `tui`
 

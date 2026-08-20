@@ -72,9 +72,9 @@ could tell apart.
 | Layer | Source | Notes |
 |---|---|---|
 | Flags | `-backend`, `-model`, `-effort`, `-root`, `-system`, `-bash`, `-thinking`, `-mycelium`, `-project-context`, `-skills`, `-trust-skills`, `-skill-dir`, `-approve-tools`, `-max-iterations` | Only flags actually **typed** are collected, via `flag.Visit` — Go's `flag` package cannot otherwise tell a flag left alone from one passed its own default value. `-skill-dir` is repeatable (`-skill-dir a -skill-dir b`); every other flag keeps only its last occurrence |
-| Environment | `NACELLE_BACKEND`, `NACELLE_MODEL`, `NACELLE_EFFORT`, `NACELLE_ROOT`, `NACELLE_SYSTEM`, `NACELLE_BASH`, `NACELLE_THINKING`, `NACELLE_MYCELIUM`, `NACELLE_PROJECT_CONTEXT`, `NACELLE_SKILLS`, `NACELLE_TRUST_SKILLS`, `NACELLE_SKILL_DIRS`, `NACELLE_APPROVE_TOOLS`, `NACELLE_MAX_ITERATIONS` | A misspelt boolean (`NACELLE_BASH=yez`) is treated as unmentioned, not as `false`, and falls through to the layer below. `NACELLE_SKILL_DIRS` is colon-separated, the same convention `PATH` itself uses for a list of directories |
+| Environment | `NACELLE_BACKEND`, `NACELLE_MODEL`, `NACELLE_EFFORT`, `NACELLE_ROOT`, `NACELLE_SYSTEM`, `NACELLE_BASH`, `NACELLE_THINKING`, `NACELLE_MYCELIUM`, `NACELLE_PROJECT_CONTEXT`, `NACELLE_SKILLS`, `NACELLE_TRUST_SKILLS`, `NACELLE_SKILL_DIRS`, `NACELLE_APPROVE_TOOLS`, `NACELLE_MAX_ITERATIONS`, `NACELLE_SEARCH` | A misspelt boolean (`NACELLE_BASH=yez`) is treated as unmentioned, not as `false`, and falls through to the layer below. `NACELLE_SKILL_DIRS` is colon-separated, the same convention `PATH` itself uses for a list of directories |
 | File | `~/.nacelle.yml` | Preferences only, **no credentials** — those already have two homes: the environment, and the Anthropic SDK's own profile. `KnownFields(true)`: an unrecognised key (`max_iteration:`, one letter short) is refused rather than silently ignored |
-| Defaults | — | `backend: anthropic`, `root: .`, `bash: false`, `thinking: false`, `mycelium: true`, `project_context: true`, `skills: true`, `trust_skills: false`, `skill_dirs: []`, `approve_tools: false`, `max_iterations: 40` |
+| Defaults | — | `backend: anthropic`, `root: .`, `bash: false`, `thinking: false`, `mycelium: true`, `project_context: true`, `skills: true`, `trust_skills: false`, `skill_dirs: []`, `approve_tools: false`, `max_iterations: 40`, `search: ""` (no web search) |
 
 `mycelium`, `project_context` and `skills` default **on**, unlike `bash`: each fails soft to
 nothing when there is nothing to find — no `mycelium` on `PATH`, no `AGENTS.md`/`CLAUDE.md`
@@ -105,6 +105,7 @@ skill_dirs:
   - ~/.claude/skills
 approve_tools: false
 max_iterations: 40
+search: https://searx.example
 ```
 
 Every field is optional. A missing file is not an error — most people never write one — but an
@@ -166,6 +167,36 @@ client: asked to build and run something, it answers that it has no terminal and
 command. That is true and deliberate — `run_command` is unconfined, so it stays opt-in — but
 nothing connected that answer back to a `bash: false` written once in `~/.nacelle.yml` and
 forgotten. Turn it on with `-bash`, `NACELLE_BASH=1`, or `bash: true`.
+
+## Web search
+
+`search:` (`NACELLE_SEARCH`, `-search`) is the base URL of a [SearXNG](https://docs.searxng.org)
+instance to search the web through. **Empty by default, and there is no instance this client
+could pick on your behalf** — nacelle is public, so any default would send your queries to
+somebody else's machine and leave them in that operator's logs. Empty means the tool is not
+mounted at all: the model is never told search exists, and nothing fails.
+
+It is a URL rather than a toggle plus a URL, so two settings cannot disagree about whether
+search is on. The banner says `search on` when one is set, and says nothing when none is —
+unlike `bash off`, which is named either way, because search being off has no symptom to
+explain.
+
+```yaml
+search: https://searx.example
+```
+
+An endpoint that could never work — no scheme, no host — stops the client at startup rather
+than quietly leaving the tool unmounted, because search silently missing looks exactly like a
+model that decided not to search, and nothing on screen would connect that to a typo here.
+
+Three failures are named rather than left to read as an outage: an instance answering HTML
+means `json` is missing from `search.formats` in its `settings.yml` (off by default in
+SearXNG); a 403 is usually its limiter; a 404 usually means this was set to the `/search` page
+copied from a browser rather than the instance's base URL.
+
+Why an instance you host rather than the backends' own search: both have it, and neither is
+free — $10 per 1,000 searches on Anthropic, no free tier on OpenRouter. A local tool also works
+identically on both backends, where server-side search would be wired, and billed, per backend.
 
 ## Tool approval
 
