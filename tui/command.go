@@ -71,25 +71,25 @@ func commandNames() []string {
 	return names
 }
 
-// clear starts a new session in the same client: the transcript, the
-// conversation sent to the model, and the running cost total are all reset.
-// Nothing about the process restarts, which is the whole point of it being a
-// command rather than a reason to quit and relaunch.
+// clear starts a new session in the same client: the conversation sent to
+// the model and the running cost total are both reset. Nothing about the
+// process restarts, which is the whole point of it being a command rather
+// than a reason to quit and relaunch.
 //
-// ask() echoes "/clear" itself before calling this, same as any other
-// command — but that echo lands in the transcript this then wipes, so it is
-// never actually seen. Harmless, and not worth special-casing: the one
-// command whose own echo cannot survive it is the one named clear.
+// It clears the screen rather than the history, and the difference is the
+// point. What was said is in the terminal's scrollback and is not this
+// client's to delete — the same reason no shell's own clear erases what came
+// before it. Scroll back and the old session is still there, which is what
+// somebody who cleared the wrong window will want.
 //
 // The banner is re-said rather than left gone: it is the only place the
-// backend and model are ever named, and wiping the transcript would
-// otherwise wipe that along with it.
+// backend and model are ever named, and it is what makes the fresh screen
+// legible as a fresh session rather than as a client that lost its place.
 func (m *model) clear() tea.Cmd {
-	m.transcript = nil
 	m.conversation = nil
 	m.spent = nacelle.Usage{}
 	m.say(fromClient, m.banner+" · cleared")
-	return nil
+	return tea.ClearScreen
 }
 
 // help lists the client's own commands and keybindings, distinct from
@@ -104,8 +104,7 @@ func (m *model) help() tea.Cmd {
 		"Ctrl+C cancels a run, or quits when idle. Ctrl+\\ force-quits.",
 		"Enter during a run queues the line and sends it once the run finishes; ctrl+c drops whatever is queued.",
 		"The prompt wraps and grows as you type. Alt+Enter (or ctrl+j) starts a new line without sending.",
-		"Up/Down/PageUp/PageDown and the mouse wheel scroll the transcript; sending anything returns to the end.",
-		"Selecting text with the mouse needs shift held down, because the wheel is reported to this client instead of the terminal.",
+		"Scroll, select and copy with the terminal as usual — what was said is ordinary terminal output, not a window this client owns.",
 		"Typing / opens a dropdown of commands and skills — up/down move, tab/enter pick, esc closes it.",
 	}, "\n"))
 	return nil

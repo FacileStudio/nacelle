@@ -83,7 +83,6 @@ func (m *model) send(text string) tea.Cmd {
 	m.run.asked, m.run.answered = nil, nil
 	m.run.running = map[string]string{}
 	m.conversation = append(m.conversation, nacelle.UserText(text))
-	m.render()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.run.cancel = cancel
@@ -104,7 +103,6 @@ func (m *model) consume(next result) tea.Cmd {
 	}
 	m.record(next.event)
 	m.absorb(next.event)
-	m.render()
 	return waitFor(m.run.results)
 }
 
@@ -135,7 +133,6 @@ func (m *model) settle() tea.Cmd {
 	m.spent = m.spent.Add(m.run.usage)
 	m.run.usage = nacelle.Usage{}
 
-	m.render()
 	return m.deliver()
 }
 

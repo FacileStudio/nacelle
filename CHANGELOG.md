@@ -44,27 +44,23 @@ set, the TUI, and the gate, in the order they were built.
   servers sharing a name before either backend ever sees the config.
 - **`tui/`** — the SDK's first consumer, and the reason several of the entries below exist: a
   terminal exercises every event kind a backend can produce, and does it while someone is
-  watching. Scrolls with pgup/pgdown/up/down and the mouse wheel, following the stream only
-  while already at the bottom — and returning to the bottom whenever anything is sent, since
-  a question echoed off-screen looks like a client that dropped it. Reporting the wheel is
-  what the alternate screen costs: an alt-screen program has no scrollback of its own, so a
-  terminal left to handle the wheel itself scrolls nothing at all. The price is the
-  terminal's own click-drag selection, which comes back by holding shift. Prints the whole
-  transcript on the way out, after the alternate screen is handed back, so quitting leaves the
-  session in the terminal's scrollback instead of un-drawing it — the other half of the same
-  cost, and the reason this client can keep no session files and still not lose one. The status
-  line spins for the whole run and names what it is waiting on — a tool by name, or the model —
-  rather than covering only the gap before the first event and leaving every gap after it still.
-  Enter during a run queues the line and sends it when the run finishes, instead of being
-  silently ignored. The prompt wraps and grows with what is typed, up to ten rows, rather than
-  scrolling sideways and appearing to type over itself; alt+enter starts a new line without
-  sending, and up/down move within the prompt once it is taller than a row. The transcript ends
-  on a blank row so the last line of an answer does not sit against the status line, and the
-  banner says whether bash is on — the symptom of it being off arrives from the model ("I have
-  no terminal"), not from anything this client used to print. Renders answers as markdown (`charm.land/glamour`), picking light or dark from the
-  terminal's own reported background rather than assuming one. Reads `~/.nacelle.yml` beneath `NACELLE_*`
-  environment variables beneath command-line flags, in that order, and holds no credentials —
-  those already have two homes.
+  watching. It renders **inline**, on the terminal's own screen: finished lines are printed once
+  and belong to the terminal from then on, so scrolling, selection, search, `tmux` copy-mode and
+  the session surviving a quit are all the terminal's own, on the whole conversation. It ran on
+  the alternate screen first, and every complaint that arrangement produced — a dead mouse wheel,
+  selection needing shift, copy-mode reaching nothing, the session vanishing on exit — was the
+  same decision rather than four bugs. The cost is that a printed line is no longer this
+  client's: a resize reflows it the terminal's way, and a theme change applies from then on
+  rather than retroactively. The status line spins for the whole run and names what it is
+  waiting on — a tool by name, or the model. Enter during a run queues the line and sends it
+  when the run finishes. The prompt wraps and grows with what is typed, up to ten rows or half
+  the window, rather than scrolling sideways; alt+enter starts a new line without sending. The
+  banner says whether bash is on, because the symptom of it being off arrives from the model
+  ("I have no terminal"), not from anything this client prints. Renders answers as markdown
+  (`charm.land/glamour`), picking light or dark from the terminal's own reported background
+  rather than assuming one. Reads `~/.nacelle.yml` beneath `NACELLE_*` environment variables
+  beneath command-line flags, in that order, and holds no credentials — those already have two
+  homes.
 - **`Message` widened into a content-part union** — `{Role, Parts []Part}`, where `Part` is a
   closed set of `Text`, `Reasoning`, `ToolCall`, `ToolResult` and `Finish`. Before this, a
   conversation could carry only prose: a resumed transcript dropped every tool call it ever

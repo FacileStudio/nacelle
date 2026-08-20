@@ -19,16 +19,6 @@ import (
 // spanning two of those lines never finds it in the raw ANSI.
 func visible(screen string) string { return ansi.Strip(screen) }
 
-// spoken is the transcript without the opening banner, which every model has
-// and no test about what was said cares about.
-func spoken(m *model) []string {
-	said := make([]string, 0, len(m.transcript))
-	for _, e := range m.transcript[1:] {
-		said = append(said, e.text)
-	}
-	return said
-}
-
 // sized is a model with a window, because everything that renders needs one.
 func sized() *model {
 	m := newModel(nil, "test · model", nil)
@@ -151,8 +141,8 @@ func TestAFinishedAnswerStaysOnScreen(t *testing.T) {
 	m.absorb(nacelle.Event{Kind: nacelle.KindText, Text: "the whole answer"})
 	m.settle()
 
-	if !strings.Contains(visible(m.viewport.View()), "the whole answer") {
-		t.Errorf("viewport = %q, want the finished answer still visible", m.viewport.View())
+	if !strings.Contains(onScreen(m), "the whole answer") {
+		t.Errorf("screen = %q, want the finished answer still visible", onScreen(m))
 	}
 }
 
@@ -160,8 +150,8 @@ func TestAFinishedAnswerStaysOnScreen(t *testing.T) {
 func TestTheBackendAndModelAreShownBeforeTheFirstQuestion(t *testing.T) {
 	m := sized()
 
-	if !strings.Contains(m.viewport.View(), "test · model") {
-		t.Errorf("viewport = %q, want the backend and model named", m.viewport.View())
+	if !strings.Contains(onScreen(m), "test · model") {
+		t.Errorf("screen = %q, want the backend and model named", onScreen(m))
 	}
 }
 

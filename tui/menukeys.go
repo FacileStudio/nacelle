@@ -28,7 +28,6 @@ func (m *model) refreshMenu() {
 		}
 	}
 	m.layout(m.windowHeight)
-	m.render()
 }
 
 // navigateMenu handles a keypress while the dropdown is open, reporting
@@ -56,7 +55,6 @@ func (m *model) navigateMenu(press tea.KeyPressMsg) (bool, tea.Cmd) {
 		return false, nil
 	}
 	m.layout(m.windowHeight)
-	m.render()
 	return true, nil
 }
 
@@ -89,7 +87,7 @@ func (m *model) viewMenu() string {
 		return ""
 	}
 	items := m.menu.filtered[:m.menu.height()]
-	width := max(m.viewport.Width(), 1)
+	width := max(m.width, 1)
 
 	rows := make([]string, len(items))
 	for i, it := range items {

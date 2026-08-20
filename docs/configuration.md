@@ -229,24 +229,23 @@ It used to be a single-line input, which scrolled sideways instead of wrapping �
 than the terminal slid out of view a character at a time and read as though it were typing over
 itself.
 
-`up`/`down` follow the prompt: they scroll the transcript while the prompt is one row, and move
-the cursor between lines once it is taller, because otherwise a wrapped question cannot be edited.
-`pgup`/`pgdown` and the wheel always belong to the transcript, so it stays reachable either way.
+`up`/`down` belong to the prompt at every height — there is no transcript here to scroll, so
+nothing competes for them and a wrapped question is editable whatever size it has grown to.
 
 ### Scrolling
 
-`up`/`down` move the transcript a line, `pgup`/`pgdown` a page, and the mouse wheel three lines
-at a time. The stream is followed only while the transcript is already at its end, so reading
-back mid-run keeps the screen where it was put rather than yanking it down on every delta; the
-status line says so while it lasts. Sending anything — a question, a command, a `/skill:name` —
-returns to the end and starts following again, because an echo that lands off-screen makes
-pressing enter look like it did nothing.
+The client renders inline, on the terminal's own screen, so scrolling is the
+terminal's job — wheel, scrollbar, `tmux` copy-mode, your terminal's search, all of it, on the
+whole session rather than on a window this client owns. There are no scroll keys here because
+there is nothing here to scroll.
 
-The client asks the terminal to report the wheel, and that is not free: it takes over
-click-drag selection, which comes back by **holding shift** while dragging. There is no
-wheel-only mouse mode to ask for instead, and not asking is worse than it sounds — the client
-runs on the alternate screen, which has no scrollback of its own, so a terminal left to handle
-the wheel itself has nothing to scroll and the wheel simply does nothing.
+That is a deliberate reversal. It ran on the alternate screen once, which hands a program a
+blank page with no scrollback of its own, so the client had to own scrolling: capture the wheel,
+which takes click-drag selection with it, leave copy-mode reaching nothing, and un-draw the whole
+session on quit. Those arrived as four separate complaints and were one decision. Giving the page
+back answers all of them, and costs one thing — a printed line belongs to the terminal, so a
+resize reflows it the terminal's way rather than this client's, and a theme change applies from
+then on rather than retroactively.
 
 ### While a run is going
 
@@ -266,15 +265,11 @@ a message that silently never gets asked.
 
 ### Quitting
 
-`ctrl+c` when nothing is running, `ctrl+\` at any time, and `/quit` all end the session, and all
-three print the whole transcript to the terminal on the way out — after the alternate screen has
-been handed back, so it lands in the terminal's own scrollback where it can be scrolled and
-selected with nothing of this client's still running.
+`ctrl+c` when nothing is running, `ctrl+\` at any time, and `/quit` all end the session, and the
+session simply stays where it is. Nothing is printed on the way out and nothing needs to be: what
+was said went into the terminal's scrollback as it happened, so quitting leaves it exactly as
+running left it.
 
-That print is the other half of what the alternate screen costs. A program given a blank page
-hands the old one back untouched when it exits, so quitting does not scroll the conversation
-away, it un-draws it — and this client keeps no session files to recover it from. Printing it
-once is what turns a session that vanished into one the terminal has.
-
-A run nobody asked anything in prints nothing, so launching in the wrong directory and quitting
-straight back out leaves no trace.
+That used to need a deliberate dump at exit, because the alternate screen hands the old page back
+untouched and quitting un-drew the whole conversation. Inline rendering removed the problem rather
+than the workaround.

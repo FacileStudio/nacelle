@@ -25,8 +25,8 @@ func TestSlashClearResetsTranscriptConversationAndSpent(t *testing.T) {
 	if m.spent != (nacelle.Usage{}) {
 		t.Errorf("spent = %+v, want it reset", m.spent)
 	}
-	if len(m.transcript) != 1 || !strings.Contains(m.transcript[0].text, "cleared") {
-		t.Errorf("transcript = %v, want exactly one line saying the session was cleared", m.transcript)
+	if said := spoken(m); len(said) == 0 || !strings.Contains(said[len(said)-1], "cleared") {
+		t.Errorf("said = %v, want the last line to report the session was cleared", said)
 	}
 }
 

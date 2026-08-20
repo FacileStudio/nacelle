@@ -61,9 +61,7 @@ func themed(dark bool) palette {
 // restyle rebuilds everything that depends on the width or the terminal's
 // colour, and draws the transcript again with it.
 func (m *model) restyle() {
-	m.pretty = prettier(m.theme.markdown, max(m.viewport.Width(), 1))
-	m.redraw()
-	m.render()
+	m.pretty = prettier(m.theme.markdown, max(m.width, 1))
 }
 
 // prettier builds the markdown renderer for one width and one terminal, or nil
