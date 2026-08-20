@@ -121,8 +121,17 @@ type searchResponse struct {
 	UnresponsiveEngines []json.RawMessage `json:"unresponsive_engines"`
 }
 
+// webSearchInput is what the model fills in.
+//
+// The doubled backslash is load-bearing, because two things unescape this
+// string in turn. invopop/jsonschema splits the tag on unescaped commas, so
+// prose is cut at its first comma and the model reads only the clause before
+// it. That split is reached through reflect.StructTag.Get, which unquotes
+// first — and \, is not a valid Go escape, so writing one there blanks the
+// description entirely rather than halving it. \\, survives both, and
+// TestWebSearchDescriptionSurvivesItsComma fails on either mistake.
 type webSearchInput struct {
-	Query string `json:"query" jsonschema:"required,description=What to look for, phrased as you would type it into a search engine"`
+	Query string `json:"query" jsonschema:"required,description=What to look for\\, phrased as you would type it into a search engine"`
 }
 
 // searchTool builds the search.
@@ -178,16 +187,23 @@ func (s *searxng) search(ctx context.Context, query string) (*searchResponse, er
 
 // statusError says what a refusal most likely was.
 //
-// 403 earns a sentence of its own because SearXNG's limiter is on by default
-// and rejects clients that do not look like browsers, so the first request
-// from a new machine is the one that meets it. Without the hint it reads as
-// the instance being down, which is the one thing it is not.
+// Both special cases are configuration rather than an outage, and both read
+// as an outage without a sentence saying otherwise. 403 is SearXNG's limiter,
+// which is on by default and rejects clients that do not look like browsers,
+// so the first request from a new machine is the one that meets it. 404 is
+// most often an endpoint set to the URL copied out of a browser's address
+// bar, which already ends in /search and becomes /search/search here.
 func statusError(status int, host string) error {
-	if status == http.StatusForbidden {
+	switch status {
+	case http.StatusForbidden:
 		return fmt.Errorf("the instance at %s refused the search (403), "+
 			"which is usually its limiter: set limiter: false in settings.yml, or allow this client", host)
+	case http.StatusNotFound:
+		return fmt.Errorf("the instance at %s has nothing at that path (404): "+
+			"the endpoint wants the instance's base URL, not its /search page", host)
+	default:
+		return fmt.Errorf("the instance at %s answered %s", host, http.StatusText(status))
 	}
-	return fmt.Errorf("the instance at %s answered %s", host, http.StatusText(status))
 }
 
 // render turns the answer into the few lines the model should read.
