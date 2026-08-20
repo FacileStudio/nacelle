@@ -120,7 +120,7 @@ func TestSearchFindsMatchesAndSkipsGeneratedTrees(t *testing.T) {
 		"internal/deep/c.txt": "needle here too\n",
 	})
 
-	out, err := call(t, set, "search_files", grepInput{Pattern: "needle"})
+	out, err := call(t, set, "search_content", grepInput{Pattern: "needle"})
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestSearchFindsMatchesAndSkipsGeneratedTrees(t *testing.T) {
 		t.Errorf("search walked node_modules:\n%s", out)
 	}
 
-	scoped, err := call(t, set, "search_files", grepInput{Pattern: "needle", Glob: "**/*.txt"})
+	scoped, err := call(t, set, "search_content", grepInput{Pattern: "needle", Glob: "**/*.txt"})
 	if err != nil {
 		t.Fatalf("scoped search: %v", err)
 	}

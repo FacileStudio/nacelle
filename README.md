@@ -204,7 +204,7 @@ defer set.Close()
 local, err := set.Tools()   // or set.ReadOnly() for an agent that only answers questions
 ```
 
-`read_file`, `write_file`, `edit_file`, `list_files`, `find_files`, `search_files`, and
+`read_file`, `write_file`, `edit_file`, `list_directory`, `find_files`, `search_content`, and
 `run_command` when `AllowBash` is set. Every file operation goes through [`os.Root`], so a path resolving outside
 the root is refused by a kernel-backed check rather than a string comparison — which is what
 closes symlink escapes, `..` that survives normalisation, and the check-then-use window.

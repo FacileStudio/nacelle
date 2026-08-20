@@ -14,13 +14,13 @@ func TestAnApprovalRequestShowsInTheStatusLine(t *testing.T) {
 	m := sized()
 	decision := make(chan approvalDecision, 1)
 
-	m.Update(approvalRequest{name: "search_files", input: []byte(`{"pattern":"x"}`), decision: decision})
+	m.Update(approvalRequest{name: "search_content", input: []byte(`{"pattern":"x"}`), decision: decision})
 
 	if m.run.pending == nil {
 		t.Fatal("the request did not set run.pending")
 	}
 	status := m.status()
-	if !strings.Contains(status, "search_files") {
+	if !strings.Contains(status, "search_content") {
 		t.Errorf("status = %q, want the tool's name", status)
 	}
 	if !strings.Contains(status, "y = once") {
