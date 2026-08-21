@@ -34,6 +34,11 @@ import (
 func Load(paths ...string) ([]Server, error) {
 	merged := map[string]entry{}
 	for _, path := range paths {
+		if path == "" {
+			return nil, fmt.Errorf(
+				"nacelle/mcp/client: one of the config paths is empty, which is what an unset " +
+					"shell variable expands to — check the argument that was meant to name a file")
+		}
 		found, err := read(path)
 		if err != nil {
 			return nil, err
