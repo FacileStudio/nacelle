@@ -202,28 +202,47 @@ over three HTTP retries. Reading a clock between attempts would notice those six
 once they had been spent. They are a `select` on `ctx.Done()`, so a deadline derived once and
 passed down is the one thing that interrupts a sleep already in progress.
 
-## Two MCP halves, and why only one needs a client
+## MCP: who dials, and why that is the whole distinction
 
-`mcp.Server` is a **remote** server, dialled by the Claude API on its own side of the request.
-That is why the `mcp` package implements none of the protocol, and why `Capabilities.MCP` exists:
-`openrouter` has no equivalent connector, so a config carrying one is refused rather than run
-with less.
+There are two ways to reach an MCP server here, and the axis that separates them is not local
+versus remote. It is **who opens the connection**.
 
-`mcp/client` is the **local** half — a server run as a subprocess over stdio, whose tools are
-bridged to `nacelle.Tool`. The bridge is the design decision. A bridged tool is an ordinary local
+`mcp.Server` is handed to the Claude API, which dials it from its own side of the request. That is
+why the `mcp` package implements none of the protocol — there is no client half to write — and why
+`Capabilities.MCP` exists: `openrouter` has no equivalent connector, so a config carrying one is
+refused rather than run with less.
+
+`mcp/client` dials from here. `Command` starts a subprocess and speaks over its stdin and stdout;
+`Remote` opens a Streamable HTTP session to a URL. Either way the tools are bridged to
+`nacelle.Tool`, and **the bridge is the design decision**. A bridged tool is an ordinary local
 tool, so it passes through `Config.Approve`, emits the same `KindToolCall`/`KindToolResult`
-events, and works on both backends — including the one that can never reach a remote server. A
-parallel MCP-shaped path through the loop would have had to reimplement each of those, slightly
-differently. It is a sub-package for a mechanical reason: the root package imports `mcp`, so
-`mcp` cannot import it back, and a bridged tool that is not a `nacelle.Tool` is usable by nothing.
+events, and works on both backends. A parallel MCP-shaped path through the loop would have had to
+reimplement each of those, slightly differently.
 
-This does widen what an agent can do, and the widening is worth naming. Running an MCP server is
+That leaves one genuine overlap: a hosted server can be reached either way on Anthropic. Dialling
+it here costs your egress, once per call, and buys a tool set that does not change shape when
+someone passes `-backend openrouter`, plus an approval gate over tools the connector would have
+run out of reach. Anything that lets a person switch backends should prefer `Remote`; a service
+pinned to Anthropic that would rather not carry the traffic should prefer `mcp.Server`.
+
+`mcp/client` is a sub-package for a mechanical reason: the root package imports `mcp`, so `mcp`
+cannot import it back, and a bridged tool that is not a `nacelle.Tool` is usable by nothing.
+`Server` is a sealed interface rather than one struct with a mode field, because a subprocess and
+an endpoint share almost no configuration — folding them together gives every caller a struct
+where two thirds of the fields are wrong for the server they are describing.
+
+This does widen what an agent can do, and the widening is worth naming. Running a `Command` is
 executing an arbitrary program, chosen by whoever writes the configuration — not by the model,
 which is the line that matters. The environment is not inherited (`PATH`, `HOME`, and whatever
 `Command.Env` names), for the same reason `tools/` refuses to inherit for commands, only more so:
 that code is ours and this code is somebody else's, and it is about to be handed model-chosen
 arguments. What confinement is *not* applies here exactly as it does in `tools/` — a subprocess
 is not a sandbox, and if the servers are untrusted the isolation has to be a container or a VM.
+
+Which is also why nothing here **discovers** a config file. A `.mcp.json` names executables to
+run, so reading one just because it is in the working directory is strictly worse than the
+project-local `SKILL.md` case, and that one is already gated behind `~/.nacelle/trust.json`. Every
+server this client opens was named on the command line or in the user's own configuration.
 
 ## Prompt caching
 

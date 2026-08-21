@@ -321,7 +321,11 @@ Anthropic-only — `openrouter` refuses a config carrying one under the capabili
 ```go
 const DefaultCallTimeout = 2 * time.Minute
 
-type Command struct {
+// Server is sealed: Command and Remote are the only implementations, and
+// nothing outside the package can add a third.
+type Server interface{ /* unexported methods */ }
+
+type Command struct { // stdio, as a subprocess
 	Name         string            // required; namespaces this server's tools
 	Path         string            // required; the executable
 	Args         []string
@@ -332,26 +336,79 @@ type Command struct {
 	Timeout      time.Duration     // default DefaultCallTimeout; bounds handshake and each call
 }
 
+type Remote struct { // Streamable HTTP, dialled from here
+	Name         string            // required; namespaces this server's tools
+	URL          string            // required; absolute, http or https
+	Headers      map[string]string // sent with every request; where a bearer token goes
+	AllowedTools []string
+	Timeout      time.Duration
+}
+
 type Set struct{ /* ... */ }
 
-func Connect(ctx context.Context, commands ...Command) (*Set, error)
+func Load(paths ...string) ([]Server, error)
+func Connect(ctx context.Context, servers ...Server) (*Set, error)
 func (s *Set) Tools() []nacelle.Tool
 func (s *Set) Close() error
 ```
 
-The **local** half: an MCP server run as a subprocess over stdio, its tools handed back as
+The **client** half: an MCP server this process opens a session to, its tools handed back as
 ordinary `nacelle.Tool` values. That bridge is the whole design — a tool from here passes
 through `Config.Approve`, emits the same `KindToolCall`/`KindToolResult` events, and works on
-**both** backends, including the one that can never reach a remote MCP server.
+**both** backends.
 
 ```go
-set, err := client.Connect(ctx, client.Command{Name: "git", Path: "mcp-server-git"})
+servers, err := client.Load("/home/you/.mcp.json")   // or build them by hand
+if err != nil {
+	return err
+}
+set, err := client.Connect(ctx, servers...)
 if err != nil {
 	return err
 }
 defer set.Close()
 cfg.Tools = append(cfg.Tools, set.Tools()...)
 ```
+
+**`Remote` vs `mcp.Server`.** Both describe a hosted MCP server; they differ in who dials it,
+which changes more than it sounds like. An `mcp.Server` is handed to the Claude API, which
+connects from its own side: the tools run there, this process never speaks the protocol, and the
+arrangement exists only on the backend that offers a connector. A `Remote` is dialled here, so
+its tools are ordinary local tools — approval gate, events, both backends — at the cost of the
+traffic being yours, once per call. Prefer `Remote` from anything that lets a person switch
+backends, because a tool set that changes shape with `-backend` is a worse surprise than a round
+trip. Prefer `mcp.Server` from a service pinned to Anthropic that would rather not carry it.
+
+**`Load` reads the `mcpServers` format** — the file Claude Code, Claude Desktop and Cursor already
+write, so an existing `.mcp.json` works unchanged rather than being retyped in a nacelle-shaped
+syntax. Later paths override earlier ones by server name, which is the precedence those clients
+give their own scopes, and servers come back sorted so two runs over one config build the same
+tool set in the same order.
+
+```json
+{
+  "mcpServers": {
+    "git":  {"command": "/usr/bin/mcp-server-git", "args": ["--repo", "."]},
+    "docs": {"type": "http", "url": "https://mcp.example.com/mcp",
+             "headers": {"Authorization": "Bearer ${DOCS_TOKEN}"}}
+  }
+}
+```
+
+An absent `type` means stdio. `"http"` (also `"streamableHttp"`, `"streamable-http"`) means
+`Remote`. `"sse"` and `"ws"` are refused by name: MCP replaced SSE with Streamable HTTP, and the
+error says which key to change rather than failing at a session that never establishes. A `url`
+with no `type` is refused too — reading it as HTTP would make a file that works here and nowhere
+else. Keys beside `mcpServers` (`$schema`, VS Code's `inputs`) are ignored, because these files
+are shared; keys **inside** a server entry are strict, because `comand` otherwise starts a server
+without the arguments it needed and surfaces as a tool that misbehaves.
+
+`${VAR}` and `${VAR:-default}` expand in `command`, `args`, `env`, `url` and `headers`. Only the
+braced spelling is a reference — a bare `$` stays a literal, since these fields carry passwords and
+grep patterns. An unset reference with **no** default is an error rather than an empty string,
+which is where this parts company with the clients whose format it is: expanding an unset
+`${TOKEN}` to nothing sends `Authorization: Bearer ` and buys a 401 naming neither the variable nor
+the file. Empty on purpose has its own spelling, `${TOKEN:-}`.
 
 The host owns the lifetime, deliberately: it is unambiguous who calls `Close`. `Connect` fails
 loudly and reaps anything it already started rather than returning a set with a hole in it, and
