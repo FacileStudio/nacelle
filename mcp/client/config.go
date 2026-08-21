@@ -43,6 +43,9 @@ func Load(paths ...string) ([]Server, error) {
 
 	servers := make([]Server, 0, len(merged))
 	for _, name := range slices.Sorted(maps.Keys(merged)) {
+		if merged[name].Disabled {
+			continue
+		}
 		server, err := merged[name].server(name)
 		if err != nil {
 			return nil, err
@@ -55,13 +58,24 @@ func Load(paths ...string) ([]Server, error) {
 // entry is one server as the mcpServers format spells it. Both halves are on
 // one struct because that is how the format is written, not because they
 // belong together — server() sorts them out into the two types that do.
+//
+// cwd and disabled are here because other clients write them and this one has
+// somewhere to put them: a working directory, and a server left in the file
+// but switched off. Every other key those clients invent is refused rather
+// than ignored, and the permission-shaped ones — autoApprove, alwaysAllow —
+// are the reason that is the right way round. Ignoring a key whose whole
+// purpose is to narrow what a server may do would leave someone believing
+// they had restricted it. This client spells that AllowedTools, and says so
+// rather than nodding along.
 type entry struct {
-	Type    string            `json:"type"`
-	Command string            `json:"command"`
-	Args    []string          `json:"args"`
-	Env     map[string]string `json:"env"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers"`
+	Type     string            `json:"type"`
+	Command  string            `json:"command"`
+	Args     []string          `json:"args"`
+	Env      map[string]string `json:"env"`
+	Dir      string            `json:"cwd"`
+	URL      string            `json:"url"`
+	Headers  map[string]string `json:"headers"`
+	Disabled bool              `json:"disabled"`
 }
 
 // read decodes one file: tolerant about what surrounds mcpServers, strict
@@ -157,7 +171,11 @@ func (e entry) command(name string) (Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Command{Name: name, Path: path, Args: args, Env: env}, nil
+	dir, err := expand(name, e.Dir)
+	if err != nil {
+		return nil, err
+	}
+	return Command{Name: name, Path: path, Args: args, Env: env, Dir: dir}, nil
 }
 
 // remote builds the HTTP half.

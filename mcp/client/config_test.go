@@ -118,3 +118,41 @@ func TestLoadNamesAFileItCannotRead(t *testing.T) {
 		t.Errorf("Load = %v, want it to name the file", err)
 	}
 }
+
+// Other clients write cwd and disabled, and this one has somewhere to put
+// both — a file that uses them has to load rather than be refused for keys
+// that are perfectly good everywhere else.
+func TestCwdAndDisabledAreHonoured(t *testing.T) {
+	servers, err := Load(write(t, `{
+	  "mcpServers": {
+	    "git":  {"command": "/usr/bin/mcp-server-git", "cwd": "/srv/repo"},
+	    "old":  {"command": "/usr/bin/retired", "disabled": true}
+	  }
+	}`))
+	if err != nil {
+		t.Fatalf("Load = %v, want cwd and disabled understood", err)
+	}
+	if len(servers) != 1 {
+		t.Fatalf("Load returned %d servers, want the disabled one left out", len(servers))
+	}
+	if got := servers[0].(Command).Dir; got != "/srv/repo" {
+		t.Errorf("git.Dir = %q, want the cwd from the file", got)
+	}
+}
+
+// A key that narrows what a server may do is refused, never ignored: nodding
+// along to autoApprove would leave someone believing they had restricted a
+// server this client had in fact left wide open.
+func TestAPermissionKeyFromAnotherClientIsRefusedRatherThanIgnored(t *testing.T) {
+	for _, key := range []string{"autoApprove", "alwaysAllow"} {
+		t.Run(key, func(t *testing.T) {
+			_, err := Load(write(t, `{"mcpServers":{"d":{"command":"/usr/bin/true","`+key+`":["write"]}}}`))
+			if err == nil {
+				t.Fatal("Load quietly ignored a permission setting")
+			}
+			if !strings.Contains(err.Error(), key) {
+				t.Errorf("Load = %v, want it to name %q", err, key)
+			}
+		})
+	}
+}
