@@ -194,6 +194,37 @@ It retries only while nothing has been yielded to the consumer. Once a text delt
 them, they have already printed it, and no wrapper can un-print it — a failure after the first
 event ends the run and is reported as it is.
 
+`RetryOptions.Budget` is the only real bound on a run's duration, and the reason it is a context
+deadline rather than a stopwatch is worth stating once. `Max` caps this wrapper's own backoff.
+The sleeps that actually cost the time are the SDKs waiting out a `Retry-After` *inside* an
+attempt, before the failure is handed up as transient at all — six of them across three attempts
+over three HTTP retries. Reading a clock between attempts would notice those six minutes only
+once they had been spent. They are a `select` on `ctx.Done()`, so a deadline derived once and
+passed down is the one thing that interrupts a sleep already in progress.
+
+## Two MCP halves, and why only one needs a client
+
+`mcp.Server` is a **remote** server, dialled by the Claude API on its own side of the request.
+That is why the `mcp` package implements none of the protocol, and why `Capabilities.MCP` exists:
+`openrouter` has no equivalent connector, so a config carrying one is refused rather than run
+with less.
+
+`mcp/client` is the **local** half — a server run as a subprocess over stdio, whose tools are
+bridged to `nacelle.Tool`. The bridge is the design decision. A bridged tool is an ordinary local
+tool, so it passes through `Config.Approve`, emits the same `KindToolCall`/`KindToolResult`
+events, and works on both backends — including the one that can never reach a remote server. A
+parallel MCP-shaped path through the loop would have had to reimplement each of those, slightly
+differently. It is a sub-package for a mechanical reason: the root package imports `mcp`, so
+`mcp` cannot import it back, and a bridged tool that is not a `nacelle.Tool` is usable by nothing.
+
+This does widen what an agent can do, and the widening is worth naming. Running an MCP server is
+executing an arbitrary program, chosen by whoever writes the configuration — not by the model,
+which is the line that matters. The environment is not inherited (`PATH`, `HOME`, and whatever
+`Command.Env` names), for the same reason `tools/` refuses to inherit for commands, only more so:
+that code is ours and this code is somebody else's, and it is about to be handed model-chosen
+arguments. What confinement is *not* applies here exactly as it does in `tools/` — a subprocess
+is not a sandbox, and if the servers are untrusted the isolation has to be a container or a VM.
+
 ## Prompt caching
 
 The `anthropic` backend sets a cache breakpoint only when a second request will actually share

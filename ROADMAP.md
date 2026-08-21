@@ -55,15 +55,19 @@ No tag; `v0.1.0` stays gated on Kori, which is itself blocked on Perception's MC
 Perception problem. **Do not sequence nacelle work around Kori.**
 
 What is not built, flagged rather than silently dropped. None is ordered, and none has earned a
-`###` entry yet — each needs its own scoping session first.
+`###` entry yet — each needs its own scoping session first. Two of them were built on 2026-08-21
+and are struck through below rather than deleted, because the argument for their shape is still
+the argument against redoing them differently.
 
-- **A stdio transport in `mcp/`.** The library's largest real gap. `mcp.Server` has a `URL` and
-  no execution mode, so it wires only Anthropic's server-side remote connector: a local or
-  subprocess MCP server cannot be reached at all, and `openrouter` refuses any MCP config
-  outright under the capability rule, so that backend gets zero MCP tools whatever the transport.
-  It is also the answer to "how does a user add a tool without forking the binary" — the peers
-  answer that with MCP, not a plugin ABI. Raised 2026-08-20 while comparing against Crush and pi;
-  recommended, not decided.
+- ~~**A stdio transport in `mcp/`.**~~ Built 2026-08-21 as `mcp/client`, on the official
+  `modelcontextprotocol/go-sdk`. It bridges a subprocess server's tools to `nacelle.Tool`, which
+  is what makes them work on **both** backends rather than only the one with a server-side
+  connector — `openrouter` refuses `Config.MCP` under the capability rule and would otherwise get
+  no MCP tools whatever the transport. That is also this repo's answer to "how does a user add a
+  tool without forking the binary", the question that raised the item on 2026-08-20 while
+  comparing against Crush and pi. A sub-package because the root imports `mcp`, so `mcp` cannot
+  import back. Still open, and now the largest MCP gap: the **Streamable HTTP transport**, which
+  would give `openrouter` remote servers too. `mcp/client` is shaped so it slots in.
 - **Server-side web search, as a paid alternative to `tools.WebSearch`.** Not ordered, and not a
   gap — `tools.WebSearch` already covers this need for free against an instance you run. This is
   the option for someone who would rather pay than host a service. Both backends have it
@@ -78,15 +82,21 @@ What is not built, flagged rather than silently dropped. None is ordered, and no
   a local tool is written once and runs on both.
 
   Real work if it is ever picked up: `anthropic/calls.go`'s `isToolUse` does not handle
-  `server_tool_use` / `web_search_tool_result` blocks, which is the same gap behind the known
-  `mcp_tool_use` orphan; and `stopOf` parks `pause_turn` in `StopOther`, which server-side search
-  makes reachable in practice rather than in theory — a long search would end a run as an
-  unnameable stop with a half-finished answer.
-- **A total-time budget on `RetryOptions`.** The SDK sleeps on `Retry-After` before nacelle ever
-  sees the error as transient, so three nacelle attempts over three HTTP retries is nine requests
-  and six unbounded sleeps — roughly six minutes under `Retry-After: 60`, against a documented
-  8s ceiling. The only real bound is a context deadline, and neither `retry.go` nor the README
-  says so. Documenting the deadline is a two-line diff; a budget field is the larger version.
+  `server_tool_use` / `web_search_tool_result` blocks; and `stopOf` parks `pause_turn` in
+  `StopOther`, which server-side search makes reachable in practice rather than in theory — a
+  long search would end a run as an unnameable stop with a half-finished answer.
+
+  This bullet used to call that "the same gap behind the known `mcp_tool_use` orphan". There is
+  no such orphan and there has not been for some time: `isToolUse` takes both spellings,
+  `calls.go` tags the call `remote` and files it, `mcp.go`'s `remoteResult` closes it on the
+  matching `mcp_tool_result`, and `unanswered.go` sweeps whatever is still open when the run
+  ends. Corrected 2026-08-21 after the claim sent a session looking for a closed bug.
+- ~~**A total-time budget on `RetryOptions`.**~~ Built 2026-08-21 as `RetryOptions.Budget`.
+  The larger version turned out to be the only version that works: a stopwatch read between
+  attempts would notice the six minutes only after they had been spent, because the sleeps are
+  inside the attempt. A deadline derived once in `Stream` and passed down does reach them — both
+  SDKs wait out a `Retry-After` in a `select` on `ctx.Done()`, verified in each vendored SDK
+  rather than assumed. No default: a deadline bounds the successful attempt too.
 - **A global `~/.claude/CLAUDE.md` layer.** Deliberately out, same reasoning as skipping it for
   `AGENTS.md`'s own global path.
 
