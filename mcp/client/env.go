@@ -8,10 +8,12 @@ import (
 
 // implementationVersion is what a server is told it is talking to.
 //
-// A constant rather than a build stamp because nacelle has no version to
-// report yet, and MCP treats the field as display metadata: a server logs it,
-// nothing negotiates on it. It gets a real value when the module gets a tag.
-const implementationVersion = "0"
+// A constant rather than a build stamp, because MCP treats the field as
+// display metadata: a server logs it, nothing negotiates on it. It is bumped
+// by hand with the tag rather than derived from one — debug.ReadBuildInfo
+// reports the version of the *consumer's* module for a library, not this one,
+// so deriving it would report whatever imported us.
+const implementationVersion = "0.1.0"
 
 // defaultPath is the PATH an MCP server starts with, matching the one
 // tools/ gives a command. A caller who needs another one names it in

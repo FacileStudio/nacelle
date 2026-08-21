@@ -55,6 +55,12 @@ type Remote struct {
 	// Worth setting for any server that can write, and worth more here
 	// than on a Command: a subprocess is a program you installed, and this
 	// is a URL whose tool list can change without anyone here redeploying.
+	//
+	// It is set here, in Go. The mcpServers format Load reads has no key for
+	// an allow-list, so a server configured from a .mcp.json gets every tool
+	// it offers — worth knowing before taking the advice above, because that
+	// file is how most callers will configure one. Narrowing today means
+	// building the value by hand instead of loading it.
 	AllowedTools []string
 
 	// Timeout bounds one tools/call and the connect-time handshake.
