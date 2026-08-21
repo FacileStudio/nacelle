@@ -15,8 +15,11 @@ const (
 	DefaultRetryMax      = 8 * time.Second
 )
 
-// RetryOptions tunes Retry. Every zero field takes its Default counterpart, so
-// the zero value is the recommended policy rather than no policy.
+// RetryOptions tunes Retry. Every zero field but Budget takes its Default
+// counterpart, so the zero value is the recommended policy rather than no
+// policy. Budget is the exception on purpose: there is no number of seconds
+// that is right for every run, and a default one would quietly start killing
+// the long streaming answers this package exists to carry.
 type RetryOptions struct {
 	// Attempts is how many times a run may be started, the first one
 	// included. One disables retrying without removing the wrapper.
@@ -33,8 +36,25 @@ type RetryOptions struct {
 	// happen inside each attempt this one then repeats: three attempts over
 	// three HTTP retries is nine requests and six sleeps the wrapper never
 	// sees. Under Retry-After: 60 that is roughly six minutes, whatever
-	// this field says. A context deadline is the only real bound.
+	// this field says. Budget is the field that bounds it.
 	Max time.Duration
+
+	// Budget is the wall clock a whole run may spend under this wrapper,
+	// every attempt and every backoff included. Zero leaves it unbounded,
+	// which is what this wrapper has always done.
+	//
+	// It is a context deadline derived once and passed down, and that is
+	// the point rather than an implementation detail: the sleeps Max cannot
+	// see are a select on ctx.Done() inside the SDKs, so a deadline
+	// interrupts one that has already started. Nothing else reaches them.
+	//
+	// Being a deadline, it bounds the whole run and not just the retrying:
+	// a legitimate twenty-minute answer under Budget: 5 * time.Minute is
+	// cut off at five, on the first attempt, having failed at nothing.
+	// Envoy's rq-timeout and the AWS SDK's apiCallTimeout mean the same
+	// thing by the same name, so a caller sizing this one should size it
+	// against their slowest good run rather than their retry tolerance.
+	Budget time.Duration
 
 	// Logger records the attempts nobody else can see. Defaults to
 	// slog.Default(), matching Config.Logger, because a retry that says
@@ -93,8 +113,16 @@ func (o RetryOptions) withDefaults() RetryOptions {
 
 // Stream runs the backend, starting it again while it fails transiently
 // without having produced anything.
+//
+// The budget is derived here and nowhere else, so every attempt, every backoff
+// and every sleep inside the SDKs shares the one deadline. Deriving it per
+// attempt would give each attempt the whole budget again, which is the bug
+// this field was added to close.
 func (r retrying) Stream(ctx context.Context, request Request) iter.Seq2[Event, error] {
 	return func(yield func(Event, error) bool) {
+		ctx, cancel := r.options.bounded(ctx)
+		defer cancel()
+
 		for attempt := 1; ; attempt++ {
 			produced, err := r.once(ctx, request, yield)
 			if err == nil {
@@ -129,15 +157,28 @@ func (r retrying) once(ctx context.Context, request Request, yield func(Event, e
 // afterFailure decides what a failed attempt becomes: nil to start the run
 // over, or the error the consumer should be handed instead.
 //
-// The two ways of stopping are kept apart here because they are not the same
-// news. Running out of attempts is the provider having failed; a context that
-// ended mid-backoff is the caller having asked us to stop, and reporting the
-// second as the first blames a backend for a keystroke.
+// The three ways of stopping are kept apart here because they are not the same
+// news. Running out of attempts is the provider having failed; running out of
+// budget is this policy deciding the provider has had long enough; a context
+// that ended mid-backoff is the caller having asked us to stop, and reporting
+// any of them as another blames a backend for a keystroke.
+//
+// The budget is asked about first, and asked again after a backoff, because it
+// is the one that fires while nothing is looking: inside a provider's sleep,
+// mid-stream, or in the middle of our own wait. Asked only in the second place
+// it would miss an attempt our own deadline killed, which arrives looking like
+// a plain failure and would be given up on as one, at attempt one, in silence.
 func (r retrying) afterFailure(ctx context.Context, attempt int, produced bool, err error) error {
+	if spent := r.outOfBudget(ctx, attempt, err); spent != nil {
+		return spent
+	}
 	if produced || attempt >= r.options.Attempts || !Retryable(err) {
 		return r.giveUp(attempt, err)
 	}
 	if !pause(ctx, r.options.backoff(attempt)) {
+		if spent := r.outOfBudget(ctx, attempt, err); spent != nil {
+			return spent
+		}
 		return abandoned(ctx.Err(), err, attempt)
 	}
 	r.willRetry(attempt, err)

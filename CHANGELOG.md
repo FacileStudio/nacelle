@@ -179,6 +179,36 @@ set, the TUI, and the gate, in the order they were built.
   transcript; `tab`/`enter` fill the prompt (plus a trailing space) without submitting, `esc`
   dismisses. `tui/model.go`'s own `layout()` reserves the dropdown's height out of the
   transcript's, recomputed on every filter change, not only on a real terminal resize.
+- **`RetryOptions.Budget`** — a wall clock for a whole run, and the only bound on how long one
+  can actually take. `Max` caps this wrapper's own backoff and nothing else: both SDKs sleep on
+  `Retry-After` inside an attempt, before the failure is handed up as transient, so three
+  attempts over three HTTP retries is nine requests and six sleeps nacelle never sees — roughly
+  six minutes under `Retry-After: 60`, against a documented 8s ceiling. Those sleeps are a
+  `select` on `ctx.Done()`, so a deadline derived once in `Stream` and passed down is the only
+  thing that reaches them. It has no default, because being a deadline it bounds the successful
+  attempt too and no number of seconds is right for every run. A run that spends it ends with
+  the exported `ErrRetryBudget`, kept tellable apart from the caller's own cancellation — both
+  read as `context.DeadlineExceeded`, but one is this policy firing and the other is theirs.
+- **`mcp/client`** — MCP servers run as subprocesses over stdio, their tools handed back as
+  ordinary `nacelle.Tool` values. Until now `mcp` was configuration only: it wired Anthropic's
+  server-side connector to a remote URL, so a local server was unreachable and `openrouter`,
+  which refuses `Config.MCP` under the capability rule, got no MCP tools whatever the transport.
+  Bridging to `nacelle.Tool` rather than adding a second path through the loop is the whole
+  design — a bridged tool passes through `Config.Approve`, emits the same
+  `KindToolCall`/`KindToolResult` events, and works on both backends. Built on the official
+  `modelcontextprotocol/go-sdk` rather than a hand-rolled JSON-RPC client, for the reason
+  `retry.go` gives for not re-implementing HTTP backoff: it would be a second, worse copy of
+  something we do not own. It is a sub-package because the root package imports `mcp`, so `mcp`
+  cannot import it back, and a bridged tool that is not a `nacelle.Tool` is usable by nothing.
+  The environment is never inherited — `PATH`, `HOME` and whatever `Command.Env` names, matching
+  what `tools/` already does for the commands it runs, and the argument is stronger here because
+  that code is ours and this code is somebody else's. Names are namespaced `<server>_<tool>` and
+  refused, never truncated, when they break the `^[a-zA-Z0-9_-]{1,64}$` both provider APIs
+  enforce: a truncated name silently collides with another one. A server that fails to start says
+  why: the first 8KB it wrote to stderr is kept and hung off the error, because otherwise the
+  reason goes to `/dev/null` and the operator is left with `connection closed: calling
+  "initialize": EOF` — the protocol step that noticed the silence, not the `FATAL:` line that
+  caused it. `Command.Stderr` takes the rest, for a server that started fine and has more to say.
 
 - **`esc` stops a run, and never does anything else.** `ctrl+c` already cancelled one, but
   it is also the key that quits an idle client, so the press that abandons an answer was a

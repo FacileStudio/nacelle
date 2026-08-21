@@ -144,8 +144,12 @@ attempts, 500ms doubling to a 8s ceiling, with jitter. `Attempts: 1` turns it of
 SDKs sleep on `Retry-After` before a failure is ever handed up as transient — inside
 each attempt this then repeats. Three attempts over three HTTP retries is nine
 requests and six sleeps nacelle never sees, which under `Retry-After: 60` is roughly
-six minutes. **Pass a `context.WithTimeout` if a run has a deadline**; nothing in
-`RetryOptions` will give you one.
+six minutes. **`Budget` is the field that bounds it**: a wall clock for the whole
+run, derived once as a context deadline and passed down, which is the only thing
+that reaches those sleeps — they are a `select` on `ctx.Done()` inside the SDKs.
+It has no default and zero leaves a run unbounded, because a deadline bounds the
+successful attempt too: size it against your slowest good answer, the way you
+would size an Envoy `rq-timeout`, not against your retry tolerance.
 
 **This is not a backoff engine, on purpose.** Both SDKs already retry at the HTTP
 level — connection failures, 408, 409, 429, 5xx, honouring `Retry-After-Ms` and
