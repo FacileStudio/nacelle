@@ -43,7 +43,7 @@ func promptCap(height int) int {
 // the real caret never disagree about where typing will land.
 func newPrompt() textarea.Model {
 	prompt := textarea.New()
-	prompt.Placeholder = "Ask something. Ctrl+C to stop or quit, Ctrl+\\ to force it."
+	prompt.Placeholder = "Ask something. Esc stops a run, ctrl+c stops or quits, ctrl+\\ forces it."
 	prompt.SetPromptFunc(2, continuation)
 	prompt.ShowLineNumbers = false
 	prompt.DynamicHeight = true

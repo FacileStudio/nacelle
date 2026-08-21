@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/FacileStudio/nacelle"
 )
 
 // Nothing is printed until Update drains the queue, because printing is a Cmd
@@ -80,5 +84,50 @@ func TestTheWholeAnswerIsPrintedEvenThoughOnlyItsTailWasShown(t *testing.T) {
 
 	if said := strings.Join(spoken(m), "\n"); !strings.Contains(said, "the opening line") {
 		t.Errorf("said = %q, want the start of the answer printed, not only the visible tail", said)
+	}
+}
+
+// A tool's call line announced a tool that had already finished. absorb says
+// the line, consume returns the wait for the next event, and the next event
+// after a call is that call's own result — so the line naming a six-second
+// command reached the screen at the same moment the command did. Measured
+// against OpenRouter: said at 1467ms, drawn at 7451ms.
+// The closed channel is not scenery: reading what consume printed also runs
+// the wait it re-armed, and a nil one never sends.
+func TestAToolIsAnnouncedWhenItIsCalledNotWhenItReturns(t *testing.T) {
+	m := sized()
+	m.run.busy = true
+
+	ended := make(chan result)
+	close(ended)
+	m.run.results = ended
+
+	_, cmd := m.Update(result{event: nacelle.Event{
+		Kind: nacelle.KindToolCall,
+		Tool: &nacelle.ToolEvent{ID: "1", Name: "run_command"},
+	}})
+
+	if printed := printedBy(cmd); !strings.Contains(printed, "run_command") {
+		t.Errorf("printed = %q, want the call announced before the wait for its result", printed)
+	}
+}
+
+// The question has to reach the screen when it is asked, not when it is
+// answered. waitFor blocks until the model's first token, a batch is not
+// finished until every command in it is, and Update sequences the print queue
+// behind whatever the routed message returned — so the echo sat there until
+// the reply arrived. What that looked like was the prompt emptying and nothing
+// else happening, which reads as a client that swallowed the question.
+func TestTheQuestionIsPrintedWithoutWaitingOnTheAnswer(t *testing.T) {
+	m := sized()
+	m.agent = answering(t)
+	m.prompt.SetValue("a question")
+
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	printed := printedBy(cmd)
+	defer m.run.cancel()
+
+	if !strings.Contains(printed, "a question") {
+		t.Errorf("printed = %q, want the question handed over before the run is waited on", printed)
 	}
 }

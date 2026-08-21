@@ -76,6 +76,11 @@ type turn struct {
 //
 // running is emptied here rather than only in settle so a run never inherits
 // the last one's unanswered calls and reports them as its own.
+//
+// The batch this returns blocks until the model sends its first anything, and
+// so does the one consume returns. Neither of them flushes what has been said
+// first — Update does, before it runs either. See its doc comment for what
+// went wrong while that was the other way round.
 func (m *model) send(text string) tea.Cmd {
 	m.run.stop = ""
 	m.run.usage = nacelle.Usage{}
@@ -89,6 +94,59 @@ func (m *model) send(text string) tea.Cmd {
 	m.run.busy = true
 	m.run.results = start(ctx, m.agent, m.conversation)
 	return tea.Batch(waitFor(m.run.results), m.spin.Tick)
+}
+
+// abandon stops the run in flight and everything it would have led to.
+//
+// It is what both stop keys do, and it is all they have in common: they differ
+// only in what they mean when there is nothing to stop, where ctrl+c quits the
+// client and esc does nothing at all. Stopping itself is one behaviour and
+// this is it, in one place, so the two can never drift into stopping a run
+// differently.
+//
+// interrupted is stamped here rather than by either caller. It is what the
+// status line reads to say the run is stopping instead of leaving the spinner
+// claiming it is still going, and it is what arms the force quit — busy is
+// only cleared by settle, settle waits on the results channel, and a tool
+// wedged on a subprocess never closes it.
+//
+// The queue goes with the run. Left alone it is delivered by settle, which
+// cancelling reaches like any other ending, so stopping one run would start
+// the next one on the spot — the opposite of what either key was pressed for.
+func (m *model) abandon() {
+	m.run.interrupted = time.Now()
+	m.run.stop = abandoned
+	m.run.pending = nil
+	m.run.cancel()
+	m.dropQueued()
+}
+
+// escaped is esc once the dropdown has had its turn: it stops a run in flight,
+// and does nothing else ever.
+//
+// Idle it is not this client's key at all, which is why it reports the press
+// unhandled rather than swallowing it. Claiming it would turn the one press
+// every terminal reader uses to back out of something into a press that
+// silently does nothing here, and stop it reaching the prompt.
+//
+// A run already asked to stop is left alone rather than asked again, and the
+// press is still claimed. Asking twice re-stamps run.interrupted, which is
+// what holds the force-quit offer open — so an esc held down, or tapped at a
+// tool that is not listening, would keep ctrl+c meaning "quit now" for as long
+// as the tapping lasted rather than the three seconds it is meant to. Past
+// that window a fresh press is a fresh request, and cancels again.
+//
+// It lives beside abandon rather than in key for the same reason decide and
+// navigateMenu do: a binding belongs with the thing it acts on, and this one
+// acts on the run.
+func (m *model) escaped() (bool, tea.Cmd) {
+	if !m.run.busy {
+		return false, nil
+	}
+	if time.Since(m.run.interrupted) >= forceQuit {
+		m.abandon()
+	}
+	return true, nil
 }
 
 // consume folds one result into the transcript and waits for the next. The

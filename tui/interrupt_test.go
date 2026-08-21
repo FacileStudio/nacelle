@@ -119,3 +119,71 @@ func TestAFreshQuestionTakesTheForceQuitOfferBackDown(t *testing.T) {
 		t.Errorf("status = %q, want the offer made afresh for this run", status)
 	}
 }
+
+// The key that stops the answer must never be the key that might close the
+// client, or every press has to be thought about first.
+func TestEscapeStopsTheRunAndLeavesTheClientStanding(t *testing.T) {
+	m := stuck()
+
+	handled, cmd := m.key(tea.KeyPressMsg{Code: tea.KeyEscape})
+
+	if !handled || cmd != nil {
+		t.Fatalf("esc = %v, %v; want the run stopped and the session kept", handled, cmd)
+	}
+	if m.run.stop != abandoned {
+		t.Errorf("stop = %q, want the run marked abandoned", m.run.stop)
+	}
+	if status := m.status(); !strings.Contains(status, "stopping") {
+		t.Errorf("status = %q, want it to say the run is stopping rather than still running", status)
+	}
+}
+
+// The offer to quit is on a three-second timer, so re-stamping it on every
+// press is how an esc held down — or tapped at a tool that is not listening —
+// leaves ctrl+c meaning "quit now" for as long as the tapping lasts.
+func TestASecondEscapeDoesNotKeepTheForceQuitOfferAlive(t *testing.T) {
+	m := stuck()
+	m.key(tea.KeyPressMsg{Code: tea.KeyEscape})
+	armed := m.run.interrupted
+
+	handled, cmd := m.key(tea.KeyPressMsg{Code: tea.KeyEscape})
+
+	if !handled || cmd != nil {
+		t.Errorf("second esc = %v, %v; want the press still claimed by the run", handled, cmd)
+	}
+	if !m.run.interrupted.Equal(armed) {
+		t.Error("a second esc re-armed the offer, so holding it holds ctrl+c at quit")
+	}
+}
+
+// Idle, esc is not this client's key at all. Claiming it would make the one
+// press every terminal reader uses to back out of something a press that
+// silently does nothing here, and stop it reaching the prompt.
+func TestEscapeWithNothingRunningBelongsToThePrompt(t *testing.T) {
+	m := sized()
+
+	if handled, cmd := m.key(tea.KeyPressMsg{Code: tea.KeyEscape}); handled || cmd != nil {
+		t.Errorf("esc while idle = %v, %v; want it left to the prompt", handled, cmd)
+	}
+}
+
+// A dropdown standing open is the nearer thing to back out of, and it is what
+// esc already meant there. Stopping the run out from under an open menu would
+// take two visible things away on one press.
+func TestEscapeClosesTheDropdownBeforeItStopsAnything(t *testing.T) {
+	m := stuck()
+	m.prompt.SetValue("/")
+	m.refreshMenu()
+	if !m.menu.open() {
+		t.Fatal("the dropdown did not open, so there is nothing for esc to close first")
+	}
+
+	m.key(tea.KeyPressMsg{Code: tea.KeyEscape})
+
+	if m.menu.open() {
+		t.Error("the menu stayed open after esc")
+	}
+	if m.run.stop == abandoned {
+		t.Error("esc stopped the run as well as closing the menu, want one thing per press")
+	}
+}

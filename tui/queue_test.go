@@ -67,14 +67,15 @@ func TestSettleDeliversTheQueuedMessage(t *testing.T) {
 	m.prompt.SetValue("the second question")
 	m.ask()
 
-	m.settle()
+	_, cmd := m.Update(finished{})
+	printed := printedBy(cmd)
 	defer m.run.cancel()
 
 	if len(m.run.queued) != 0 {
 		t.Errorf("queued = %v, want it emptied once delivered", m.run.queued)
 	}
-	if !strings.Contains(onScreen(m), "the second question") {
-		t.Errorf("screen = %q, want the delivered question echoed into the transcript", onScreen(m))
+	if !strings.Contains(printed, "the second question") {
+		t.Errorf("printed = %q, want the delivered question echoed into the transcript", printed)
 	}
 }
 
@@ -85,11 +86,12 @@ func TestAQueuedCommandIsStillACommand(t *testing.T) {
 	m.prompt.SetValue("/help")
 	m.ask()
 
-	m.settle()
+	_, cmd := m.Update(finished{})
+	printed := printedBy(cmd)
 	defer m.run.cancel()
 
-	if !strings.Contains(onScreen(m), "start a new session") {
-		t.Errorf("screen = %q, want the delivered /help to have run as a command", onScreen(m))
+	if !strings.Contains(printed, "start a new session") {
+		t.Errorf("printed = %q, want the delivered /help to have run as a command", printed)
 	}
 	if m.run.busy {
 		t.Error("a delivered /help started a run, so it was sent to the model as text")
@@ -159,14 +161,15 @@ func TestAQueuedCommandDoesNotStrandTheQuestionsBehindIt(t *testing.T) {
 	m.prompt.SetValue("the question behind it")
 	m.ask()
 
-	m.settle()
+	_, cmd := m.Update(finished{})
+	printed := printedBy(cmd)
 	defer m.run.cancel()
 
 	if len(m.run.queued) != 0 {
 		t.Fatalf("queued = %v, want the queue drained past the command", m.run.queued)
 	}
-	if !strings.Contains(onScreen(m), "the question behind it") {
-		t.Errorf("screen = %q, want the question after the command actually asked", onScreen(m))
+	if !strings.Contains(printed, "the question behind it") {
+		t.Errorf("printed = %q, want the question after the command actually asked", printed)
 	}
 }
 
@@ -208,5 +211,27 @@ func TestDeliverSequencesQueuedCommandsRatherThanBatchingThem(t *testing.T) {
 	}
 	if _, batched := cmd().(tea.BatchMsg); batched {
 		t.Error("deliver batched its commands, want them sequenced — /clear prints, and a batch makes no promise about order")
+	}
+}
+
+// A queued "/clear" scrolls the screen away, so anything queued behind it has
+// to be echoed after that run of blanks rather than before it. One drain at
+// Update is what gets this wrong: deliver dispatches every queued line inside
+// a single routed message, so a single flush collects all their echoes and
+// prints the lot ahead of the clear that then scrolls them off.
+func TestAQuestionQueuedBehindAClearIsEchoedBelowIt(t *testing.T) {
+	m := busy(t)
+	m.run.queued = []string{"/clear", "a later question"}
+
+	_, cmd := m.Update(finished{})
+	printed := printedBy(cmd)
+	defer m.run.cancel()
+
+	banner, question := strings.Index(printed, "cleared"), strings.Index(printed, "a later question")
+	if question < 0 || banner < 0 {
+		t.Fatalf("printed = %q, want the fresh banner and the question queued behind it", printed)
+	}
+	if question < banner {
+		t.Errorf("printed = %q, want the question echoed below the clear rather than scrolled away by it", printed)
 	}
 }
