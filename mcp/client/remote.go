@@ -92,12 +92,23 @@ func (r Remote) check() error {
 
 // dial builds the Streamable HTTP transport.
 //
+// The standalone SSE stream is off, and that is a decision rather than a
+// default. Left on, the transport opens a GET after the handshake and holds
+// it for the life of the session so the server can push messages whenever it
+// likes — measured, one per configured server. Every message it can carry is
+// one this package has already said it does not answer: tools/list_changed,
+// sampling, elicitation. So it buys an idle connection per server, something
+// for a proxy to time out and the transport to then reconnect, in exchange
+// for notifications that are dropped on arrival. The specification makes the
+// stream optional for exactly this reason. Turn it back on in the same commit
+// that starts handling one of those messages, not before.
+//
 // The diagnostics are empty and always will be: an HTTP server has no stderr
 // this process can read, so what it would have said about failing to start
 // is on the far end of the connection. The value is returned anyway so that
 // attach has one error path rather than one per transport.
 func (r Remote) dial() (sdk.Transport, *diagnostics, error) {
-	transport := &sdk.StreamableClientTransport{Endpoint: r.URL}
+	transport := &sdk.StreamableClientTransport{Endpoint: r.URL, DisableStandaloneSSE: true}
 	if len(r.Headers) > 0 {
 		transport.HTTPClient = &http.Client{Transport: headed{headers: r.Headers}}
 	}
