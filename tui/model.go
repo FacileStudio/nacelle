@@ -30,21 +30,6 @@ type commandState struct {
 	menu   commandMenu
 }
 
-// screen is what this client knows about the terminal it is drawing into:
-// how wide, how tall, and how many of those rows the live region may use for
-// a run's streaming output once the status line, the prompt, the queue and
-// the dropdown have taken theirs.
-//
-// liveRows exists because the live region is repainted in place on every
-// delta, so it has to fit on the screen. Content taller than the terminal
-// cannot be redrawn where it stands, and an inline program that tries is one
-// that corrupts its own output.
-type screen struct {
-	width        int
-	windowHeight int
-	liveRows     int
-}
-
 // model is the whole client: a transcript, a prompt, and at most one run in
 // flight.
 //
