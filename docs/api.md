@@ -403,7 +403,13 @@ else. Keys beside `mcpServers` (`$schema`, VS Code's `inputs`) are ignored, beca
 are shared; keys **inside** a server entry are strict, because `comand` otherwise starts a server
 without the arguments it needed and surfaces as a tool that misbehaves.
 
-`${VAR}` and `${VAR:-default}` expand in `command`, `args`, `env`, `url` and `headers`. Only the
+`cwd` and `disabled` are understood, because other clients write them and this one has somewhere
+to put both. Every other key those clients invent is refused rather than ignored, and the
+permission-shaped ones — `autoApprove`, `alwaysAllow` — are why that is the right way round:
+quietly ignoring a key whose whole purpose is to narrow what a server may do would leave someone
+believing they had restricted it. This client spells that `AllowedTools`, and says so.
+
+`${VAR}` and `${VAR:-default}` expand in `command`, `args`, `env`, `cwd`, `url` and `headers`. Only the
 braced spelling is a reference — a bare `$` stays a literal, since these fields carry passwords and
 grep patterns. An unset reference with **no** default is an error rather than an empty string,
 which is where this parts company with the clients whose format it is: expanding an unset
