@@ -139,12 +139,12 @@ func TestFetchIsOnByDefaultAndTheFileCanTurnItOff(t *testing.T) {
 func TestTheBannerNamesFetchOnlyWhenItIsOff(t *testing.T) {
 	on, off := true, false
 
-	quiet := banner(&answeringStub{}, asSettled(Config{Root: ".", Web: Web{Fetch: &on}}), loaded{})
+	quiet := banner(&answeringStub{}, asSettled(Config{Root: ".", Web: Web{Fetch: &on}}), loaded{}, connected{})
 	if strings.Contains(quiet, "fetch") {
 		t.Errorf("banner = %q, want nothing said about fetch when it is on", quiet)
 	}
 
-	loud := banner(&answeringStub{}, asSettled(Config{Root: ".", Web: Web{Fetch: &off}}), loaded{})
+	loud := banner(&answeringStub{}, asSettled(Config{Root: ".", Web: Web{Fetch: &off}}), loaded{}, connected{})
 	if !strings.Contains(loud, "fetch off") {
 		t.Errorf("banner = %q, want the reason a page cannot be read on screen", loud)
 	}

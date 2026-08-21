@@ -48,7 +48,7 @@ func TestCountedNounPluralizes(t *testing.T) {
 func TestBannerShowsBackendModelRootSkillsAndContextFiles(t *testing.T) {
 	off := false
 	got := banner(&answeringStub{}, asSettled(Config{Model: "claude-opus-5", Root: ".", Bash: &off}),
-		loaded{skills: []skill{{name: "deploy"}, {name: "filet"}}, contextFiles: 2})
+		loaded{skills: []skill{{name: "deploy"}, {name: "filet"}}, contextFiles: 2}, connected{})
 
 	lines := strings.Split(got, "\n")
 	if len(lines) != 2 {
@@ -70,7 +70,7 @@ func TestBannerShowsBackendModelRootSkillsAndContextFiles(t *testing.T) {
 // back to the switch that caused it.
 func TestBannerSaysWhenBashIsOn(t *testing.T) {
 	on := true
-	got := banner(&answeringStub{}, asSettled(Config{Root: ".", Bash: &on}), loaded{})
+	got := banner(&answeringStub{}, asSettled(Config{Root: ".", Bash: &on}), loaded{}, connected{})
 
 	if !strings.Contains(got, "bash on") {
 		t.Errorf("banner = %q, want it to say bash is on", got)
@@ -82,7 +82,7 @@ func TestBannerSaysWhenBashIsOn(t *testing.T) {
 // root in the banner at all.
 func TestBannerResolvesRootToAnAbsolutePath(t *testing.T) {
 	off := false
-	got := banner(&answeringStub{}, asSettled(Config{Root: ".", Bash: &off}), loaded{})
+	got := banner(&answeringStub{}, asSettled(Config{Root: ".", Bash: &off}), loaded{}, connected{})
 
 	if strings.Contains(got, "\n.") || strings.HasSuffix(strings.Split(got, "\n")[1], " . ") {
 		t.Errorf("banner = %q, want root resolved, not echoed as \".\"", got)
@@ -118,12 +118,12 @@ func TestAugmentSystemCountsContextFilesAndSkills(t *testing.T) {
 // Search earns a word in the banner only when an instance is configured, so
 // a launch that silently has no search still reads as an ordinary launch.
 func TestTheBannerNamesSearchOnlyWhenAnInstanceIsSet(t *testing.T) {
-	without := banner(&answeringStub{}, asSettled(Config{Root: "."}), loaded{})
+	without := banner(&answeringStub{}, asSettled(Config{Root: "."}), loaded{}, connected{})
 	if strings.Contains(without, "search on") {
 		t.Errorf("banner = %q, want no mention of search when none is configured", without)
 	}
 
-	with := banner(&answeringStub{}, asSettled(Config{Root: ".", Web: Web{Search: ptr("https://furet.example")}}), loaded{})
+	with := banner(&answeringStub{}, asSettled(Config{Root: ".", Web: Web{Search: ptr("https://furet.example")}}), loaded{}, connected{})
 	if !strings.Contains(with, "search on") {
 		t.Errorf("banner = %q, want it to confirm search is on", with)
 	}
