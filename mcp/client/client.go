@@ -39,69 +39,11 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/FacileStudio/nacelle"
 )
-
-// DefaultCallTimeout bounds one tools/call, and the handshake that precedes
-// the first one.
-//
-// It matches tools.DefaultCommandTimeout because it bounds the same kind of
-// work: an MCP server that greps a tree or runs a build needs the room a
-// local command needs. What the bound really buys is the failure it prevents.
-// A server that accepts a call and never answers would otherwise hold the
-// agent's goroutine for the life of the process, and the run reads as a model
-// that stopped thinking rather than as a subprocess that stopped talking.
-const DefaultCallTimeout = 2 * time.Minute
-
-// Command is one MCP server, run as a subprocess and spoken to over its
-// standard input and output.
-type Command struct {
-	// Name namespaces this server's tools and must be unique in one call
-	// to Connect. Every tool is presented to the model as <Name>_<tool>,
-	// always — a tool's name must not change depending on how many servers
-	// happen to be configured, because a prompt that mentions a tool by
-	// name would then be wrong for half the configurations.
-	Name string
-
-	// Path is the executable to run. Required.
-	//
-	// Prefer an absolute path. A bare name is resolved by exec.Command
-	// against *this* process's PATH, at the moment the command is built,
-	// and setting Env["PATH"] does not change that — os/exec resolves
-	// before it ever looks at Env, so the child's PATH is what the server
-	// then finds its own helpers on and nothing more. Naming the file in
-	// full is the only spelling where the binary that is found and the
-	// binary that was meant are certainly the same one.
-	Path string
-
-	// Args are handed to it unchanged.
-	Args []string
-
-	// Env names the variables the server starts with, on top of a minimal
-	// base. Read the doc comment on environment for why the process
-	// environment is not inherited and why every credential the server
-	// needs belongs here.
-	Env map[string]string
-
-	// Dir is the working directory. Empty means the calling process's.
-	Dir string
-
-	// AllowedTools restricts what the model may call on this server. Empty
-	// allows every tool the server exposes.
-	//
-	// Worth setting for any server that can write. The narrowest list that
-	// does the job is the one that survives the server growing a
-	// destructive tool later without anyone here noticing.
-	AllowedTools []string
-
-	// Timeout bounds one tools/call and the connect-time handshake.
-	// Defaults to DefaultCallTimeout.
-	Timeout time.Duration
-}
 
 // Set is a live connection to every server Connect started, and the tools
 // they expose.
@@ -173,6 +115,10 @@ func validate(commands []Command) error {
 
 // attach starts one server, lists what it offers and bridges it.
 //
+// Whatever the server wrote to stderr before it failed is hung off the error,
+// which is the difference between an operator reading the reason and an
+// operator reading the protocol step that noticed it.
+//
 // The session is recorded before the tools are listed, so that a server which
 // starts and then fails to answer tools/list is still closed by Close rather
 // than left running with nobody holding a handle to it.
@@ -191,17 +137,19 @@ func (s *Set) attach(ctx context.Context, command Command, taken map[string]bool
 	subprocess := exec.Command(command.Path, command.Args...)
 	subprocess.Dir = command.Dir
 	subprocess.Env = environment(command.Env)
+	notes := &diagnostics{}
+	subprocess.Stderr = notes.tee(command.Stderr)
 
 	impl := &sdk.Implementation{Name: "nacelle", Version: implementationVersion}
 	session, err := sdk.NewClient(impl, nil).Connect(ctx, &sdk.CommandTransport{Command: subprocess}, nil)
 	if err != nil {
-		return fmt.Errorf("nacelle/mcp/client: starting server %q: %w", command.Name, err)
+		return fmt.Errorf("nacelle/mcp/client: starting server %q: %w%s", command.Name, err, notes.note())
 	}
 	s.sessions = append(s.sessions, session)
 
 	bridged, err := bridge(ctx, session, command, timeout, taken)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w%s", err, notes.note())
 	}
 	s.tools = append(s.tools, bridged...)
 	return nil

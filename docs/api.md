@@ -327,6 +327,7 @@ type Command struct {
 	Args         []string
 	Env          map[string]string // added to a minimal environment, never inherited
 	Dir          string
+	Stderr       io.Writer         // the server's own logging; nil sends it nowhere
 	AllowedTools []string          // empty allows every tool the server exposes
 	Timeout      time.Duration     // default DefaultCallTimeout; bounds handshake and each call
 }
@@ -358,6 +359,17 @@ everything an operator can fix — a missing `Path`, a name collision, a tool wh
 name breaks the `^[a-zA-Z0-9_-]{1,64}$` both provider APIs enforce — is refused there rather
 than at call time. Names are always namespaced `<server>_<tool>`, so a tool's name does not
 change when a second server is configured.
+
+A server that fails to start says why. The first 8KB it writes to stderr is kept and hung off the
+error `Connect` returns, because that is where a misconfigured server puts the reason — without it
+the operator gets `connection closed: calling "initialize": EOF`, which names the protocol step
+that noticed the silence and nothing that can be acted on. `Stderr` is for the rest of it, over
+the life of a server that started fine; it is not needed to make a failure readable.
+
+`Path` should be absolute. A bare name is resolved by `exec.Command` against **this** process's
+`PATH` when the command is built, and setting `Env["PATH"]` does not change that — `os/exec`
+resolves before it looks at `Env`, so the child's `PATH` is only what the server finds its own
+helpers on.
 
 The environment is **not inherited**: `PATH`, `HOME`, and whatever `Env` names. The process
 environment is where a service keeps its API keys, and an MCP server is somebody else's program

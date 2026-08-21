@@ -204,7 +204,11 @@ set, the TUI, and the gate, in the order they were built.
   what `tools/` already does for the commands it runs, and the argument is stronger here because
   that code is ours and this code is somebody else's. Names are namespaced `<server>_<tool>` and
   refused, never truncated, when they break the `^[a-zA-Z0-9_-]{1,64}$` both provider APIs
-  enforce: a truncated name silently collides with another one.
+  enforce: a truncated name silently collides with another one. A server that fails to start says
+  why: the first 8KB it wrote to stderr is kept and hung off the error, because otherwise the
+  reason goes to `/dev/null` and the operator is left with `connection closed: calling
+  "initialize": EOF` — the protocol step that noticed the silence, not the `FATAL:` line that
+  caused it. `Command.Stderr` takes the rest, for a server that started fine and has more to say.
 
 ### Fixed
 
