@@ -128,3 +128,35 @@ func TestHeadersGoOntoACopyOfTheRequest(t *testing.T) {
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// The transport must not hold a stream open for messages this package has
+// said it ignores. Asserting on the method because the cost is invisible
+// otherwise: an idle connection per server, reconnected on every proxy
+// timeout, carrying notifications that are dropped on arrival.
+func TestNoStandaloneStreamIsHeldOpenForMessagesWeIgnore(t *testing.T) {
+	var mu sync.Mutex
+	methods := map[string]int{}
+
+	server := sdk.NewServer(&sdk.Implementation{Name: "test", Version: "0"}, nil)
+	register(server)
+	handler := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server }, nil)
+	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		methods[r.Method]++
+		mu.Unlock()
+		handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(listener.Close)
+
+	set, err := Connect(t.Context(), Remote{Name: "docs", URL: listener.URL})
+	if err != nil {
+		t.Fatalf("Connect = %v", err)
+	}
+	defer func() { _ = set.Close() }()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if methods[http.MethodGet] != 0 {
+		t.Errorf("the transport opened %d standalone SSE stream(s), want none", methods[http.MethodGet])
+	}
+}
