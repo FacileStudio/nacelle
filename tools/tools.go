@@ -91,6 +91,15 @@ type Config struct {
 }
 
 // Set is the tool set, bound to one directory.
+//
+// Its tools are safe to call from several goroutines at once, which they have
+// to be: a model can ask for two files in one turn and a backend reads them
+// together. os.Root is documented safe that way, and nothing above it
+// remembers anything between calls.
+//
+// Close belongs to the end of the run. It shuts the descriptor every
+// remaining call is reaching through, so it is not something to do while any
+// are still in flight.
 type Set struct {
 	root           *os.Root
 	dir            string

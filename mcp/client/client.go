@@ -60,6 +60,17 @@ import (
 
 // Set is a live connection to every server Connect started, and the tools
 // they expose.
+//
+// The tools are safe to call from several goroutines at once, which is worth
+// stating because this is the one place in nacelle where concurrent runs
+// share something that talks: a session is one pipe to one process, and every
+// tool bridged from it writes down that same pipe. MCP is built for it —
+// every message carries an id, so an answer finds the call it belongs to —
+// and a test here holds twenty callers to it.
+//
+// Close is the exception. It is for the end of the run, and calling it while
+// calls are still in flight tears the pipe out from under them; the host owns
+// the lifetime precisely so there is one obvious place for that to happen.
 type Set struct {
 	sessions []*sdk.ClientSession
 	tools    []nacelle.Tool

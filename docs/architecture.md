@@ -244,6 +244,34 @@ run, so reading one just because it is in the working directory is strictly wors
 project-local `SKILL.md` case, and that one is already gated behind `~/.nacelle/trust.json`. Every
 server this client opens was named on the command line or in the user's own configuration.
 
+## Using one agent from more than one goroutine
+
+An `Agent` is safe to share. It holds configuration, not state, and `Stream` copies the request
+before setting the conversation on it — so two callers cannot tread on each other. A single *run*
+is not shared: the sequence `Stream` returns must be ranged from one goroutine.
+
+That promise was written down long before anything tested it, which is a bad way to hold a
+promise. `concurrent_test.go` now runs fifty callers through one agent and checks each is answered
+with its own question. Removing the copy makes it fail with crossed answers and data races, which
+is what the test is for — the bug it prevents is one caller reading another's reply, and no
+single-threaded test can see it. Fifty rather than two because a race does not reproduce to a
+count: how many callers get somebody else's answer differs every run.
+
+Two contracts fall out of that and are stated where an implementer will meet them. **`Tool.Run`
+may be called from several goroutines at once**, because a model can ask for two tools in one turn
+and a backend runs those together — this happens on a single conversation, before anything shares
+an agent between requests. **`Approve` may be asked concurrently** for the same reason, which is
+why `tui/` serialises its prompts: two questions racing for one terminal is one question nobody
+can read.
+
+Both tool sets are safe to call concurrently and both say so. `tools/` gets it from `os.Root`,
+documented safe that way, plus tools that remember nothing between calls. `mcp/client` is the
+interesting one, because it is the only place concurrent runs share something that *talks*: one
+session is one pipe to one process, and every tool bridged from it writes down that same pipe. MCP
+carries an id on every message so an answer finds its call, and a test holds twenty callers to it.
+`Close` is the exception in both: it belongs to the end of the run, not to a moment when calls are
+still in flight.
+
 ## Prompt caching
 
 The `anthropic` backend sets a cache breakpoint only when a second request will actually share

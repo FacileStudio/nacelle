@@ -33,6 +33,14 @@ type Tool interface {
 	// An error is not fatal: it is reported to the caller and handed back to
 	// the model, which is usually better placed to decide whether the task
 	// can still be finished.
+	//
+	// Run may be called from several goroutines at once, and an
+	// implementation has to be ready for it. A model can ask for two tools
+	// in one turn and a backend runs those together, so this happens on a
+	// single conversation before anything shares an Agent between
+	// requests. A tool that keeps a field between calls needs its own
+	// lock; a tool that only reads what it was built with needs nothing,
+	// which is why every tool in tools/ and mcp/client is the second kind.
 	Run(ctx context.Context, input json.RawMessage) (string, error)
 }
 
@@ -50,6 +58,12 @@ type Tool interface {
 // It is asked with the same context RunTool receives, so cancelling a run
 // (a caller abandoning the stream) unblocks anyone waiting on an answer that
 // is never coming, the same way it already unblocks a tool mid-Run.
+//
+// It may be asked from several goroutines at once, for the reason Tool.Run
+// documents, and a callback that puts a question to a person has to do
+// something about that rather than assume it. tui/ answers it by serialising
+// the prompts: two questions racing for one terminal is one question nobody
+// can read, and neither answer belongs to the call it lands on.
 type Approve func(ctx context.Context, name string, input json.RawMessage) bool
 
 // NewTool builds a tool from a Go function.
