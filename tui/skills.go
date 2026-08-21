@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -89,11 +88,22 @@ func loadSkills(root string, trustNew bool, extraDirs []string) skillsResult {
 // AGENTS.md from. No trust decision applies: this is the user's own
 // machine, and nothing here crossed a boundary the user did not control.
 func globalSkills() []skill {
-	home, err := os.UserHomeDir()
-	if err != nil {
+	dir := globalSkillsDir()
+	if dir == "" {
 		return nil
 	}
-	return skillsIn(filepath.Join(home, ".agents", "skills"))
+	return skillsIn(dir)
+}
+
+// globalSkillsDir is ~/.agents/skills, or "" on a machine with no resolvable
+// home directory. It exists so projectSkillContainers can recognise the one
+// path it must not offer as a project container.
+func globalSkillsDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".agents", "skills")
 }
 
 // projectSkillContainers walks from root to the filesystem root, returning
@@ -107,16 +117,26 @@ func globalSkills() []skill {
 // detecting a git root would be one more thing this package has to get
 // right for a boundary the trust gate makes low-stakes anyway: a directory
 // with nothing to find costs one stat call.
+//
+// ~/.agents/skills is excluded, and has to be. Walking to the filesystem
+// root means passing through $HOME, which is an ancestor of very nearly
+// every root anyone runs this from, so once that directory exists the walk
+// finds it every time. globalSkills has already loaded it, ungated and by
+// design. Offering it here as well would report skills that are loaded as
+// "not trusted, nothing loaded", and would load every one of them a second
+// time on any run that did trust it.
 func projectSkillContainers(root string) []string {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return nil
 	}
 
+	global := globalSkillsDir()
+
 	var containers []string
 	for dir := abs; ; {
 		candidate := filepath.Join(dir, ".agents", "skills")
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() && candidate != global {
 			containers = append(containers, candidate)
 		}
 
@@ -196,51 +216,4 @@ func frontmatter(content string) (string, bool) {
 		return "", false
 	}
 	return rest[:end], true
-}
-
-// renderSkills catalogues every skill for the system prompt: name,
-// description, and where to read the rest. Nothing here is a promise the
-// model will use any of it — this is the progressive-disclosure half, the
-// short summary that is always in context so the model can decide whether
-// the long version is worth a read_file call.
-func renderSkills(skills []skill) string {
-	if len(skills) == 0 {
-		return ""
-	}
-	var body strings.Builder
-	body.WriteString("\n\n## Skills available\n\n")
-	body.WriteString("Each is a directory with more detail in its SKILL.md. Read one with " +
-		"read_file when its description matches what you are doing, then follow it.\n\n")
-	for _, s := range skills {
-		fmt.Fprintf(&body, "- **%s** (%s): %s\n", s.name, s.path, s.description)
-	}
-	return body.String()
-}
-
-// skillNotice tells the person running nacelle when a project has skills
-// sitting unloaded because nobody has trusted them yet. Skills can carry
-// instructions to run arbitrary scripts, unlike the plain instruction text
-// projectContext reads — that is the whole difference, and the reason this
-// gate exists where that one deliberately does not.
-// skillNotice reports two different things a person needs to hear, either
-// of which can be true alone: skills sitting unloaded because nobody
-// trusted them, and a trust decision made this run that failed to persist
-// — which without a word about it would leave someone passing -trust-skills
-// again next time, unable to tell that from it simply not having worked.
-func skillNotice(skipped []string, saveErr error) string {
-	var lines []string
-	if len(skipped) > 0 {
-		suffix := "ies"
-		if len(skipped) == 1 {
-			suffix = "y"
-		}
-		lines = append(lines, fmt.Sprintf("%d project skill director%s found but not trusted, so nothing under %s "+
-			"loaded. Review the contents, then rerun with -trust-skills to load them and remember the decision.",
-			len(skipped), suffix, strings.Join(skipped, ", ")))
-	}
-	if saveErr != nil {
-		lines = append(lines, fmt.Sprintf("trust was granted for this run but could not be saved (%v), "+
-			"so -trust-skills will be needed again next time.", saveErr))
-	}
-	return strings.Join(lines, " ")
 }

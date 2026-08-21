@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -146,6 +145,42 @@ func TestProjectSkillContainersFindsEveryLevel(t *testing.T) {
 	}
 }
 
+// Once ~/.agents/skills exists — which mycelium's `agents` adapter now creates
+// — $HOME is an ancestor of nearly every root anyone runs from, so the walk
+// up reaches the global directory on essentially every run. It must not be
+// offered as a project container: globalSkills already loaded it, ungated.
+//
+// This is written with root *underneath* home on purpose. The other tests in
+// this file put root in a sibling temp directory, which is why none of them
+// could see this: the walk never passed through the home they had set.
+func TestProjectSkillContainersSkipsTheGlobalDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeSkill(t, filepath.Join(home, ".agents", "skills", "shared"),
+		"name: shared\ndescription: a global skill")
+	root := filepath.Join(home, "Code", "project")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	if containers := projectSkillContainers(root); len(containers) != 0 {
+		t.Fatalf("containers = %v, want ~/.agents/skills left out", containers)
+	}
+
+	untrusting := loadSkills(root, false, nil)
+	if untrusting.notice != "" {
+		t.Errorf("notice = %q, want nothing reported as untrusted", untrusting.notice)
+	}
+	if len(untrusting.skills) != 1 {
+		t.Errorf("skills = %+v, want the one global skill", untrusting.skills)
+	}
+
+	trusting := loadSkills(root, true, nil)
+	if len(trusting.skills) != 1 {
+		t.Errorf("skills = %+v, want the global skill once, not once per path that found it", trusting.skills)
+	}
+}
+
 // The whole reason a trust gate exists here and not on plain context files:
 // a project's .agents/skills can carry instructions to run arbitrary
 // scripts, so it does not load until something has decided to trust it.
@@ -185,42 +220,5 @@ func TestLoadSkillsWithTrustNewLoadsAndPersists(t *testing.T) {
 	}
 	if again.notice != "" {
 		t.Errorf("notice = %q, want no notice once the directory is already trusted", again.notice)
-	}
-}
-
-func TestRenderSkillsIsEmptyWithNothingFound(t *testing.T) {
-	if got := renderSkills(nil); got != "" {
-		t.Errorf("rendered = %q, want empty with no skills", got)
-	}
-}
-
-func TestRenderSkillsListsNameDescriptionAndPath(t *testing.T) {
-	got := renderSkills([]skill{{name: "pdf-tools", description: "Extracts text.", path: "/x/SKILL.md"}})
-
-	for _, want := range []string{"pdf-tools", "Extracts text.", "/x/SKILL.md"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("rendered = %q, want it to mention %q", got, want)
-		}
-	}
-}
-
-// Both halves of skillNotice are independent facts and either can be true
-// alone — a save failure is not the same problem as an unreviewed
-// directory, and conflating them into one condition would hide whichever
-// one did not happen to be checked first.
-func TestSkillNoticeReportsASaveFailureSeparatelyFromSkippedSkills(t *testing.T) {
-	notice := skillNotice(nil, errors.New("disk full"))
-
-	if !strings.Contains(notice, "disk full") {
-		t.Errorf("notice = %q, want the save error mentioned", notice)
-	}
-	if strings.Contains(notice, "not trusted") {
-		t.Errorf("notice = %q, want no skipped-skills text when nothing was skipped", notice)
-	}
-}
-
-func TestSkillNoticeIsEmptyWithNothingToReport(t *testing.T) {
-	if got := skillNotice(nil, nil); got != "" {
-		t.Errorf("notice = %q, want empty with nothing skipped and nothing failed to save", got)
 	}
 }

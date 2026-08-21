@@ -10,7 +10,7 @@ different bug in the tool-result handling. `nacelle` is the single version.
 
 > **Status: it has its first consumer.** Both backends, `tools/`, retry, prompt caching and
 > per-turn usage are implemented and tested, and `tui/` runs on them. `sandbox/` is not
-> written. Untagged — the API moves until Kori has used it too.
+> written. Untagged, so the API still moves.
 
 ## Who it is for
 
@@ -18,7 +18,7 @@ Three consumers, which is the reason this is a library and not a package inside 
 
 | Consumer | Shape | What it needs |
 |---|---|---|
-| **Kori** (Perception) | headless, inside a Go API | core loop, MCP tools, streaming that maps onto SSE, transcripts |
+| **A headless Go service** | embedded in an API | core loop, MCP tools, streaming that maps onto SSE, transcripts |
 | **Atelier** | agents in isolated container boxes, best-of-N | swappable models, per-run cost and token accounting, a sandbox it can spin and reap |
 | **A `pi` replacement** | terminal coding agent | local read/write/edit/bash tools, a TUI, config and profiles |
 
@@ -61,7 +61,7 @@ Release history: [`CHANGELOG.md`](CHANGELOG.md).
 ```go
 agent, err := nacelle.New(nacelle.Config{
     Backend: anthropic.New(anthropic.Config{}),
-    System:  "You are Kori…",
+    System:  "You are a helpful assistant…",
     Effort:  nacelle.EffortHigh,
     Tools:   []nacelle.Tool{searchEvents},
     MCP:     []mcp.Server{{Name: "perception", URL: "https://perception.facile.studio/api/mcp"}},
@@ -354,7 +354,7 @@ search when it is installed. See [configuration.md](docs/configuration.md) for a
 this suite runs today — Atelier already uses it as a harness class. The obvious shortcut is to
 fork it or port it to Go. **We are not doing either.**
 
-Forking keeps us on Node, and Kori has to embed inside a Go API. Porting means months spent
+Forking keeps us on Node, and this has to embed inside a Go API. Porting means months spent
 rebuilding provider plumbing and a streaming loop that `anthropic-sdk-go`'s tool runner already
 gives away — and it lands us with somebody else's tool surface.
 
@@ -375,8 +375,9 @@ The ordered version, with exact files and exit criteria, is in [`ROADMAP.md`](RO
 
 
 1. ~~The gate, the core loop, `mcp/`, `tools/`, and both backends.~~ Done.
-2. Consume it from Kori. That is the first real test of the API, and the point at which it
-   gets tagged `v0.1.0`. Expect the API to move before then.
+2. Consume it from a second, non-terminal consumer. A TUI exercises the event stream with
+   somebody watching; it cannot find the problems a service has — concurrency, lifetimes, what
+   hour six looks like. That is the first real test of the API.
 3. ~~`tui/`, at floor scope.~~ Done, and it is already reporting API problems.
 4. ~~Widen `Message` so a conversation can carry tool calls.~~ Done.
 5. `sandbox/` for Atelier — driven by what they actually turn out to need, not by this list.

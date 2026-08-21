@@ -102,6 +102,6 @@ Semver tags, never branch tracking. While on `v0`, a breaking change bumps the *
 Every change is recorded in [CHANGELOG.md](../CHANGELOG.md) in Keep a Changelog format, with
 the reason it exists. Add an `Unreleased` entry as part of the change, not after.
 
-No tag exists yet. `v0.1.0` is gated on Kori (Perception) consuming the SDK for real — the
-first genuine test of the API outside this repo — and Kori is itself blocked on Perception's
-own MCP server. See [`ROADMAP.md`](../ROADMAP.md) at the repo root.
+No tag exists yet, and nothing outside this repo decides when one does. Staying untagged has
+a running cost: every consumer pins a pseudo-version, and `tui/go.mod`'s has to be bumped by
+hand each time the core moves. See [`ROADMAP.md`](../ROADMAP.md) at the repo root.
