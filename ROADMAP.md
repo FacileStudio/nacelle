@@ -51,8 +51,9 @@ ctrl+c rescues a forgotten prompt. Off by default (`-approve-tools`): by default
 with a fuzzy-matching dropdown while typing `/` rather than ghost text — plus `-skill-dir`, which
 loads another tool's skills instead of duplicating them.
 
-No tag; `v0.1.0` stays gated on Kori, which is itself blocked on Perception's MCP server, a
-Perception problem. **Do not sequence nacelle work around Kori.**
+No tag yet. Tagging is a decision for whoever owns this repo to take, not a thing to be
+blocked on somebody else's roadmap; the cost of staying untagged is real and paid every time
+`tui/go.mod`'s pseudo-version has to be bumped by hand.
 
 What is not built, flagged rather than silently dropped. None is ordered, and none has earned a
 `###` entry yet — each needs its own scoping session first. Two of them were built on 2026-08-21
@@ -299,7 +300,7 @@ helps but does not settle it.
 
 - **A provider interface beyond the two backends.** Settled; revisit when a third is real.
 - **`sandbox/`.** Atelier drives it, and Atelier has not asked.
-- **Tagging `v0.1.0`.** Gated on Kori.
+- ~~**Tagging `v0.1.0`.**~~ No longer parked on another repo — see "Where this is" above.
 - ~~**Per-call tool approval (allow / allow-for-session / deny) in the TUI.**~~ Built, on
   request. The design decision it was waiting on turned out to have an answer: a consumer-side
   pause does have to block inside the vendor SDK's runner (`sdkTool.Execute`,
