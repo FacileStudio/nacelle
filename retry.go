@@ -26,6 +26,14 @@ type RetryOptions struct {
 	Base time.Duration
 
 	// Max caps the delay however many attempts have failed.
+	//
+	// It caps this wrapper's own delay and nothing else, so it is not a
+	// bound on how long a run can take. The SDKs sleep on Retry-After
+	// before a failure is ever handed up as transient, and those sleeps
+	// happen inside each attempt this one then repeats: three attempts over
+	// three HTTP retries is nine requests and six sleeps the wrapper never
+	// sees. Under Retry-After: 60 that is roughly six minutes, whatever
+	// this field says. A context deadline is the only real bound.
 	Max time.Duration
 
 	// Logger records the attempts nobody else can see. Defaults to
