@@ -263,14 +263,35 @@ type RetryOptions struct {
 	Attempts int           // default DefaultRetryAttempts; 1 disables retrying
 	Base     time.Duration // default DefaultRetryBase; doubles per attempt
 	Max      time.Duration // default DefaultRetryMax
+	Budget   time.Duration // no default; zero leaves a run unbounded
 	Logger   *slog.Logger  // default slog.Default()
 }
 
 func Retry(backend Backend, options RetryOptions) Backend
+
+var ErrRetryBudget = errors.New("nacelle: the retry budget ran out")
 ```
 
-Every zero field in `RetryOptions` takes its default, so the zero value is the recommended
-policy rather than no policy.
+Every zero field but `Budget` takes its default, so the zero value is the recommended policy
+rather than no policy.
+
+`Budget` is the only bound on how long a run can actually take. `Max` caps this wrapper's own
+backoff and nothing else: both SDKs sleep on `Retry-After` *inside* an attempt, before the
+failure is ever handed up as transient, so three attempts over three HTTP retries is nine
+requests and six sleeps nacelle never sees — roughly six minutes under `Retry-After: 60`.
+Those sleeps are a `select` on `ctx.Done()`, so a deadline derived once and passed down is the
+only thing that reaches them, and that is exactly what `Budget` is.
+
+Being a deadline, it bounds the whole run and not only the retrying: a legitimate twenty-minute
+answer under `Budget: 5 * time.Minute` is cut off at five, on the first attempt, having failed
+at nothing. Size it against your slowest good run, the way you would size an Envoy
+`rq-timeout`, not against your retry tolerance. That is why it has no default.
+
+A run that spends its budget ends with `ErrRetryBudget`, which is distinguishable from the
+caller's own cancellation on purpose: both read as `context.DeadlineExceeded`, but one is this
+policy firing and the other is theirs. The last provider failure and the deadline are both
+wrapped, so `errors.Is` finds whichever one is asked for, and `Retryable` is false — a run that
+has spent a whole budget is the last run anything should start again.
 
 ```go
 func Transient(err error) error // marks err as worth retrying, keeps Unwrap intact
@@ -290,6 +311,70 @@ type Server struct {
 
 func Validate(servers []Server) error
 ```
+
+`Server` is a **remote** server, dialled by the Claude API on its own side of the request. It
+needs no client here, which is why this package implements none of the protocol, and it is
+Anthropic-only — `openrouter` refuses a config carrying one under the capability rule.
+
+### mcp/client (sub-package `github.com/FacileStudio/nacelle/mcp/client`)
+
+```go
+const DefaultCallTimeout = 2 * time.Minute
+
+type Command struct {
+	Name         string            // required; namespaces this server's tools
+	Path         string            // required; the executable
+	Args         []string
+	Env          map[string]string // added to a minimal environment, never inherited
+	Dir          string
+	Stderr       io.Writer         // the server's own logging; nil sends it nowhere
+	AllowedTools []string          // empty allows every tool the server exposes
+	Timeout      time.Duration     // default DefaultCallTimeout; bounds handshake and each call
+}
+
+type Set struct{ /* ... */ }
+
+func Connect(ctx context.Context, commands ...Command) (*Set, error)
+func (s *Set) Tools() []nacelle.Tool
+func (s *Set) Close() error
+```
+
+The **local** half: an MCP server run as a subprocess over stdio, its tools handed back as
+ordinary `nacelle.Tool` values. That bridge is the whole design — a tool from here passes
+through `Config.Approve`, emits the same `KindToolCall`/`KindToolResult` events, and works on
+**both** backends, including the one that can never reach a remote MCP server.
+
+```go
+set, err := client.Connect(ctx, client.Command{Name: "git", Path: "mcp-server-git"})
+if err != nil {
+	return err
+}
+defer set.Close()
+cfg.Tools = append(cfg.Tools, set.Tools()...)
+```
+
+The host owns the lifetime, deliberately: it is unambiguous who calls `Close`. `Connect` fails
+loudly and reaps anything it already started rather than returning a set with a hole in it, and
+everything an operator can fix — a missing `Path`, a name collision, a tool whose namespaced
+name breaks the `^[a-zA-Z0-9_-]{1,64}$` both provider APIs enforce — is refused there rather
+than at call time. Names are always namespaced `<server>_<tool>`, so a tool's name does not
+change when a second server is configured.
+
+A server that fails to start says why. The first 8KB it writes to stderr is kept and hung off the
+error `Connect` returns, because that is where a misconfigured server puts the reason — without it
+the operator gets `connection closed: calling "initialize": EOF`, which names the protocol step
+that noticed the silence and nothing that can be acted on. `Stderr` is for the rest of it, over
+the life of a server that started fine; it is not needed to make a failure readable.
+
+`Path` should be absolute. A bare name is resolved by `exec.Command` against **this** process's
+`PATH` when the command is built, and setting `Env["PATH"]` does not change that — `os/exec`
+resolves before it looks at `Env`, so the child's `PATH` is only what the server finds its own
+helpers on.
+
+The environment is **not inherited**: `PATH`, `HOME`, and whatever `Env` names. The process
+environment is where a service keeps its API keys, and an MCP server is somebody else's program
+about to be handed model-chosen arguments. A credential the server needs is named in `Env`,
+where the server is configured, rather than reaching it invisibly.
 
 ## `anthropic`
 
