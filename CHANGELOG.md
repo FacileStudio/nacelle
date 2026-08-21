@@ -180,4 +180,26 @@ set, the TUI, and the gate, in the order they were built.
   dismisses. `tui/model.go`'s own `layout()` reserves the dropdown's height out of the
   transcript's, recomputed on every filter change, not only on a real terminal resize.
 
+### Fixed
+
+- **The terminal client's frame no longer ghosts when it shrinks.** Closing the `/` dropdown
+  left its rows painted with a stale status line above them, and redrew the frame eight rows
+  below where it belonged; deleting an `alt+enter` line walked the frame down the pane the
+  same way. Neither was this client's doing. `ultraviolet` moved `curbuf.Resize` ahead of the
+  clear pass in `Render`, so `move()` clamps its remembered cursor row against the frame
+  arriving rather than the one on screen — harmless in fullscreen, where the next move can be
+  an absolute `CUP`, and fatal inline, where that row is the only record of where the cursor
+  physically is. Pinned to `v0.0.0-20260703014108-f5a850f9c2b7`, the commit Bubble Tea v2.0.9
+  requires, and held there by a test. The pin costs `lipgloss` v2.0.5 and a combining-mark
+  fix: on this commit an ASCII base followed by combining accents renders without them.
+  Precomposed characters are unaffected.
+
+### Changed
+
+- **`RetryOptions.Max` now says what it does not bound.** It caps this wrapper's own delay and
+  nothing else. Both SDKs default to two HTTP retries and sleep on `Retry-After` before a
+  failure is handed up as transient, inside each attempt `Retry` then repeats — nine requests
+  and six unseen sleeps, roughly six minutes under `Retry-After: 60` against a documented
+  eight seconds. A context deadline is the only real bound, and nothing said so.
+
 [Unreleased]: https://github.com/FacileStudio/nacelle/commits/main
