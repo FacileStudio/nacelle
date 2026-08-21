@@ -39,7 +39,14 @@ import (
 // a line in ~/.nacelle.yml written once and forgotten. Saying "bash off"
 // where the model's own capabilities are listed is the shortest path from
 // that answer back to the switch that causes it.
-func banner(backend nacelle.Backend, config Config, found loaded) string {
+//
+// MCP earns its words only when a server was configured, for the reason
+// search does: a launch with none is the ordinary launch, nothing is offered,
+// and there is no symptom to explain. When there is one, both counts are named
+// rather than only the servers — a server that starts and offers nothing is
+// the one failure this client cannot otherwise show, since it is an error
+// nowhere and its only trace is a model that never reaches for the tool.
+func banner(backend nacelle.Backend, config Config, found loaded, mcp connected) string {
 	model := config.Model
 	if model == "" {
 		model = anthropic.DefaultModel
@@ -52,6 +59,9 @@ func banner(backend nacelle.Backend, config Config, found loaded) string {
 	line := fmt.Sprintf("%s · %s\n%s · %s · %s · %s", backend.Name(), model, root,
 		countedNoun(len(found.skills), "skill"), countedNoun(found.contextFiles, "context file"), bash)
 
+	if mcp.servers > 0 {
+		line += " · " + countedNoun(mcp.servers, "MCP server") + ", " + countedNoun(mcp.tools, "tool")
+	}
 	if *config.Search != "" {
 		line += " · search on"
 	}
