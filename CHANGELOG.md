@@ -257,6 +257,18 @@ set, the TUI, and the gate, in the order they were built.
   status line offers `ctrl+c`/`ctrl+\` as the way out of a run that will not stop, whichever
   key asked it to.
 
+- **A concurrency contract that is tested rather than asserted.** `Agent` already claimed to be
+  safe to share between goroutines and nothing checked it, which is a bad way to hold a promise —
+  the bug it rules out is one caller being answered with another's conversation, and no
+  single-threaded test can see that. Fifty callers now run through one agent and each is checked
+  against its own question; with `Stream`'s copy of the request removed, it fails with crossed
+  answers and data races. The same test exists for both tool sets, including twenty callers
+  through one MCP session — the only place in nacelle where concurrent runs share something that
+  talks. `Tool.Run` and `Approve` now say they may be called from several goroutines at once,
+  which they always could: a model can ask for two tools in one turn and a backend runs those
+  together, so it happens on a single conversation before anything shares an agent between
+  requests.
+
 ### Fixed
 
 - **Nothing the client has said waits on what it is about to do.** `Update` sequenced the
