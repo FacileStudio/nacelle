@@ -26,6 +26,7 @@ architecture:
     openrouter: [github.com/FacileStudio/nacelle/anthropic]
     tools: [github.com/anthropics/anthropic-sdk-go, github.com/openai/openai-go/v3]
     mcp: [github.com/anthropics/anthropic-sdk-go, github.com/openai/openai-go/v3]
+    mcp/client: [github.com/anthropics/anthropic-sdk-go, github.com/openai/openai-go/v3]
     tui: [github.com/anthropics/anthropic-sdk-go, github.com/openai/openai-go/v3]
 
 # info, not error. Every style rule filet has is info severity, so failing on
