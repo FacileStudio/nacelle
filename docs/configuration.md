@@ -71,10 +71,10 @@ could tell apart.
 
 | Layer | Source | Notes |
 |---|---|---|
-| Flags | `-backend`, `-model`, `-effort`, `-root`, `-system`, `-bash`, `-thinking`, `-jardin`, `-project-context`, `-skills`, `-trust-skills`, `-skill-dir`, `-approve-tools`, `-max-iterations` | Only flags actually **typed** are collected, via `flag.Visit` — Go's `flag` package cannot otherwise tell a flag left alone from one passed its own default value. `-skill-dir` is repeatable (`-skill-dir a -skill-dir b`); every other flag keeps only its last occurrence |
+| Flags | `-backend`, `-model`, `-effort`, `-root`, `-system`, `-bash`, `-thinking`, `-jardin`, `-project-context`, `-skills`, `-trust-skills`, `-skill-dir`, `-mcp`, `-approve-tools`, `-max-iterations` | Only flags actually **typed** are collected, via `flag.Visit` — Go's `flag` package cannot otherwise tell a flag left alone from one passed its own default value. `-skill-dir` and `-mcp` are repeatable (`-mcp a.json -mcp b.json`); every other flag keeps only its last occurrence |
 | Environment | `NACELLE_BACKEND`, `NACELLE_MODEL`, `NACELLE_EFFORT`, `NACELLE_ROOT`, `NACELLE_SYSTEM`, `NACELLE_BASH`, `NACELLE_THINKING`, `NACELLE_JARDIN`, `NACELLE_PROJECT_CONTEXT`, `NACELLE_SKILLS`, `NACELLE_TRUST_SKILLS`, `NACELLE_SKILL_DIRS`, `NACELLE_APPROVE_TOOLS`, `NACELLE_MAX_ITERATIONS`, `NACELLE_SEARCH`, `NACELLE_FETCH` | A misspelt boolean (`NACELLE_BASH=yez`) is treated as unmentioned, not as `false`, and falls through to the layer below. `NACELLE_SKILL_DIRS` is colon-separated, the same convention `PATH` itself uses for a list of directories |
 | File | `~/.nacelle.yml` | Preferences only, **no credentials** — those already have two homes: the environment, and the Anthropic SDK's own profile. `KnownFields(true)`: an unrecognised key (`max_iteration:`, one letter short) is refused rather than silently ignored |
-| Defaults | — | `backend: anthropic`, `root: .`, `bash: false`, `thinking: false`, `jardin: true`, `project_context: true`, `skills: true`, `trust_skills: false`, `skill_dirs: []`, `approve_tools: false`, `max_iterations: 40`, `search: ""` (no web search), `fetch: true` |
+| Defaults | — | `backend: anthropic`, `root: .`, `bash: false`, `thinking: false`, `jardin: true`, `project_context: true`, `skills: true`, `trust_skills: false`, `skill_dirs: []`, `mcp: []`, `approve_tools: false`, `max_iterations: 40`, `search: ""` (no web search), `fetch: true` |
 
 `jardin`, `project_context` and `skills` default **on**, unlike `bash`: each fails soft to
 nothing when there is nothing to find — no `jardin` on `PATH`, no `AGENTS.md`/`CLAUDE.md`
@@ -103,6 +103,8 @@ skills: true
 trust_skills: false
 skill_dirs:
   - ~/.claude/skills
+mcp:
+  - ~/.claude/.mcp.json
 approve_tools: false
 max_iterations: 40
 search: https://searx.example
@@ -162,6 +164,32 @@ model reads the rest with `read_file` once it decides a skill applies. `-trust-s
 every project-local `.agents/skills/` found on that run and remembers the decision in
 `~/.nacelle/trust.json`, keyed by canonical directory — run it once per project, not on every
 launch.
+
+**MCP servers** (`-mcp`, `tui/mcp.go`). Each `-mcp` names a file in the `mcpServers` format —
+`.mcp.json` and its siblings — whose servers are started at launch, their tools handed to the
+model like any other. It reads the file other clients already write, so pointing at
+`~/.claude/.mcp.json` works without copying anything, which is the same problem `-skill-dir`
+solves for skills. Both stdio (`command`) and HTTP (`"type": "http"`) servers work, on **either
+backend**: the tools are bridged to `nacelle.Tool`, so `-approve-tools` gates them like every
+other tool and `-backend openrouter` gets them too. `${VAR}` and `${VAR:-default}` expand, so a
+token stays in the environment rather than in the file.
+
+The flag is repeatable and `mcp:` in `~/.nacelle.yml` **accumulates** with it rather than being
+replaced — the one list here that does. `client.Load` merges files by server name with the later
+one winning, so a personal list plus a project's layer the way every client in this ecosystem
+layers its own scopes. Replacing would mean naming one project server silently switching off the
+nine already configured.
+
+A server that will not start **ends the run**, which is the opposite of how skills and project
+context fail. Those are discovered, so finding nothing is indistinguishable from there being
+nothing to find; this was asked for by name, and a tool that is quietly missing reads as a model
+refusing to work rather than as a server that is down.
+
+Nothing is discovered. A `.mcp.json` sitting in the working directory is **not** read, because it
+names executables to run — strictly worse than the project-local `.agents/skills/` this client
+already gates behind `~/.nacelle/trust.json`, since a skill is text the model may decline to act
+on and this is a subprocess started before the model is asked anything. Every server nacelle
+opens was named on the command line or in your own `~/.nacelle.yml`.
 
 The spec defines the `SKILL.md` file, not where it has to live on disk — every tool picks its
 own directory (Claude Code reads `~/.claude/skills/`, pi reads `~/.agents/skills/` and its own

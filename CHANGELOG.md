@@ -234,6 +234,18 @@ set, the TUI, and the gate, in the order they were built.
   file. Keys *beside* `mcpServers` are ignored, since these files are shared with clients that
   add their own. `${VAR}` and `${VAR:-default}` expand in `command`, `args`, `env`, `url` and
   `headers`; only the braced spelling is a reference, so a literal `$` in a password survives.
+- **`-mcp` in `tui/`**, repeatable, naming a file in that same format — so the terminal client
+  can finally reach the servers the library has been able to talk to. `mcp:` in `~/.nacelle.yml`
+  **accumulates** with the flag rather than being replaced, the one list here that does: `Load`
+  merges by server name with the later file winning, so a personal list and a project's layer
+  the way every client in this ecosystem layers its scopes, where replacing would mean naming
+  one project server silently switching off the nine already configured. The banner says how
+  many servers connected and how many tools they brought, and says nothing at all when none are
+  configured. A server that will not start ends the run — the opposite of how skills and project
+  context fail, because those are discovered and this one was asked for by name. Nothing is
+  discovered: a `.mcp.json` in the working directory is not read, because it names executables
+  to run, which is strictly worse than the project-local skills already gated behind
+  `~/.nacelle/trust.json`.
 
 - **`esc` stops a run, and never does anything else.** `ctrl+c` already cancelled one, but
   it is also the key that quits an idle client, so the press that abandons an answer was a
