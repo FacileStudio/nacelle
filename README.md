@@ -140,6 +140,13 @@ backend := nacelle.Retry(openrouter.New(...), nacelle.RetryOptions{})
 The zero `RetryOptions` is the recommended policy, not the absence of one: three
 attempts, 500ms doubling to a 8s ceiling, with jitter. `Attempts: 1` turns it off.
 
+**That ceiling is not a time budget.** It caps this wrapper's own delay, and the
+SDKs sleep on `Retry-After` before a failure is ever handed up as transient — inside
+each attempt this then repeats. Three attempts over three HTTP retries is nine
+requests and six sleeps nacelle never sees, which under `Retry-After: 60` is roughly
+six minutes. **Pass a `context.WithTimeout` if a run has a deadline**; nothing in
+`RetryOptions` will give you one.
+
 **This is not a backoff engine, on purpose.** Both SDKs already retry at the HTTP
 level — connection failures, 408, 409, 429, 5xx, honouring `Retry-After-Ms` and
 `Retry-After` — and that covers establishing a stream, streaming requests included.
