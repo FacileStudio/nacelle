@@ -182,6 +182,27 @@ set, the TUI, and the gate, in the order they were built.
 
 ### Fixed
 
+- **A committed answer no longer leaves a second, unrendered copy of itself in the
+  scrollback.** Scrolling up after an answer showed it twice: once as raw markdown with a
+  duplicate prompt beneath it, and once rendered. The duplicate was the live frame itself.
+  `tea.Println` makes room by scrolling the screen up by as many rows as it is about to
+  write, so once a batch is taller than the rows free above the frame, the frame's own rows
+  go into the scrollback and the renderer — which draws relative to where the frame ended
+  up — never reaches them again. `layout` now holds half the window back so the frame can
+  never stand on every row, and `tui/headroom.go` cuts a batch into pieces that fit the rows
+  the frame actually left free, counting a wrapped line as the rows it wraps onto. That
+  figure is taken from the frame `View` drew rather than worked out from what the frame is
+  allowed to be: emptying a tall prompt hands its rows back before the screen has been
+  repainted, and a budget that believes the new layout overruns the old frame by exactly the
+  rows it gave back. Measured at a 6-row frame in a 20-row pane: 14 printed rows is clean and
+  15 strands exactly one.
+- **`/clear` no longer leaves the prompt half-drawn.** Its window of blank lines is exactly
+  the size that scrolls the frame away, and because the frame after a clear is identical to
+  the frame before one, `flush` saw no change and never repainted the rows the screen had
+  lost — the prompt's `> ` and the status line's `ready · ` simply stayed blank until a
+  resize. It goes through the same cutting as every other batch now, and a test that parses
+  `tui/` fails on a `tea.Println` outside the one function that budgets for it.
+
 - **The terminal client's frame no longer ghosts when it shrinks.** Closing the `/` dropdown
   left its rows painted with a stale status line above them, and redrew the frame eight rows
   below where it belonged; deleting an `alt+enter` line walked the frame down the pane the

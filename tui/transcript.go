@@ -58,13 +58,19 @@ func (m *model) say(who speaker, text string) {
 // promise about the order its commands run in, and a transcript delivered out
 // of order is not a transcript. Joining them first makes the whole batch one
 // message, which insertAbove writes in one go.
+//
+// One message, but not necessarily one Println — see printed, which cuts a
+// batch taller than the window has room for into pieces that still arrive in
+// order. Joining here and splitting there is deliberate: the split is a
+// property of the screen, and nothing about what was said should have to know
+// how tall the terminal is.
 func (m *model) prints() tea.Cmd {
 	if len(m.unprinted) == 0 {
 		return nil
 	}
 	said := strings.Join(m.unprinted, "\n\n")
 	m.unprinted = nil
-	return tea.Println(said)
+	return m.printed(said)
 }
 
 // paint is how one line looks.

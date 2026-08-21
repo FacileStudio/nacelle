@@ -104,13 +104,18 @@ func (m *model) clear() tea.Cmd {
 	m.spent = nacelle.Usage{}
 	echoed := m.prints()
 	m.say(fromClient, m.banner+" · cleared")
-	return tea.Sequence(echoed, tea.Println(scrolledAway(m.windowHeight)))
+	return tea.Sequence(echoed, m.printed(scrolledAway(m.windowHeight)))
 }
 
 // scrolledAway is the run of blank lines that pushes a whole window of
 // finished session up out of sight. One line per row the terminal has, which
 // overshoots by however tall the live frame is — that overshoot is the gap in
 // the scrollback that reads as where one session ended and the next began.
+//
+// It goes out through printed for the same reason every other batch does. A
+// window's worth of blank lines is exactly the size that scrolls the frame off
+// the top, and /clear leaving a copy of the old prompt in the scrollback is
+// the one artefact it exists to avoid.
 func scrolledAway(height int) string {
 	return strings.Repeat("\n", max(height, 1))
 }

@@ -37,6 +37,12 @@ import (
 // belonging to the sentence above. One empty row is what separates the client
 // talking about the run from the run's own output.
 //
+// The one thing recorded on the way out is how tall the frame came to be.
+// Nothing else knows: layout works out what the frame is allowed to be, which
+// is a different number the moment the live region is not full, and it runs
+// before its own frame reaches the screen. Printing needs the frame that is
+// actually up there, so this is where it is taken — see screen and printed.
+//
 // The cursor is positioned by hand because the prompt renders inside a larger
 // frame: the component reports where its cursor sits within itself, and only
 // the caller knows how many rows are above it. above is exactly those rows —
@@ -49,6 +55,7 @@ func (m *model) View() tea.View {
 		above = append(above, menu)
 	}
 	body := strings.Join(append(above, m.prompt.View()), "\n")
+	m.frameRows = lipgloss.Height(body)
 
 	view := tea.NewView(body)
 	if position := m.prompt.Cursor(); position != nil {
