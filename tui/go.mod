@@ -7,7 +7,7 @@ require (
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/glamour/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.5
-	github.com/FacileStudio/nacelle v0.0.0-20260821171209-a306fac0a5cf
+	github.com/FacileStudio/nacelle v0.0.0-20260821171914-c3838ac42ede
 	github.com/charmbracelet/x/ansi v0.11.8
 	go.yaml.in/yaml/v4 v4.0.0-rc.2
 )
