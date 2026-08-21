@@ -66,8 +66,18 @@ the argument against redoing them differently.
   no MCP tools whatever the transport. That is also this repo's answer to "how does a user add a
   tool without forking the binary", the question that raised the item on 2026-08-20 while
   comparing against Crush and pi. A sub-package because the root imports `mcp`, so `mcp` cannot
-  import back. Still open, and now the largest MCP gap: the **Streamable HTTP transport**, which
-  would give `openrouter` remote servers too. `mcp/client` is shaped so it slots in.
+  import back.
+- ~~**The Streamable HTTP transport in `mcp/client`.**~~ Built 2026-08-21 as `client.Remote`, the
+  round after the stdio one, and it closes the last gap in this area: a hosted MCP server is now
+  reachable from `openrouter` too, where before it needed Anthropic's own connector. `Connect`
+  took a sealed `Server` union to hold both without a mode field. SSE and `ws` are **deliberately
+  absent** — MCP replaced SSE with Streamable HTTP, so they are refused by name with the key to
+  change rather than half-supported. `client.Load` reads the ecosystem's `mcpServers` format for
+  the reason `-skill-dir` exists: a person adopting this has those files already.
+  What is left here is not a gap so much as a decision nobody has needed yet: **discovering** a
+  project-local `.mcp.json`. It stays out because a config file naming executables to run is
+  strictly worse than the project-local `SKILL.md` already gated behind `~/.nacelle/trust.json`,
+  so doing it means designing that trust gate rather than reusing it by accident.
 - **Server-side web search, as a paid alternative to `tools.WebSearch`.** Not ordered, and not a
   gap — `tools.WebSearch` already covers this need for free against an instance you run. This is
   the option for someone who would rather pay than host a service. Both backends have it

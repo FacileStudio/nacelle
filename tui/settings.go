@@ -36,3 +36,36 @@ type Discovery struct {
 	Skills         *bool `yaml:"skills"`
 	TrustSkills    *bool `yaml:"trust_skills"`
 }
+
+// Sources is every list of paths this client only ever reads because somebody
+// named it: another tool's skills folder, another tool's MCP server list.
+//
+// It is Discovery's other half rather than a second copy of it. Discovery is
+// switches for what nacelle goes looking for on its own; nothing in here is
+// found, so nothing in here needs a switch — leaving the list empty is already
+// off. It is a type of its own for the mechanical reason Config's own doc
+// comment gives, and for the readable one that the two halves answer different
+// questions about a launch.
+type Sources struct {
+	// SkillDirs are directories of skills read alongside ~/.agents/skills.
+	SkillDirs []string `yaml:"skill_dirs"`
+
+	// MCP are files in the mcpServers format — .mcp.json and the rest of
+	// its siblings — whose servers are started at launch so the model can
+	// call their tools like any other.
+	//
+	// A list rather than one path, and read in the order given, because
+	// client.Load merges the files it is handed by server name with the
+	// later one winning. A personal list in ~/.nacelle.yml and a project's
+	// named with -mcp therefore layer the way every client in this
+	// ecosystem layers its own scopes, instead of one silently erasing the
+	// other.
+	//
+	// That is also why this is the one list Config.merge accumulates
+	// instead of replacing, where SkillDirs alongside it is replaced. A
+	// second -skill-dir is another place to look and the flag can sensibly
+	// stand in for the file's list; a second -mcp is another server, and
+	// having it silently switch off the nine already configured would be
+	// the opposite of what typing it means.
+	MCP []string `yaml:"mcp"`
+}

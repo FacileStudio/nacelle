@@ -209,6 +209,43 @@ set, the TUI, and the gate, in the order they were built.
   reason goes to `/dev/null` and the operator is left with `connection closed: calling
   "initialize": EOF` — the protocol step that noticed the silence, not the `FATAL:` line that
   caused it. `Command.Stderr` takes the rest, for a server that started fine and has more to say.
+- **`client.Remote`**, the Streamable HTTP transport, which closes the last MCP gap: a hosted
+  server was reachable only through Anthropic's own connector, and so not at all from
+  `openrouter`. Dialled from here its tools are ordinary local tools, which means the approval
+  gate sees them and the tool set does not change shape when someone passes `-backend`. The cost
+  is your egress, once per call, so `mcp.Server` stays the better choice for a service pinned to
+  Anthropic that would rather not carry the traffic. `Headers` is where a bearer token goes, added
+  by a `RoundTripper` rather than once at handshake time, because the transport reconnects a
+  dropped stream on its own and a header set once would go missing on exactly the retry that
+  needed it. SSE and `ws` are refused by name: MCP replaced SSE with Streamable HTTP, and the
+  error says which key to change instead of failing at a session that never establishes.
+  `Connect` now takes a sealed `Server` union rather than a `Command`, so a transport is a type
+  instead of a mode field two thirds of whose neighbours are wrong for whichever one you picked.
+  `Command` still satisfies it, so existing calls compile unchanged.
+- **`client.Load`**, which reads the `mcpServers` format Claude Code, Claude Desktop and Cursor
+  already write, so an existing `.mcp.json` works as it stands. Reading somebody else's format
+  rather than inventing one is the same call `-skill-dir` makes for skills, from the same
+  direction: the alternative is a second copy of one list in a nacelle-shaped syntax. Later paths
+  override earlier ones by name, matching those clients' own scope precedence. Two deliberate
+  departures: keys **inside** a server entry are strict, because `comand` otherwise starts a
+  server without the arguments it needed and surfaces as a tool that misbehaves rather than a
+  file that is wrong; and an unset `${VAR}` with no default is an error rather than an empty
+  string, because `Authorization: Bearer ` buys a 401 that names neither the variable nor the
+  file. Keys *beside* `mcpServers` are ignored, since these files are shared with clients that
+  add their own. `${VAR}` and `${VAR:-default}` expand in `command`, `args`, `env`, `url` and
+  `headers`; only the braced spelling is a reference, so a literal `$` in a password survives.
+- **`-mcp` in `tui/`**, repeatable, naming a file in that same format — so the terminal client
+  can finally reach the servers the library has been able to talk to. `mcp:` in `~/.nacelle.yml`
+  **accumulates** with the flag rather than being replaced, the one list here that does: `Load`
+  merges by server name with the later file winning, so a personal list and a project's layer
+  the way every client in this ecosystem layers its scopes, where replacing would mean naming
+  one project server silently switching off the nine already configured. The banner says how
+  many servers connected and how many tools they brought, and says nothing at all when none are
+  configured. A server that will not start ends the run — the opposite of how skills and project
+  context fail, because those are discovered and this one was asked for by name. Nothing is
+  discovered: a `.mcp.json` in the working directory is not read, because it names executables
+  to run, which is strictly worse than the project-local skills already gated behind
+  `~/.nacelle/trust.json`.
 
 - **`esc` stops a run, and never does anything else.** `ctrl+c` already cancelled one, but
   it is also the key that quits an idle client, so the press that abandons an answer was a
