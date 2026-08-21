@@ -1,0 +1,226 @@
+// Package client runs MCP servers as subprocesses and hands their tools back
+// as ordinary [nacelle.Tool] values.
+//
+// # Why it is a package of its own
+//
+// mcp.Server is a remote server the Claude API dials on our behalf, which
+// needs no client at all. This is the other case, and the two share nothing
+// but the acronym: a subprocess has an executable, an environment and a
+// lifetime somebody has to end, where the connector has a URL and a bearer
+// token. There is also a mechanical reason they cannot be one package. The
+// root package imports mcp, so mcp cannot import it back, and a bridged tool
+// that is not a nacelle.Tool is not usable by anything.
+//
+// # Why bridging beats a second tool path
+//
+// A tool from here is an ordinary local tool, and that is the whole design.
+// It passes through Config.Approve like every other, it emits the same
+// KindToolCall and KindToolResult events, and it works on both backends —
+// including openrouter, which refuses Config.MCP outright under the
+// capability rule and would otherwise get no MCP tools at all, whatever the
+// transport. A parallel MCP-shaped path through the loop would have to
+// reimplement each of those, slightly differently.
+//
+// # What is deliberately absent
+//
+// notifications/tools/list_changed is ignored. The tool set is fixed when a
+// request is built, so a server that grows a tool mid-run has nowhere to put
+// it, and honouring the notification would mean telling a model about a tool
+// the request it is answering never carried.
+//
+// Streamable HTTP is the other transport MCP defines and the SDK already
+// speaks it. It is absent because nothing needs it yet, not because it would
+// not fit: only [Command] and the transport it builds are stdio-specific, and
+// everything after Connect works on a session whatever produced it.
+package client
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os/exec"
+	"time"
+
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/FacileStudio/nacelle"
+)
+
+// DefaultCallTimeout bounds one tools/call, and the handshake that precedes
+// the first one.
+//
+// It matches tools.DefaultCommandTimeout because it bounds the same kind of
+// work: an MCP server that greps a tree or runs a build needs the room a
+// local command needs. What the bound really buys is the failure it prevents.
+// A server that accepts a call and never answers would otherwise hold the
+// agent's goroutine for the life of the process, and the run reads as a model
+// that stopped thinking rather than as a subprocess that stopped talking.
+const DefaultCallTimeout = 2 * time.Minute
+
+// Command is one MCP server, run as a subprocess and spoken to over its
+// standard input and output.
+type Command struct {
+	// Name namespaces this server's tools and must be unique in one call
+	// to Connect. Every tool is presented to the model as <Name>_<tool>,
+	// always — a tool's name must not change depending on how many servers
+	// happen to be configured, because a prompt that mentions a tool by
+	// name would then be wrong for half the configurations.
+	Name string
+
+	// Path is the executable to run. Required, and not looked up on PATH
+	// by this package's own doing: exec resolves it against the PATH the
+	// child is given, so name it in full unless you also set Env["PATH"].
+	Path string
+
+	// Args are handed to it unchanged.
+	Args []string
+
+	// Env names the variables the server starts with, on top of a minimal
+	// base. Read the doc comment on environment for why the process
+	// environment is not inherited and why every credential the server
+	// needs belongs here.
+	Env map[string]string
+
+	// Dir is the working directory. Empty means the calling process's.
+	Dir string
+
+	// AllowedTools restricts what the model may call on this server. Empty
+	// allows every tool the server exposes.
+	//
+	// Worth setting for any server that can write. The narrowest list that
+	// does the job is the one that survives the server growing a
+	// destructive tool later without anyone here noticing.
+	AllowedTools []string
+
+	// Timeout bounds one tools/call and the connect-time handshake.
+	// Defaults to DefaultCallTimeout.
+	Timeout time.Duration
+}
+
+// Set is a live connection to every server Connect started, and the tools
+// they expose.
+type Set struct {
+	sessions []*sdk.ClientSession
+	tools    []nacelle.Tool
+}
+
+// Connect starts every command and collects the tools they expose.
+//
+// The caller owns the result and must Close it. Each server is a running
+// subprocess and nothing else will reap it:
+//
+//	set, err := client.Connect(ctx, commands...)
+//	if err != nil {
+//		return err
+//	}
+//	defer set.Close()
+//	cfg.Tools = append(cfg.Tools, set.Tools()...)
+//
+// One server that cannot start or handshake fails the whole call, and
+// whatever is already running is closed on the way out — the close is joined
+// onto the error rather than swallowed, because a server that then refuses to
+// die is the caller's problem too and nothing else is holding a handle to it.
+// Degrading to the servers that did come up would hand the model a tool set
+// that changes shape between runs, and a tool that is quietly missing reads
+// as a model refusing to work rather than as a server that is down.
+//
+// Everything that can be refused is refused here rather than at call time: an
+// unusable schema, a composed name the APIs will not accept, two tools
+// composing to the same name. A tool that fails the first time the model
+// reaches for it has already cost a turn and has already told the model
+// something false about what it can do.
+func Connect(ctx context.Context, commands ...Command) (*Set, error) {
+	if err := validate(commands); err != nil {
+		return nil, err
+	}
+
+	set := &Set{}
+	taken := make(map[string]bool)
+	for _, command := range commands {
+		if err := set.attach(ctx, command, taken); err != nil {
+			return nil, errors.Join(err, set.Close())
+		}
+	}
+	return set, nil
+}
+
+// validate refuses a command list before a single process is started.
+//
+// Mirrors mcp.Validate, and for the same reason: a typo in configuration
+// should cost a clear error, not a half-started tree of subprocesses that
+// then has to be torn down to report it.
+func validate(commands []Command) error {
+	seen := make(map[string]bool, len(commands))
+	for _, command := range commands {
+		switch {
+		case command.Name == "":
+			return fmt.Errorf("nacelle/mcp/client: a server has no name")
+		case command.Path == "":
+			return fmt.Errorf("nacelle/mcp/client: server %q has no executable", command.Name)
+		case seen[command.Name]:
+			return fmt.Errorf("nacelle/mcp/client: two servers are named %q", command.Name)
+		}
+		seen[command.Name] = true
+	}
+	return nil
+}
+
+// attach starts one server, lists what it offers and bridges it.
+//
+// The session is recorded before the tools are listed, so that a server which
+// starts and then fails to answer tools/list is still closed by Close rather
+// than left running with nobody holding a handle to it.
+//
+// The subprocess is built with [exec.Command] and not [exec.CommandContext]:
+// ctx here bounds the handshake, and binding the process to it would kill
+// every server the moment Connect returned.
+func (s *Set) attach(ctx context.Context, command Command, taken map[string]bool) error {
+	timeout := command.Timeout
+	if timeout <= 0 {
+		timeout = DefaultCallTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	subprocess := exec.Command(command.Path, command.Args...)
+	subprocess.Dir = command.Dir
+	subprocess.Env = environment(command.Env)
+
+	impl := &sdk.Implementation{Name: "nacelle", Version: implementationVersion}
+	session, err := sdk.NewClient(impl, nil).Connect(ctx, &sdk.CommandTransport{Command: subprocess}, nil)
+	if err != nil {
+		return fmt.Errorf("nacelle/mcp/client: starting server %q: %w", command.Name, err)
+	}
+	s.sessions = append(s.sessions, session)
+
+	bridged, err := bridge(ctx, session, command, timeout, taken)
+	if err != nil {
+		return err
+	}
+	s.tools = append(s.tools, bridged...)
+	return nil
+}
+
+// Tools is every bridged tool, ready to go into Config.Tools.
+//
+// It returns no error because there is nothing left to fail: a schema that
+// could not be represented and a name the APIs would reject were both refused
+// by Connect, back when there was still a useful place to report them.
+func (s *Set) Tools() []nacelle.Tool { return s.tools }
+
+// Close shuts every session down and reaps every subprocess.
+//
+// Errors are joined rather than returned on the first one, because stopping
+// early would leave the remaining servers running — which is the leak this
+// method exists to prevent, arrived at by a different route.
+func (s *Set) Close() error {
+	failures := make([]error, 0, len(s.sessions))
+	for _, session := range s.sessions {
+		if err := session.Close(); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	s.sessions = nil
+	s.tools = nil
+	return errors.Join(failures...)
+}
