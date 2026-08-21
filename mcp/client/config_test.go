@@ -156,3 +156,16 @@ func TestAPermissionKeyFromAnotherClientIsRefusedRatherThanIgnored(t *testing.T)
 		})
 	}
 }
+
+// An empty path is refused by saying so, because os.ReadFile's own account of
+// it — `reading : open : no such file or directory` — names no file at all,
+// and the way a person arrives here is -mcp "$VAR" with VAR unset.
+func TestAnEmptyPathIsRefusedBySayingSo(t *testing.T) {
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("Load accepted an empty path")
+	}
+	if !strings.Contains(err.Error(), "empty") || !strings.Contains(err.Error(), "shell variable") {
+		t.Errorf("Load = %v, want it to name the empty path and the likely cause", err)
+	}
+}
