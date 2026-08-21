@@ -179,6 +179,9 @@ func TestAServerThatNeverAnswersLosesTheCallAndNotTheAgent(t *testing.T) {
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Errorf("Run = %v, want it to report the deadline", err)
 		}
+		if !strings.Contains(err.Error(), "s_wait") {
+			t.Errorf("Run = %q, want the model to be told which tool went quiet", err)
+		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run outlived a 50ms timeout by five seconds")
 	}

@@ -106,6 +106,32 @@ func describeTool(remote *sdk.Tool) string {
 	return remote.Title
 }
 
+// errCallTimeout marks the deadline this package puts on one call, so that it
+// stays tellable apart from a deadline the caller brought with them.
+//
+// The distinction is the same one RetryOptions.Budget draws and it is drawn
+// here for a sharper reason: whatever Run returns is read by the model, which
+// will decide whether to try again. "The server did not answer" invites a
+// retry or a smaller request; a caller's own expiring deadline does not, and
+// blaming the server for it would send the model off fixing the wrong thing.
+var errCallTimeout = errors.New("the server did not answer in time")
+
+// failed says what went wrong in a sentence written for the model, because
+// that is who reads it.
+//
+// Everything else in this package is careful about what the model is told and
+// this was the one path that handed it Go's own vocabulary: a slow server
+// arrived as the bare text "context deadline exceeded", which names no tool,
+// no server and no duration, and reads like a defect in the harness rather
+// than a tool worth calling again. The cause is wrapped either way, so
+// errors.Is still finds context.DeadlineExceeded underneath.
+func (t *tool) failed(ctx context.Context, err error) error {
+	if errors.Is(context.Cause(ctx), errCallTimeout) {
+		return fmt.Errorf("%s did not answer within %s: %w", t.name, t.timeout, err)
+	}
+	return fmt.Errorf("calling %s: %w", t.name, err)
+}
+
 // tool is one MCP tool presented as a [nacelle.Tool].
 type tool struct {
 	name        string
@@ -142,12 +168,12 @@ func (t *tool) Run(ctx context.Context, input json.RawMessage) (string, error) {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, t.timeout)
+	ctx, cancel := context.WithTimeoutCause(ctx, t.timeout, errCallTimeout)
 	defer cancel()
 
 	result, err := t.session.CallTool(ctx, &sdk.CallToolParams{Name: t.remote, Arguments: arguments})
 	if err != nil {
-		return "", err
+		return "", t.failed(ctx, err)
 	}
 
 	answer := flatten(result)

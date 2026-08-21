@@ -67,9 +67,15 @@ type Command struct {
 	// name would then be wrong for half the configurations.
 	Name string
 
-	// Path is the executable to run. Required, and not looked up on PATH
-	// by this package's own doing: exec resolves it against the PATH the
-	// child is given, so name it in full unless you also set Env["PATH"].
+	// Path is the executable to run. Required.
+	//
+	// Prefer an absolute path. A bare name is resolved by exec.Command
+	// against *this* process's PATH, at the moment the command is built,
+	// and setting Env["PATH"] does not change that — os/exec resolves
+	// before it ever looks at Env, so the child's PATH is what the server
+	// then finds its own helpers on and nothing more. Naming the file in
+	// full is the only spelling where the binary that is found and the
+	// binary that was meant are certainly the same one.
 	Path string
 
 	// Args are handed to it unchanged.
