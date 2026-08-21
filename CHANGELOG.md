@@ -6,8 +6,18 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
-Untagged. Everything below is the first day: the core loop, both backends, the local tool
+Nothing yet.
+
+## [0.1.0] - 2026-08-22
+
+The first tag. Everything below is the first day: the core loop, both backends, the local tool
 set, the TUI, and the gate, in the order they were built.
+
+Tagging is a promise about pinning, not about the API. While on `v0` a breaking change bumps
+the minor, and this package intends to use that — two of the changes listed below were breaking
+and cost nothing precisely because nobody was pinned. What a tag buys is that consumers stop
+pinning a forty-character pseudo-version, `tui/` included: its own require had to be edited by
+hand every time the core moved, twice in the last day alone.
 
 ### Added
 
@@ -331,4 +341,5 @@ set, the TUI, and the gate, in the order they were built.
   and six unseen sleeps, roughly six minutes under `Retry-After: 60` against a documented
   eight seconds. A context deadline is the only real bound, and nothing said so.
 
-[Unreleased]: https://github.com/FacileStudio/nacelle/commits/main
+[Unreleased]: https://github.com/FacileStudio/nacelle/compare/v0.1.0...main
+[0.1.0]: https://github.com/FacileStudio/nacelle/releases/tag/v0.1.0
