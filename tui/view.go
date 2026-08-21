@@ -97,7 +97,7 @@ func (m *model) status() string {
 	if m.run.busy {
 		state = m.working()
 		if time.Since(m.run.interrupted) < forceQuit {
-			state = "stopping · ctrl+c again, or ctrl+\\, to quit now"
+			state = "stopping · ctrl+c or ctrl+\\ to quit now"
 		}
 	}
 	if m.run.pending != nil {

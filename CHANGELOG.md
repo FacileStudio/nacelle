@@ -180,7 +180,36 @@ set, the TUI, and the gate, in the order they were built.
   dismisses. `tui/model.go`'s own `layout()` reserves the dropdown's height out of the
   transcript's, recomputed on every filter change, not only on a real terminal resize.
 
+- **`esc` stops a run, and never does anything else.** `ctrl+c` already cancelled one, but
+  it is also the key that quits an idle client, so the press that abandons an answer was a
+  press that had to be thought about first. `esc` is the one that never is: idle it is not
+  the client's key at all and reaches the prompt, and with the `/` dropdown open it closes
+  that first, one visible thing per press. Both keys reach the same `abandon` in
+  `tui/run.go`, so neither can drift into stopping a run differently — the run is cancelled,
+  marked abandoned, and whatever was queued behind it is dropped rather than started. The
+  status line offers `ctrl+c`/`ctrl+\` as the way out of a run that will not stop, whichever
+  key asked it to.
+
 ### Fixed
+
+- **Nothing the client has said waits on what it is about to do.** `Update` sequenced the
+  print queue *behind* whatever the routed message returned, and two of the commands it can
+  return block until the model sends something — `waitFor`, and the batch `send` wraps it in.
+  A sequence does not reach its next command until the one before it is done, so every line
+  said on the way into a wait was drawn only when that wait ended. Two visible symptoms, one
+  cause: pressing enter emptied the prompt and showed nothing until the first token arrived,
+  which reads as a client that swallowed the question; and a tool's own `⏺` call line waited
+  on the tool it was announcing. Measured against OpenRouter at 100x30, from the keypress:
+  the question echoed at 814ms beside the first token, now 5ms against an answer that began
+  at 1312ms; `⏺ run_command` for a six-second command reached the screen at 7451ms, said at
+  1467ms, and now lands at 1467ms with the status line that names it. `Update` prints first
+  and runs second, which is one place rather than one per blocking command — a third would
+  otherwise arrive with no reason to know it had to flush, the way the second sat there while
+  the first was being found. `/clear` is the one command that prints from its own `Cmd`, so
+  it drains the queue by hand at both ends: the echoed `/clear` above the blank run, the
+  fresh banner below it. The same ordering had been costing a queued follow-up its echo and
+  the previous answer's commit, both of which waited on the *next* run rather than the one
+  that produced them.
 
 - **A committed answer no longer leaves a second, unrendered copy of itself in the
   scrollback.** Scrolling up after an answer showed it twice: once as raw markdown with a

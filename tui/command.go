@@ -92,9 +92,13 @@ func commandNames() []string {
 // than erasing it, which is the behaviour above, kept by accident of being
 // the only one available.
 //
-// The echoed "/clear" is flushed first so it goes up with everything else.
-// Left to Update's own drain it would print after the blank run and be the
-// one line of the old session still on the fresh screen.
+// This is the only command that prints from its own Cmd rather than by saying
+// something, which is why it drains the queue by hand at both ends. Update
+// prints what was said before it runs what the message started, which is right
+// everywhere else and exactly wrong here: the echoed "/clear" has to go up
+// before the blank run and the fresh banner has to go up after it. Left to the
+// one drain, a clear either leaves the old prompt standing on the new screen or
+// scrolls away the only line saying the session restarted.
 //
 // The banner is re-said rather than left gone: it is the only place the
 // backend and model are ever named, and it is what makes the fresh screen
@@ -104,7 +108,7 @@ func (m *model) clear() tea.Cmd {
 	m.spent = nacelle.Usage{}
 	echoed := m.prints()
 	m.say(fromClient, m.banner+" · cleared")
-	return tea.Sequence(echoed, m.printed(scrolledAway(m.windowHeight)))
+	return tea.Sequence(echoed, m.printed(scrolledAway(m.windowHeight)), m.prints())
 }
 
 // scrolledAway is the run of blank lines that pushes a whole window of
@@ -129,8 +133,8 @@ func (m *model) help() tea.Cmd {
 		"/quit — quit",
 		"/skill:name [what to do] — run a loaded skill directly, instead of waiting for the model to decide to",
 		"",
-		"Ctrl+C cancels a run, or quits when idle. Ctrl+\\ force-quits.",
-		"Enter during a run queues the line and sends it once the run finishes; ctrl+c drops whatever is queued.",
+		"Esc stops a run and nothing else. Ctrl+C stops one too, or quits when idle; ctrl+\\ force-quits.",
+		"Enter during a run queues the line and sends it once the run finishes; stopping the run drops whatever is queued.",
 		"The prompt wraps and grows as you type. Alt+Enter (or ctrl+j) starts a new line without sending.",
 		"Scroll, select and copy with the terminal as usual — what was said is ordinary terminal output, not a window this client owns.",
 		"Typing / opens a dropdown of commands and skills — up/down move, tab/enter pick, esc closes it.",

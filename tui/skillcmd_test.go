@@ -132,13 +132,16 @@ func TestSlashSkillReportsAnUnknownSkillWithoutStartingARun(t *testing.T) {
 	m := sized()
 	m.prompt.SetValue("/skill:nope")
 
-	m.ask()
+	printed := printedBy(m.ask())
 
 	if m.run.busy {
 		t.Error("an unknown skill started a run")
 	}
-	lines := spoken(m)
-	if len(lines) != 2 || !strings.Contains(lines[1], "nope") {
-		t.Errorf("transcript = %v, want a line naming the unknown skill", lines)
+	echo, reply := strings.Index(printed, "/skill:nope"), strings.Index(printed, "unknown skill")
+	if reply < 0 || !strings.Contains(printed, "nope") {
+		t.Fatalf("printed = %q, want a line naming the unknown skill", printed)
+	}
+	if echo < 0 || echo > reply {
+		t.Errorf("printed = %q, want the echoed input above the reply to it", printed)
 	}
 }

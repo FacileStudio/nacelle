@@ -271,7 +271,7 @@ question:
 | Command | Does |
 |---|---|
 | `/clear` | Reset the transcript, the conversation sent to the model, and the running cost total. Same client, new session. Never starts a run. |
-| `/help` | List the commands above and the keybindings (scrolling, ctrl+c/ctrl+\). Never starts a run. |
+| `/help` | List the commands above and the keybindings (esc, ctrl+c/ctrl+\). Never starts a run. |
 | `/quit` | Quit. Never starts a run. |
 | `/skill:name [what to do]` | Run a loaded skill directly — **does** start a run, unlike the three above. |
 
@@ -338,9 +338,21 @@ tool running, the model called again with its result — left the screen still, 
 stopped moving reads exactly like one that has stopped working.
 
 **Enter still works while a run is going**: the line is queued, shown above the prompt, and sent
-once the run finishes. A queued `/help` is still a command. `ctrl+c` cancels the run and drops
-whatever is queued rather than starting it — it says how many it dropped, since the alternative is
-a message that silently never gets asked.
+once the run finishes. A queued `/help` is still a command.
+
+**`esc` stops the run**, and that is all it ever does. `ctrl+c` stops one too, but it is also the
+key that quits an idle client, so the press that abandons an answer is a press that has to be
+thought about first; `esc` is the one that never is. Either way the queue goes with the run rather
+than being started by it, and the client says how many it dropped — the alternative is a message
+that silently never gets asked. Idle, `esc` does nothing at all, and with the `/` dropdown open it
+closes that first: one visible thing per press.
+
+The question is on the screen before either of them is worth pressing. It used to appear only when
+the answer did: the client printed what it had said only after running what that message started,
+and what a question starts is a wait on the model. The prompt emptied and nothing else happened,
+which reads as a client that swallowed it. The `⏺` line naming a tool had the same fault and was
+worse for it — it waited on the tool it was announcing, so a six-second command was announced six
+seconds late. The CHANGELOG carries the measurements.
 
 ### Quitting
 

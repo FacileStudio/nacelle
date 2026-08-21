@@ -17,7 +17,7 @@ func TestSlashClearResetsTranscriptConversationAndSpent(t *testing.T) {
 	m.spent = nacelle.Usage{InputTokens: 42}
 
 	m.prompt.SetValue("/clear")
-	m.ask()
+	printed := printedBy(m.ask())
 
 	if len(m.conversation) != 0 {
 		t.Errorf("conversation = %v, want it emptied", m.conversation)
@@ -25,8 +25,18 @@ func TestSlashClearResetsTranscriptConversationAndSpent(t *testing.T) {
 	if m.spent != (nacelle.Usage{}) {
 		t.Errorf("spent = %+v, want it reset", m.spent)
 	}
-	if said := m.unprinted; len(said) != 1 || !strings.Contains(visible(said[0]), "cleared") {
-		t.Errorf("queued = %v, want everything else flushed and only the fresh banner left", said)
+
+	echo, banner := strings.Index(printed, "/clear"), strings.LastIndex(printed, "cleared")
+	if echo < 0 || banner < 0 {
+		t.Fatalf("printed = %q, want the echoed command and the fresh banner both in it", printed)
+	}
+	if echo > banner {
+		t.Errorf("printed = %q, want the echo of the command above the banner that replaced it", printed)
+	}
+	if blanks := strings.Count(printed[echo:banner], "\n"); blanks < m.windowHeight {
+		t.Errorf("only %d blank rows between the echo and the banner, want the window's %d — "+
+			"the banner has to go up after the run that scrolls the old session away, not with it",
+			blanks, m.windowHeight)
 	}
 }
 
@@ -49,15 +59,11 @@ func TestSlashHelpListsCommandsWithoutStartingARun(t *testing.T) {
 	m := sized()
 	m.prompt.SetValue("/help")
 
-	m.ask()
+	printed := printedBy(m.ask())
 
-	lines := spoken(m)
-	if len(lines) != 2 {
-		t.Fatalf("transcript = %v, want the echoed command plus one reply", lines)
-	}
 	for _, want := range []string{"/clear", "/help", "/quit"} {
-		if !strings.Contains(lines[1], want) {
-			t.Errorf("help text = %q, want it to mention %q", lines[1], want)
+		if !strings.Contains(printed, want) {
+			t.Errorf("help text = %q, want it to mention %q", printed, want)
 		}
 	}
 	if m.run.busy {
@@ -74,7 +80,14 @@ func TestSlashQuitReturnsTeaQuit(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("/quit returned no command")
 	}
-	if _, ok := cmd().(tea.QuitMsg); !ok {
+	if printed := printedBy(cmd); !strings.Contains(printed, "/quit") {
+		t.Errorf("printed = %q, want the echo handed over before the quit that would take it with it", printed)
+	}
+	cmds, ordered := sequenced(cmd())
+	if !ordered {
+		t.Fatalf("/quit produced %T, want the echo sequenced ahead of the quit", cmd())
+	}
+	if _, quits := cmds[len(cmds)-1]().(tea.QuitMsg); !quits {
 		t.Error("/quit did not resolve to tea.QuitMsg")
 	}
 }
@@ -85,14 +98,17 @@ func TestAnUnknownSlashCommandIsReportedAndDoesNotReachTheModel(t *testing.T) {
 	m := sized()
 	m.prompt.SetValue("/cler")
 
-	m.ask()
+	printed := printedBy(m.ask())
 
 	if len(m.conversation) != 0 {
 		t.Error("an unknown command reached the model's conversation")
 	}
-	lines := spoken(m)
-	if len(lines) != 2 || !strings.Contains(lines[1], "/cler") || !strings.Contains(lines[1], "/help") {
-		t.Errorf("transcript = %v, want the echoed input plus a line naming the bad command and pointing at /help", lines)
+	echo, reply := strings.Index(printed, "/cler"), strings.Index(printed, "unknown command")
+	if reply < 0 || !strings.Contains(printed, "/help") {
+		t.Fatalf("printed = %q, want a line naming the bad command and pointing at /help", printed)
+	}
+	if echo < 0 || echo > reply {
+		t.Errorf("printed = %q, want the echoed input above the reply to it", printed)
 	}
 }
 

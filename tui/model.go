@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
@@ -12,9 +11,9 @@ import (
 	"github.com/FacileStudio/nacelle"
 )
 
-// forceQuit is how long the offer to quit outright stays open after the
-// first ctrl+c — long enough to read the status line, short enough that a
-// second ctrl+c minutes later still means "stop this run", not "quit".
+// forceQuit is how long the offer to quit outright stays open after a run is
+// first asked to stop — long enough to read the status line, short enough that
+// a ctrl+c minutes later still means "stop this run", not "quit".
 const forceQuit = 3 * time.Second
 
 // commandState is everything /skill:name and the dropdown menu need beyond
@@ -87,20 +86,35 @@ func newModel(agent *nacelle.Agent, banner string, skills []skill) *model {
 // timer that wakes the program up to change nothing.
 func (m *model) Init() tea.Cmd { return tea.RequestBackgroundColor }
 
-// Update routes each message to the one place that owns it. The cases stay
-// thin on purpose: everything that changes more than one field is a method, so
-// this reads as a table of what can happen rather than as the logic itself.
+// Update routes each message to the one place that owns it, and hands whatever
+// that had to say to the terminal before whatever it started.
+//
+// That ordering is the whole of a bug this client shipped on two paths at
+// once. Two of the commands route returns block until the model sends
+// something — waitFor, and the batch send wraps it in — and a sequence does
+// not reach its next command until the one before it is done, so a line said
+// on the way into a wait was not drawn until that wait ended. The question
+// appeared when the answer did rather than when it was asked, and a tool's
+// call line waited on the tool it announced: six seconds late for a
+// six-second command, measured. Nothing already said is worth less than the
+// thing it is waiting for. Fixing it here rather than in those two commands
+// is the point — a third would arrive with no reason to know it had to flush
+// first, which is how the second sat there while the first was being fixed.
+//
+// Two statements, not one call: as arguments they are evaluated left to right,
+// which would drain the queue before the message that fills it was routed.
+//
+// Sequence, not Batch: a batch makes no promise about the order its commands
+// run in, and the routed cmd may be tea.Quit — a quit that wins that race
+// takes the last thing said with it, which for a queued /quit is the echo of
+// the line that quit.
 func (m *model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
-	return m, tea.Sequence(m.route(message), m.prints())
+	started := m.route(message)
+	return m, tea.Sequence(m.prints(), started)
 }
 
 // route is Update's own body, split out so that draining the print queue is
 // one seam rather than a line repeated down every branch.
-//
-// Sequence, not Batch: a batch makes no promise about order, and the cmd
-// being routed may be tea.Quit — a quit that wins the race takes the last
-// thing said with it, which for ctrl+c is the notice explaining what was
-// dropped.
 func (m *model) route(message tea.Msg) tea.Cmd {
 	switch message := message.(type) {
 	case tea.WindowSizeMsg:
@@ -150,6 +164,14 @@ func (m *model) route(message tea.Msg) tea.Cmd {
 // to scrolling the transcript or sending what's typed. Anything the menu
 // itself does not claim (an ordinary character, backspace) falls all the
 // way through to the prompt, which is what keeps its own filter editable.
+//
+// Esc stops a run and does nothing else, which is the whole reason it is
+// worth having next to a ctrl+c that already cancels: the key that stops the
+// answer is then never the key that might close the client, so there is no
+// press that has to be thought about first. It sits below the menu on
+// purpose — esc closes the dropdown before it stops anything, because a
+// dropdown standing open is the nearer thing to back out of, and it is what
+// esc already meant there. See escaped for what it does with no run to stop.
 func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 	switch press.String() {
 	case "ctrl+\\":
@@ -158,11 +180,7 @@ func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 		if !m.run.busy || time.Since(m.run.interrupted) < forceQuit {
 			return true, tea.Quit
 		}
-		m.run.interrupted = time.Now()
-		m.run.stop = abandoned
-		m.run.pending = nil
-		m.run.cancel()
-		m.dropQueued()
+		m.abandon()
 		return true, nil
 	}
 	if m.run.pending != nil {
@@ -174,56 +192,10 @@ func (m *model) key(press tea.KeyPressMsg) (bool, tea.Cmd) {
 		}
 	}
 	switch press.String() {
+	case "esc":
+		return m.escaped()
 	case "enter":
 		return true, m.ask()
 	}
 	return false, nil
-}
-
-// ask takes whatever is in the prompt: sent now, or queued behind the run
-// already going and delivered when it settles.
-//
-// The prompt is echoed once, up front, for every non-empty line — a
-// command's own reply and a /skill:name's expanded question would otherwise
-// need their own echo, the way /clear already had to work around wiping its
-// own before this existed.
-//
-// Sending is also the one thing that ends being scrolled back, and it has to
-// be, because render only follows a reader already at the bottom. Without
-// this, asking a question while parked halfway up put both the echo of it and
-// the whole answer off-screen: the visible result of pressing enter was the
-// prompt going empty and nothing else, which reads as the client having
-// dropped the question. Scrolling away says "let me read"; sending says
-// "I'm done reading", and only the second one is worth guessing at.
-func (m *model) ask() tea.Cmd {
-	question := strings.TrimSpace(m.prompt.Value())
-	if question == "" {
-		return nil
-	}
-	m.prompt.Reset()
-
-	if m.run.busy {
-		m.run.queued = append(m.run.queued, question)
-		m.layout(m.windowHeight)
-		return nil
-	}
-	m.layout(m.windowHeight)
-	return m.dispatch(question)
-}
-
-// dispatch echoes one line and routes it, as one of this client's own
-// commands or as a question for the model.
-//
-// It is separate from ask because it has two callers that agree on
-// everything after the prompt itself: a line typed now, and a line typed
-// while the last run was still going and delivered when it settled. A queued
-// "/help" is still a command, which it would not be if the queue fed send
-// directly.
-func (m *model) dispatch(line string) tea.Cmd {
-	m.say(fromReader, line)
-
-	if cmd, ok := m.parseCommand(line); ok {
-		return cmd(m)
-	}
-	return m.send(line)
 }
