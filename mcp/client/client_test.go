@@ -11,15 +11,23 @@ import (
 // error rather than a half-built tree of subprocesses that then has to be torn
 // down to report it.
 func TestACommandListIsRefusedBeforeAnythingIsStarted(t *testing.T) {
-	for name, commands := range map[string][]Command{
-		"no name": {{Path: "/usr/bin/true"}},
+	for name, commands := range map[string][]Server{
+		"no name": {Command{Path: "/usr/bin/true"}},
 		"no executable": {
-			{Name: "docs", Path: "/usr/bin/true"},
-			{Name: "tickets"},
+			Command{Name: "docs", Path: "/usr/bin/true"},
+			Command{Name: "tickets"},
 		},
 		"two servers sharing a name": {
-			{Name: "docs", Path: "/usr/bin/true"},
-			{Name: "docs", Path: "/usr/bin/false"},
+			Command{Name: "docs", Path: "/usr/bin/true"},
+			Command{Name: "docs", Path: "/usr/bin/false"},
+		},
+		"a remote with no URL": {Remote{Name: "docs"}},
+		"a remote speaking a scheme this client does not": {
+			Remote{Name: "docs", URL: "ws://example.invalid/mcp"},
+		},
+		"a remote and a command sharing a name": {
+			Command{Name: "docs", Path: "/usr/bin/true"},
+			Remote{Name: "docs", URL: "https://example.invalid/mcp"},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

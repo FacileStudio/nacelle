@@ -36,17 +36,17 @@ var callable = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 //
 // taken carries across servers, so a collision between two servers is caught
 // as readily as one inside a single server.
-func bridge(ctx context.Context, session *sdk.ClientSession, command Command, timeout time.Duration, taken map[string]bool) ([]nacelle.Tool, error) {
+func bridge(ctx context.Context, session *sdk.ClientSession, about details, taken map[string]bool) ([]nacelle.Tool, error) {
 	var bridged []nacelle.Tool
 	for remote, err := range session.Tools(ctx, nil) {
 		if err != nil {
-			return nil, fmt.Errorf("nacelle/mcp/client: listing the tools of server %q: %w", command.Name, err)
+			return nil, fmt.Errorf("nacelle/mcp/client: listing the tools of server %q: %w", about.name, err)
 		}
-		if len(command.AllowedTools) > 0 && !slices.Contains(command.AllowedTools, remote.Name) {
+		if len(about.allowed) > 0 && !slices.Contains(about.allowed, remote.Name) {
 			continue
 		}
 
-		name, err := compose(command.Name, remote.Name, taken)
+		name, err := compose(about.name, remote.Name, taken)
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +61,7 @@ func bridge(ctx context.Context, session *sdk.ClientSession, command Command, ti
 			description: describeTool(remote),
 			schema:      schema,
 			session:     session,
-			timeout:     timeout,
+			timeout:     about.timeout,
 		})
 	}
 	return bridged, nil

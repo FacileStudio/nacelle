@@ -38,7 +38,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -77,15 +76,15 @@ type Set struct {
 // composing to the same name. A tool that fails the first time the model
 // reaches for it has already cost a turn and has already told the model
 // something false about what it can do.
-func Connect(ctx context.Context, commands ...Command) (*Set, error) {
-	if err := validate(commands); err != nil {
+func Connect(ctx context.Context, servers ...Server) (*Set, error) {
+	if err := validate(servers); err != nil {
 		return nil, err
 	}
 
 	set := &Set{}
 	taken := make(map[string]bool)
-	for _, command := range commands {
-		if err := set.attach(ctx, command, taken); err != nil {
+	for _, server := range servers {
+		if err := set.attach(ctx, server, taken); err != nil {
 			return nil, errors.Join(err, set.Close())
 		}
 	}
@@ -97,18 +96,20 @@ func Connect(ctx context.Context, commands ...Command) (*Set, error) {
 // Mirrors mcp.Validate, and for the same reason: a typo in configuration
 // should cost a clear error, not a half-started tree of subprocesses that
 // then has to be torn down to report it.
-func validate(commands []Command) error {
-	seen := make(map[string]bool, len(commands))
-	for _, command := range commands {
+func validate(servers []Server) error {
+	seen := make(map[string]bool, len(servers))
+	for _, server := range servers {
+		name := server.details().name
 		switch {
-		case command.Name == "":
+		case name == "":
 			return fmt.Errorf("nacelle/mcp/client: a server has no name")
-		case command.Path == "":
-			return fmt.Errorf("nacelle/mcp/client: server %q has no executable", command.Name)
-		case seen[command.Name]:
-			return fmt.Errorf("nacelle/mcp/client: two servers are named %q", command.Name)
+		case seen[name]:
+			return fmt.Errorf("nacelle/mcp/client: two servers are named %q", name)
 		}
-		seen[command.Name] = true
+		if err := server.check(); err != nil {
+			return err
+		}
+		seen[name] = true
 	}
 	return nil
 }
@@ -126,28 +127,24 @@ func validate(commands []Command) error {
 // The subprocess is built with [exec.Command] and not [exec.CommandContext]:
 // ctx here bounds the handshake, and binding the process to it would kill
 // every server the moment Connect returned.
-func (s *Set) attach(ctx context.Context, command Command, taken map[string]bool) error {
-	timeout := command.Timeout
-	if timeout <= 0 {
-		timeout = DefaultCallTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+func (s *Set) attach(ctx context.Context, server Server, taken map[string]bool) error {
+	about := server.details()
+	ctx, cancel := context.WithTimeout(ctx, about.timeout)
 	defer cancel()
 
-	subprocess := exec.Command(command.Path, command.Args...)
-	subprocess.Dir = command.Dir
-	subprocess.Env = environment(command.Env)
-	notes := &diagnostics{}
-	subprocess.Stderr = notes.tee(command.Stderr)
+	transport, notes, err := server.dial()
+	if err != nil {
+		return err
+	}
 
 	impl := &sdk.Implementation{Name: "nacelle", Version: implementationVersion}
-	session, err := sdk.NewClient(impl, nil).Connect(ctx, &sdk.CommandTransport{Command: subprocess}, nil)
+	session, err := sdk.NewClient(impl, nil).Connect(ctx, transport, nil)
 	if err != nil {
-		return fmt.Errorf("nacelle/mcp/client: starting server %q: %w%s", command.Name, err, notes.note())
+		return fmt.Errorf("nacelle/mcp/client: starting server %q: %w%s", about.name, err, notes.note())
 	}
 	s.sessions = append(s.sessions, session)
 
-	bridged, err := bridge(ctx, session, command, timeout, taken)
+	bridged, err := bridge(ctx, session, about, taken)
 	if err != nil {
 		return fmt.Errorf("%w%s", err, notes.note())
 	}
