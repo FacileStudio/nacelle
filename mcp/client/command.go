@@ -1,20 +1,13 @@
 package client
 
 import (
+	"fmt"
 	"io"
+	"os/exec"
 	"time"
-)
 
-// DefaultCallTimeout bounds one tools/call, and the handshake that precedes
-// the first one.
-//
-// It matches tools.DefaultCommandTimeout because it bounds the same kind of
-// work: an MCP server that greps a tree or runs a build needs the room a
-// local command needs. What the bound really buys is the failure it prevents.
-// A server that accepts a call and never answers would otherwise hold the
-// agent's goroutine for the life of the process, and the run reads as a model
-// that stopped thinking rather than as a subprocess that stopped talking.
-const DefaultCallTimeout = 2 * time.Minute
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+)
 
 // Command is one MCP server, run as a subprocess and spoken to over its
 // standard input and output.
@@ -74,4 +67,32 @@ type Command struct {
 	// Timeout bounds one tools/call and the connect-time handshake.
 	// Defaults to DefaultCallTimeout.
 	Timeout time.Duration
+}
+
+func (c Command) details() details {
+	return details{name: c.Name, allowed: c.AllowedTools, timeout: timeoutOr(c.Timeout)}
+}
+
+// check refuses a subprocess that cannot be started.
+func (c Command) check() error {
+	if c.Path == "" {
+		return fmt.Errorf("nacelle/mcp/client: server %q has no executable", c.Name)
+	}
+	return nil
+}
+
+// dial builds the subprocess and the buffer that keeps what it says on the
+// way out, so that a server which fails to start can explain itself.
+//
+// exec.Command and not exec.CommandContext: the context here bounds the
+// handshake, and binding the process to it would kill every server the
+// moment Connect returned.
+func (c Command) dial() (sdk.Transport, *diagnostics, error) {
+	subprocess := exec.Command(c.Path, c.Args...)
+	subprocess.Dir = c.Dir
+	subprocess.Env = environment(c.Env)
+
+	notes := &diagnostics{}
+	subprocess.Stderr = notes.tee(c.Stderr)
+	return &sdk.CommandTransport{Command: subprocess}, notes, nil
 }

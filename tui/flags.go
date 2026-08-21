@@ -5,13 +5,18 @@ import (
 	"strings"
 )
 
-// dirList collects one -skill-dir flag per occurrence. flag.String would
-// only keep the last one; this is the standard flag.Value escape hatch for a
-// flag meant to repeat.
-type dirList []string
+// pathList collects one -skill-dir or -mcp flag per occurrence. flag.String
+// would only keep the last one; this is the standard flag.Value escape hatch
+// for a flag meant to repeat.
+//
+// It was dirList until -mcp arrived naming a file rather than a directory. One
+// type for both is not tidiness: the two flags have to agree on what repeating
+// means, and a second copy of these four lines is where they would quietly
+// stop agreeing.
+type pathList []string
 
-func (d *dirList) String() string     { return strings.Join(*d, ":") }
-func (d *dirList) Set(v string) error { *d = append(*d, v); return nil }
+func (p *pathList) String() string     { return strings.Join(*p, ":") }
+func (p *pathList) Set(v string) error { *p = append(*p, v); return nil }
 
 // declared is every flag this command accepts, holding the pointer `flag`
 // fills each one in through — kept together so fromFlags can hand the whole
@@ -26,7 +31,7 @@ type declared struct {
 	webFlags
 	bash, thinking, approveTools *bool
 	iterations                   *int
-	skillDirs                    *dirList
+	sourceFlags
 	discoveryFlags
 }
 
@@ -34,6 +39,12 @@ type declared struct {
 type webFlags struct {
 	search *string
 	fetch  *bool
+}
+
+// sourceFlags is declared's half of Sources — one flag pointer per field
+// there, and both of them repeat.
+type sourceFlags struct {
+	skillDirs, mcp *pathList
 }
 
 // discoveryFlags is declared's half of Discovery — one flag pointer per
@@ -45,21 +56,16 @@ type discoveryFlags struct {
 // declareFlags registers every flag against fallback's values and returns
 // where `flag.Parse` will leave its answers.
 func declareFlags(fallback Config) declared {
-	skillDirs := new(dirList)
-	flag.Var(skillDirs, "skill-dir",
-		"extra directory to load skills from, alongside ~/.agents/skills (repeatable); "+
-			"e.g. -skill-dir ~/.claude/skills to see another tool's skills without moving them")
-
 	return declared{
-		skillDirs: skillDirs,
-		backend:   flag.String("backend", fallback.Backend, "anthropic or openrouter"),
-		model:     flag.String("model", fallback.Model, "model id, defaulting to the backend's own"),
-		effort:    flag.String("effort", fallback.Effort, "low, medium, high, xhigh or max"),
-		root:      flag.String("root", fallback.Root, "directory the file tools may reach"),
-		system:    flag.String("system", fallback.System, "system prompt"),
-		webFlags:  declareWeb(fallback),
-		bash:      flag.Bool("bash", *fallback.Bash, "let the model run commands"),
-		thinking:  flag.Bool("thinking", *fallback.Thinking, "stream the model's reasoning"),
+		sourceFlags: declareSources(),
+		backend:     flag.String("backend", fallback.Backend, "anthropic or openrouter"),
+		model:       flag.String("model", fallback.Model, "model id, defaulting to the backend's own"),
+		effort:      flag.String("effort", fallback.Effort, "low, medium, high, xhigh or max"),
+		root:        flag.String("root", fallback.Root, "directory the file tools may reach"),
+		system:      flag.String("system", fallback.System, "system prompt"),
+		webFlags:    declareWeb(fallback),
+		bash:        flag.Bool("bash", *fallback.Bash, "let the model run commands"),
+		thinking:    flag.Bool("thinking", *fallback.Thinking, "stream the model's reasoning"),
 		approveTools: flag.Bool("approve-tools", *fallback.ApproveTools,
 			"ask before every tool call runs, y/a/n; off by default, every call runs unasked"),
 		iterations: flag.Int("max-iterations", *fallback.MaxIterations, "how many times the model may be asked"),
@@ -74,6 +80,24 @@ func declareFlags(fallback Config) declared {
 				"trust every .agents/skills directory found under root this run, and remember the decision"),
 		},
 	}
+}
+
+// declareSources registers the two flags that name somewhere to read from,
+// kept out of declareFlags for the reason declareWeb is.
+//
+// Neither is seeded from fallback, unlike every flag above it. Set appends, so
+// a pre-filled list would grow rather than be replaced the first time the flag
+// was typed, and the layer underneath is merged in by settings() anyway —
+// which is the only place a config file's own list is supposed to arrive from.
+func declareSources() sourceFlags {
+	skillDirs, mcp := new(pathList), new(pathList)
+	flag.Var(skillDirs, "skill-dir",
+		"extra directory to load skills from, alongside ~/.agents/skills (repeatable); "+
+			"e.g. -skill-dir ~/.claude/skills to see another tool's skills without moving them")
+	flag.Var(mcp, "mcp",
+		"file of MCP servers to start and hand the model the tools of (repeatable); it reads the same "+
+			"mcpServers files every other client already has, e.g. -mcp ~/.claude/.mcp.json")
+	return sourceFlags{skillDirs: skillDirs, mcp: mcp}
 }
 
 // declareWeb registers the two network settings, kept out of declareFlags so
@@ -108,6 +132,7 @@ func typedSetters(f declared) map[string]func(*Config) {
 		"approve-tools":   func(c *Config) { c.ApproveTools = f.approveTools },
 		"max-iterations":  func(c *Config) { c.MaxIterations = f.iterations },
 		"skill-dir":       func(c *Config) { c.SkillDirs = []string(*f.skillDirs) },
+		"mcp":             func(c *Config) { c.MCP = []string(*f.mcp) },
 	}
 }
 

@@ -61,6 +61,12 @@ func run() error {
 	}
 	defer func() { _ = set.Close() }()
 
+	mcp, local, err := mcpTools(config, local)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = mcp.set.Close() }()
+
 	found := augmentSystem(&config)
 
 	approvalGate, approve := buildApprovals(config)
@@ -70,7 +76,7 @@ func run() error {
 		return err
 	}
 
-	client := newModel(agent, banner(backend, config, found), found.skills)
+	client := newModel(agent, banner(backend, config, found, mcp), found.skills)
 	if found.notice != "" {
 		client.say(fromClient, found.notice)
 	}

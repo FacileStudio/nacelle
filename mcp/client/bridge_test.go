@@ -47,7 +47,7 @@ func TestAnAllowListLeavesEverythingElseBehind(t *testing.T) {
 func TestAComposedNameTooLongForTheAPIsIsRefusedRatherThanCut(t *testing.T) {
 	server := strings.Repeat("s", 61)
 
-	_, err := bridge(t.Context(), serve(t, register), Command{Name: server}, DefaultCallTimeout, map[string]bool{})
+	_, err := bridge(t.Context(), serve(t, register), details{name: server, timeout: DefaultCallTimeout}, map[string]bool{})
 	if err == nil {
 		t.Fatal("bridge accepted a name of 66 characters")
 	}
@@ -60,7 +60,7 @@ func TestAComposedNameTooLongForTheAPIsIsRefusedRatherThanCut(t *testing.T) {
 // name carries one produces tools no request will accept. Catching it here
 // costs a startup error; not catching it costs a 400 mid-run.
 func TestANameTheModelAPIsWouldRejectIsRefused(t *testing.T) {
-	_, err := bridge(t.Context(), serve(t, register), Command{Name: "my.server"}, DefaultCallTimeout, map[string]bool{})
+	_, err := bridge(t.Context(), serve(t, register), details{name: "my.server", timeout: DefaultCallTimeout}, map[string]bool{})
 	if err == nil {
 		t.Fatal("bridge accepted a name containing a dot")
 	}
@@ -78,7 +78,7 @@ func TestTwoServersComposingToTheSameToolNameAreRefused(t *testing.T) {
 				return text("first"), nil, nil
 			})
 	}
-	if _, err := bridge(t.Context(), serve(t, mount), Command{Name: "a_b"}, DefaultCallTimeout, taken); err != nil {
+	if _, err := bridge(t.Context(), serve(t, mount), details{name: "a_b", timeout: DefaultCallTimeout}, taken); err != nil {
 		t.Fatalf("bridging the first server: %v", err)
 	}
 
@@ -88,7 +88,7 @@ func TestTwoServersComposingToTheSameToolNameAreRefused(t *testing.T) {
 				return text("second"), nil, nil
 			})
 	}
-	_, err := bridge(t.Context(), serve(t, second), Command{Name: "a"}, DefaultCallTimeout, taken)
+	_, err := bridge(t.Context(), serve(t, second), details{name: "a", timeout: DefaultCallTimeout}, taken)
 	if err == nil {
 		t.Fatal("bridge accepted two tools composing to a_b_c")
 	}
@@ -162,7 +162,7 @@ func TestArgumentsThatAreNotAnObjectAreRefusedBeforeTheCall(t *testing.T) {
 // goroutine for the life of the process. The whole run would otherwise read as
 // a model that stopped thinking.
 func TestAServerThatNeverAnswersLosesTheCallAndNotTheAgent(t *testing.T) {
-	built, err := bridge(t.Context(), serve(t, blocking), Command{Name: "s"}, 50*time.Millisecond, map[string]bool{})
+	built, err := bridge(t.Context(), serve(t, blocking), details{name: "s", timeout: 50 * time.Millisecond}, map[string]bool{})
 	if err != nil {
 		t.Fatalf("bridge = %v, want it to succeed", err)
 	}

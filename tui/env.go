@@ -16,6 +16,13 @@ const EnvPrefix = "NACELLE_"
 // that ignored the config file entirely, so what its README called overrides
 // were really a second, mutually exclusive mode nobody could tell apart from
 // the first.
+//
+// Sources.MCP is the one setting with no variable of its own, and that is a
+// decision rather than an omission. It names files, and the two places a
+// person writes a file path down already cover both halves of the question:
+// ~/.nacelle.yml for the servers wanted every run, -mcp for the ones wanted
+// this one. A third spelling would be a third thing to document and a third
+// place to look when a server did not start.
 func fromEnv() Config {
 	return Config{
 		Backend:       os.Getenv(EnvPrefix + "BACKEND"),
@@ -27,7 +34,7 @@ func fromEnv() Config {
 		Thinking:      envBool(EnvPrefix + "THINKING"),
 		ApproveTools:  envBool(EnvPrefix + "APPROVE_TOOLS"),
 		MaxIterations: envInt(EnvPrefix + "MAX_ITERATIONS"),
-		SkillDirs:     envList(EnvPrefix + "SKILL_DIRS"),
+		Sources:       Sources{SkillDirs: envList(EnvPrefix + "SKILL_DIRS")},
 		Web: Web{
 			Search: envString(EnvPrefix + "SEARCH"),
 			Fetch:  envBool(EnvPrefix + "FETCH"),

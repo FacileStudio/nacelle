@@ -129,7 +129,7 @@ func serve(t *testing.T, mount func(*sdk.Server)) *sdk.ClientSession {
 func bridgeTools(t *testing.T, command Command, mount func(*sdk.Server)) []nacelle.Tool {
 	t.Helper()
 
-	built, err := bridge(t.Context(), serve(t, mount), command, DefaultCallTimeout, map[string]bool{})
+	built, err := bridge(t.Context(), serve(t, mount), command.details(), map[string]bool{})
 	if err != nil {
 		t.Fatalf("bridge(%q) = %v, want it to succeed", command.Name, err)
 	}
