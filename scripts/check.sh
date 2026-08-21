@@ -75,7 +75,17 @@ fi
 # local source and a stale require is invisible, which is how tui/go.mod sat
 # four commits behind a core it could not compile against while this script
 # printed "ok". Turning the workspace off builds what a stranger would get.
+#
+# The root is in this loop for the same reason and it was missing from it,
+# which cost a red CI run. Every other step here runs with the workspace on,
+# so the root module was only ever built against go.work.sum — and a `go mod
+# tidy` run inside the workspace splits the sums between the two files, so
+# go.sum can be missing an entry that nothing local ever asks for. `go get
+# github.com/FacileStudio/nacelle` reads go.mod and go.sum and has never heard
+# of the workspace file sitting next to them, which is exactly what CI's own
+# GOWORK=off job proved and this script did not.
 echo "==> go build (no workspace)"
+(GOWORK=off "$GO" build ./...) || status=1
 for module in $NESTED; do
   (GOWORK=off "$GO" -C "$module" build ./...) || status=1
 done
