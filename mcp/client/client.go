@@ -23,15 +23,29 @@
 //
 // # What is deliberately absent
 //
+// Only tools are bridged. MCP servers also offer resources and prompts, and
+// this package reads neither, because nacelle's loop has one place to put a
+// server's capability and it is [nacelle.Tool]. A resource is a document the
+// model would have to be told to fetch, which is a tool; a prompt is text a
+// person picks, which is a decision no library should make for the client
+// above it. Both become interesting when something asks for them, with a
+// shape to put them in.
+//
+// Sampling and elicitation — a server asking the client to run a completion,
+// or to put a question to the person — are not answered. They invert the
+// direction the loop runs in: a tool call would have to re-enter the agent
+// that is waiting on it, and re-entrancy is a thing to design rather than to
+// discover in a stack trace.
+//
 // notifications/tools/list_changed is ignored. The tool set is fixed when a
 // request is built, so a server that grows a tool mid-run has nowhere to put
 // it, and honouring the notification would mean telling a model about a tool
 // the request it is answering never carried.
 //
-// Streamable HTTP is the other transport MCP defines and the SDK already
-// speaks it. It is absent because nothing needs it yet, not because it would
-// not fit: only [Command] and the transport it builds are stdio-specific, and
-// everything after Connect works on a session whatever produced it.
+// The SSE transport, and the ws:// URLs some clients accept, are refused by
+// name rather than supported. MCP replaced SSE with Streamable HTTP, which
+// [Remote] speaks; a config written for the older one gets an error naming
+// the key to change, which is worth more than a second transport to maintain.
 package client
 
 import (
