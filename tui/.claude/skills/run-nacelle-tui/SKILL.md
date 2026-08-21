@@ -4,7 +4,8 @@ description: Build, run, and drive nacelle's TUI (the terminal coding-assistant 
 ---
 
 `nacelle` is a Go agent SDK; `tui/` is its one runnable app, a Bubble Tea
-terminal client. It is alt-screen and raw-mode, so it has to be driven
+terminal client. It renders inline rather than on the alternate screen — it
+gave that back in `40e47dc` — but it is still raw-mode, so it has to be driven
 through tmux — drive it via
 `.claude/skills/run-nacelle-tui/driver.sh` (relative to `tui/`).
 
@@ -70,7 +71,7 @@ the prompt, the spinner, scrolling, styling, all of it.
 ~/.local/bin/nacelle
 ```
 
-Type, Enter to ask, ctrl+c to stop a run or quit, ctrl+\ to force-quit.
+Type, Enter to ask, esc to stop a run, ctrl+c to stop one or quit, ctrl+\ to force-quit.
 Useless headless — needs a real terminal.
 
 ## Test
