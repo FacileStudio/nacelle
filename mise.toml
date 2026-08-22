@@ -1,8 +1,15 @@
+[settings]
+lockfile = true
+
 # 1.26.4 because tui/ needs it: Bubble Tea v2 declares that floor, and a
 # nested module may sit above the root's. The root stays on 1.25 so the
 # documented floor for a backend importing the loop stays honest.
 [tools]
+lefthook = "latest"
 go = "1.26.4"
+
+[hooks]
+postinstall = "lefthook install"
 
 [tasks.check]
 description = "Run the full quality gate: gofmt, vet, test, lint"
@@ -15,7 +22,3 @@ run = "go test ./... && go -C tui test ./..."
 [tasks.format]
 description = "Format the Go sources in place"
 run = "sh ./scripts/check.sh --format"
-
-[tasks.hooks]
-description = "Enable the tracked git hooks in this clone"
-run = "git config core.hooksPath .githooks"

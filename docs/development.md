@@ -21,12 +21,23 @@ There is no database, no Docker, and no client half beyond `tui/` itself.
 mise run check      # gofmt + vet + test + golangci-lint, every module
 mise run test       # go test ./... && go -C tui test ./...
 mise run format     # rewrite Go sources in place
-mise run hooks      # enable the tracked git hooks in this clone
 ```
 
-`mise run hooks` is `git config core.hooksPath .githooks`. Run it once per clone — it wires
-`.githooks/pre-push`, which calls `scripts/check.sh` directly, so a bad push is caught before
-it leaves your machine (though not, on its own, before it merges — see [CI](#ci)).
+## Git hooks
+
+Run `mise install` once per clone. It installs the pinned toolchain and then runs
+`lefthook install` through its `postinstall` hook, which is what writes the git hooks.
+
+`lefthook.yml` wires two of them. `commit-msg` comes from the shared config in
+[FacileStudio/hooks](https://github.com/FacileStudio/hooks), pinned by tag: it requires a
+Conventional Commits subject, `type(scope): summary`, and rewrites the subject with the
+gitmoji for that type, so do not type the emoji yourself. `pre-push` calls
+`scripts/check.sh` directly, so a bad push is caught before it leaves your machine (though
+not, on its own, before it merges, see [CI](#ci)).
+
+The script itself is unchanged by the move to lefthook and is still the gate; only its
+caller moved. lefthook caches the shared config at the pinned `ref`, so there is no network
+call per commit. Bump that `ref` in `lefthook.yml` to pick up a new policy.
 
 ## The quality gate
 
