@@ -6,7 +6,18 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
-Nothing yet.
+No library change. Tooling and documentation only.
+
+### Added
+
+- **`scripts/check.sh --core-ahead`**, for the one commit in a breaking core release where the
+  core has moved and `tui/` has not adopted it yet. It skips the three nested checks that resolve
+  the core from the working tree and runs everything else, replacing a `git push --no-verify` that
+  skipped the whole gate. See [Cutting a release](docs/development.md#cutting-a-release).
+- **Wire-level tests for the Anthropic thinking block**, asserting the JSON the SDK actually
+  serialises for each variant rather than the params struct this package builds. The distinction
+  earned itself twice on the OpenRouter side in one day: a params assertion proves intent, and a
+  provider validates bytes.
 
 ## [0.2.2] - 2026-08-23
 

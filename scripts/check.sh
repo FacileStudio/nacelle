@@ -23,13 +23,43 @@ set -eu
 # in step with the go.mod files.
 NESTED="tui"
 
+# --core-ahead exists for one commit in the life of a breaking core change, and
+# it is the alternative to reaching for `git push --no-verify`.
+#
+# The nested module is checked two ways here. The build runs with GOWORK=off, so
+# tui/ resolves the core from the proxy at the version its go.mod names, while
+# vet and test run with the workspace on, against the tree. That second pair is
+# what cannot pass on a commit that changes the core and leaves tui/ still
+# calling the old API, and such a commit is unavoidable: tui/go.mod cannot name
+# a core version that has not been tagged, and the tag cannot be pushed past
+# this gate.
+#
+# Skipping the workspace-on pair for that one push is safe for a reason worth
+# stating rather than trusting. CI sets GOWORK=off in both of its jobs, so what
+# it verifies on main is exactly what still runs here: tui/ source built against
+# the published core. The workspace-on pair is a development convenience, it
+# tells you early that the tree and tui/ disagree, and at a release boundary it
+# is reporting a disagreement that is the point of the commit.
+#
+# Everything else still runs: gofmt, the root vet, the root test -race, the root
+# lint, and the nested GOWORK=off build. That is the whole difference between
+# this and --no-verify, under which none of them run at all.
+#
+# The nested lint pass is skipped along with vet and test, and finding that out
+# took a second attempt. golangci-lint runs typecheck, it runs from inside the
+# module with the workspace on, and it therefore fails on exactly the same
+# disagreement for exactly the same reason. Skipping two of the three checks
+# that resolve the core from the tree, and leaving the third, produced a flag
+# that changed the error message and nothing else.
+
 mode="all"
 case "${1:-}" in
 --no-lint) mode="nolint" ;;
 --format) mode="format" ;;
+--core-ahead) mode="coreahead" ;;
 "") ;;
 *)
-  echo "usage: $0 [--no-lint|--format]" >&2
+  echo "usage: $0 [--no-lint|--format|--core-ahead]" >&2
   exit 2
   ;;
 esac
@@ -92,9 +122,11 @@ done
 
 echo "==> go vet"
 "$GO" vet ./... || status=1
-for module in $NESTED; do
-  ("$GO" -C "$module" vet ./...) || status=1
-done
+if [ "$mode" != "coreahead" ]; then
+  for module in $NESTED; do
+    ("$GO" -C "$module" vet ./...) || status=1
+  done
+fi
 
 # -race, not as a nicety. Tool handlers run concurrently on the SDK runner's
 # goroutines and park their results in a mutex-guarded sink, which is the exact
@@ -102,9 +134,11 @@ done
 # cmd.ProcessState raced with cmd.Wait in tools/ for as long as nothing looked.
 echo "==> go test"
 "$GO" test -race ./... || status=1
-for module in $NESTED; do
-  ("$GO" -C "$module" test -race ./...) || status=1
-done
+if [ "$mode" != "coreahead" ]; then
+  for module in $NESTED; do
+    ("$GO" -C "$module" test -race ./...) || status=1
+  done
+fi
 
 # The linter is guarded on the binary running rather than on it being on PATH.
 # A mise shim for a version that was never installed resolves under
@@ -119,9 +153,11 @@ if [ "$mode" != "nolint" ]; then
     # module" to stderr and still exits 0, so a broken nested module would pass
     # silently. cd, and pass the config explicitly rather than trusting the
     # upward search to find it from in there.
-    for module in $NESTED; do
-      (cd "$module" && golangci-lint run --config "$root/.golangci.yml" ./...) || status=1
-    done
+    if [ "$mode" != "coreahead" ]; then
+      for module in $NESTED; do
+        (cd "$module" && golangci-lint run --config "$root/.golangci.yml" ./...) || status=1
+      done
+    fi
   else
     echo "check: no usable 'golangci-lint', skipping the lint pass (CI still runs it)" >&2
   fi
