@@ -57,7 +57,10 @@ type Capabilities struct {
 	// reasoning as KindThinking events.
 	Thinking bool
 
-	// Effort reports whether the backend accepts an effort level.
+	// Effort reports whether the backend accepts a reasoning depth, which
+	// covers both spellings of it: an effort level and a token budget. No
+	// backend here takes one without the other, so splitting this in two
+	// would add a field that can only ever agree with its neighbour.
 	Effort bool
 
 	// Cost reports whether Usage carries money rather than only tokens.
@@ -81,8 +84,7 @@ type Request struct {
 	Messages      []Message
 	Tools         []Tool
 	MCP           []mcp.Server
-	Effort        Effort
-	Thinking      bool
+	Thinking      Thinking
 	MaxTokens     int64
 	MaxIterations int
 

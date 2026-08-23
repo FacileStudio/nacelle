@@ -25,13 +25,23 @@ const ConfigFile = ".nacelle.yml"
 type Config struct {
 	Backend       string `yaml:"backend"`
 	Model         string `yaml:"model"`
-	Effort        string `yaml:"effort"`
 	Root          string `yaml:"root"`
 	System        string `yaml:"system"`
 	Bash          *bool  `yaml:"bash"`
-	Thinking      *bool  `yaml:"thinking"`
 	ApproveTools  *bool  `yaml:"approve_tools"`
 	MaxIterations *int   `yaml:"max_iterations"`
+
+	// Reasoning is embedded and inlined for both of the reasons the three
+	// groups below are, and the inlining is load-bearing in a way it is
+	// nowhere else here. Effort and Thinking were top-level fields until a
+	// third setting joined them, so `effort:` and `thinking:` are already
+	// written at the top level of every ~/.nacelle.yml that mentions them.
+	// load() decodes with KnownFields, which means a key that quietly
+	// relocated under a heading would not be a warning on the next launch,
+	// it would be a refusal to start. The tag is what keeps both keys
+	// exactly where they were, and config.Effort and config.Thinking still
+	// resolve, so no call site moved either.
+	Reasoning `yaml:",inline"`
 
 	// Web is embedded rather than named, so every field on it is still
 	// reached as config.Search, for the reason Discovery is: it keeps this
@@ -75,10 +85,16 @@ type Config struct {
 // agent loop — a script, a CI job, someone who trusts the model to just get
 // on with it — have nobody to ask and want none of this; the interactive
 // human who does is the one who turns it on.
+//
+// Budget defaults to zero, which is the one answer here that really is "say
+// nothing": no reasoning ceiling is set from this side and the backend applies
+// whatever it applies. It is still filled in rather than left nil, because
+// this is the layer that answers everything and every deref above it depends
+// on that being true.
 func defaults() Config {
 	bash, thinking, mycelium, projectContext, skills, trustSkills, approveTools :=
 		false, false, true, true, true, false, false
-	iterations := 40
+	iterations, budget := 40, int64(0)
 	search, fetch := "", true
 	return Config{
 		Web:           Web{Search: &search, Fetch: &fetch},
@@ -86,90 +102,15 @@ func defaults() Config {
 		Root:          ".",
 		System:        defaultSystem,
 		Bash:          &bash,
-		Thinking:      &thinking,
 		ApproveTools:  &approveTools,
 		MaxIterations: &iterations,
+		Reasoning:     Reasoning{Thinking: &thinking, Budget: &budget},
 		Discovery: Discovery{
 			Mycelium:         &mycelium,
 			ProjectContext: &projectContext,
 			Skills:         &skills,
 			TrustSkills:    &trustSkills,
 		},
-	}
-}
-
-// merge overwrites every setting the layer above actually mentions, and leaves
-// the rest alone. SkillDirs reads "mentioned" the same way mergeStrings reads
-// an empty string: nothing yet lets a layer clear it on purpose, so an empty
-// slice only ever means a layer that never mentioned it.
-//
-// MCP is the one list that accumulates rather than replaces. Sources.MCP is
-// where the reason is written down, because it is a fact about what that list
-// is for and not about how layers are resolved.
-func (c *Config) merge(over Config) {
-	c.mergeStrings(over)
-	c.mergeToggles(over)
-	if over.MaxIterations != nil {
-		c.MaxIterations = over.MaxIterations
-	}
-	if over.Search != nil {
-		c.Search = over.Search
-	}
-	if over.Fetch != nil {
-		c.Fetch = over.Fetch
-	}
-	if len(over.SkillDirs) > 0 {
-		c.SkillDirs = over.SkillDirs
-	}
-	c.MCP = append(c.MCP, over.MCP...)
-}
-
-// mergeStrings overwrites every string setting over actually mentions. Empty
-// is "not mentioned" for these — none has a meaningful empty value, which is
-// exactly what makes a string safe to use unlike the toggles below.
-func (c *Config) mergeStrings(over Config) {
-	if over.Backend != "" {
-		c.Backend = over.Backend
-	}
-	if over.Model != "" {
-		c.Model = over.Model
-	}
-	if over.Effort != "" {
-		c.Effort = over.Effort
-	}
-	if over.Root != "" {
-		c.Root = over.Root
-	}
-	if over.System != "" {
-		c.System = over.System
-	}
-}
-
-// mergeToggles overwrites every *bool setting over actually mentions. These
-// stay pointers rather than joining mergeStrings' plain-value treatment
-// because a layer saying nothing and a layer saying false are different
-// answers a bool cannot tell apart.
-func (c *Config) mergeToggles(over Config) {
-	if over.Bash != nil {
-		c.Bash = over.Bash
-	}
-	if over.Thinking != nil {
-		c.Thinking = over.Thinking
-	}
-	if over.Mycelium != nil {
-		c.Mycelium = over.Mycelium
-	}
-	if over.ProjectContext != nil {
-		c.ProjectContext = over.ProjectContext
-	}
-	if over.Skills != nil {
-		c.Skills = over.Skills
-	}
-	if over.TrustSkills != nil {
-		c.TrustSkills = over.TrustSkills
-	}
-	if over.ApproveTools != nil {
-		c.ApproveTools = over.ApproveTools
 	}
 }
 

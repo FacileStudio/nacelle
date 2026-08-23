@@ -69,3 +69,51 @@ type Sources struct {
 	// the opposite of what typing it means.
 	MCP []string `yaml:"mcp"`
 }
+
+// Reasoning is how hard the model thinks, how much it may spend doing it, and
+// whether the person watching gets to see any of it.
+//
+// Those are three questions with one subject, which is why they share a type
+// now that there are three of them. On the Go side the grouping is the
+// mechanical one Discovery and Sources exist for, keeping Config's own field
+// count from growing every time this list does. On the file side it changes
+// nothing at all, and that is the point: yaml:",inline" holds every key where
+// it already was.
+//
+// Effort and Budget are two spellings of one idea, and the two backends
+// disagree about which they accept. Both are carried so each backend can send
+// what its own API understands; nacelle.Thinking is where that disagreement is
+// written down.
+type Reasoning struct {
+	// Effort is how hard the model works, from none through max, and
+	// empty asks for the backend's own default.
+	//
+	// Nothing here checks a level against the model that will receive it,
+	// because nacelle does not either. A level a model does not advertise
+	// is clamped by the provider rather than refused, so a table of which
+	// model takes which would be a maintenance cost carrying a wrong
+	// answer from the week a provider added a level.
+	Effort string `yaml:"effort"`
+
+	// Thinking streams the model's reasoning into the transcript.
+	//
+	// It decides what is displayed and nothing else. The reasoning is
+	// billed either way and it now travels back over the wire either way,
+	// so turning this off saves no tokens; it only keeps the transcript to
+	// the answer. It used to do more, and the reason it no longer does is
+	// in nacelle.Thinking's own doc comment: wiring "the model may keep
+	// its last thought" to "a human wants to watch" handed the model a
+	// blank where its own reasoning should have been on every tool round
+	// after the first.
+	Thinking *bool `yaml:"thinking"`
+
+	// Budget caps the tokens one turn may spend on reasoning, and zero
+	// means no ceiling is set from here.
+	//
+	// Zero is not effort none. A ceiling nobody set leaves the backend on
+	// whatever it defaults to, where effort none is a request to stop
+	// thinking that a model with mandatory reasoning answers with a 400
+	// rather than ignoring. A pointer for the reason MaxIterations is one: a layer saying
+	// nothing and a layer saying zero on purpose are different answers.
+	Budget *int64 `yaml:"reasoning_budget"`
+}

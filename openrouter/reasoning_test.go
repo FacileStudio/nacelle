@@ -2,6 +2,7 @@ package openrouter
 
 import (
 	"context"
+	"maps"
 	"strings"
 	"testing"
 
@@ -29,30 +30,150 @@ data: [DONE]
 		t.Error("a reasoning parameter was sent for a request that wanted none")
 	}
 
-	loud := collect(t, backend, nacelle.Request{System: "s", Thinking: true})
+	loud := collect(t, backend, nacelle.Request{System: "s", Thinking: nacelle.Thinking{Show: true}})
 	thinking := kinds(loud, nacelle.KindThinking)
 	if len(thinking) != 1 || thinking[0].Text != "thinking about it" {
 		t.Errorf("thinking = %+v, want the reasoning delta", thinking)
 	}
 }
 
-// Effort without Thinking means think hard and show nothing: reasoning nobody
-// reads still fills the context window.
-func TestEffortAndExclusionReachTheRequest(t *testing.T) {
-	backend, handler := serve(t, withKeepalive)
-	collect(t, backend, nacelle.Request{System: "s", Effort: nacelle.EffortHigh})
+// exclude is the parameter this backend must never send. It does not stop the
+// model reasoning and does not stop the reasoning being billed, it stops the
+// reasoning coming back, and what comes back is what the tool loop replays to
+// keep the model's train of thought intact.
+func TestDepthReachesTheRequestAndExclusionNeverDoes(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		thinking nacelle.Thinking
+		want     map[string]any
+	}{
+		{"effort alone", nacelle.Thinking{Effort: nacelle.EffortHigh}, map[string]any{"effort": "high"}},
+		{"budget alone", nacelle.Thinking{Budget: 2048}, map[string]any{"max_tokens": 2048.0}},
+		{"both spellings", nacelle.Thinking{Effort: nacelle.EffortMax, Budget: 4096}, map[string]any{"effort": "max", "max_tokens": 4096.0}},
+		{"off", nacelle.Thinking{Effort: nacelle.EffortNone}, map[string]any{"enabled": false}},
+		{"off beats a ceiling", nacelle.Thinking{Effort: nacelle.EffortNone, Budget: 4096}, map[string]any{"enabled": false}},
+		{"watching without a depth", nacelle.Thinking{Show: true}, map[string]any{"enabled": true}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			backend, handler := serve(t, withKeepalive)
+			collect(t, backend, nacelle.Request{System: "s", Thinking: testCase.thinking})
 
-	reasoning, ok := handler.requests[0]["reasoning"].(map[string]any)
-	if !ok {
-		t.Fatalf("no reasoning parameter: %+v", handler.requests[0])
-	}
-	if reasoning["effort"] != "high" {
-		t.Errorf("effort = %v, want high", reasoning["effort"])
-	}
-	if reasoning["exclude"] != true {
-		t.Errorf("exclude = %v, want true when the caller did not ask to see it", reasoning["exclude"])
+			reasoning, ok := handler.requests[0]["reasoning"].(map[string]any)
+			if !ok {
+				t.Fatalf("no reasoning parameter: %+v", handler.requests[0])
+			}
+			if _, sent := reasoning["exclude"]; sent {
+				t.Errorf("exclude was sent: %+v", reasoning)
+			}
+			if !maps.Equal(reasoning, testCase.want) {
+				t.Errorf("reasoning = %+v, want %+v", reasoning, testCase.want)
+			}
+		})
 	}
 }
+
+// A reasoning block arrives one fragment at a time and every fragment looks
+// complete, which is what makes keeping the last one seem reasonable until you
+// read what goes back out. Measured against stealth/ox-alpha on 2026-08-23:
+// fourteen chunks, all index 0, the last of them the single token "27.".
+func TestFragmentedReasoningIsRejoinedBeforeItGoesBack(t *testing.T) {
+	backend, handler := serve(t, fragmentedReasoning, finalAnswer)
+	tool, err := nacelle.NewTool("search", "Find things", func(context.Context, searchInput) (string, error) {
+		return "2026-08-23", nil
+	})
+	if err != nil {
+		t.Fatalf("NewTool: %v", err)
+	}
+	collect(t, backend, nacelle.Request{System: "s", Tools: []nacelle.Tool{tool}})
+
+	blocks := reasoningDetails(t, handler.requests[1])
+	if len(blocks) != 1 {
+		t.Fatalf("sent %d reasoning blocks, want the three fragments rejoined into 1: %+v", len(blocks), blocks)
+	}
+	block := blocks[0].(map[string]any)
+	if block["text"] != "Check the date first." {
+		t.Errorf("text = %q, want the whole chain of thought", block["text"])
+	}
+	if block["format"] != "unknown" {
+		t.Errorf("format = %v, want the value the first fragment carried", block["format"])
+	}
+}
+
+// Two blocks at different positions are two thoughts, and the API refuses a
+// sequence that does not match what the model produced, so they must neither
+// merge nor swap.
+func TestSeparateReasoningBlocksKeepTheirOrder(t *testing.T) {
+	backend, handler := serve(t, twoReasoningBlocks, finalAnswer)
+	tool, err := nacelle.NewTool("search", "Find things", func(context.Context, searchInput) (string, error) {
+		return "ok", nil
+	})
+	if err != nil {
+		t.Fatalf("NewTool: %v", err)
+	}
+	collect(t, backend, nacelle.Request{System: "s", Tools: []nacelle.Tool{tool}})
+
+	blocks := reasoningDetails(t, handler.requests[1])
+	if len(blocks) != 2 {
+		t.Fatalf("sent %d reasoning blocks, want 2: %+v", len(blocks), blocks)
+	}
+	first := blocks[0].(map[string]any)
+	second := blocks[1].(map[string]any)
+	if first["text"] != "first thought" || second["summary"] != "second thought" {
+		t.Errorf("blocks = %+v, want them in the order the model produced", blocks)
+	}
+}
+
+// reasoningDetails digs the blocks out of the assistant message a follow-up
+// request replays, which is the only place their shape can be checked: the
+// OpenAI schema has no field for them, so they travel as an extra field and
+// there is no typed accessor to read them back through.
+func reasoningDetails(t *testing.T, request map[string]any) []any {
+	t.Helper()
+	messages, _ := request["messages"].([]any)
+	for _, entry := range messages {
+		message, _ := entry.(map[string]any)
+		if message["role"] != "assistant" {
+			continue
+		}
+		blocks, ok := message["reasoning_details"].([]any)
+		if !ok {
+			t.Fatalf("the replayed assistant message carried no reasoning: %+v", message)
+		}
+		return blocks
+	}
+	t.Fatalf("no assistant message was replayed: %+v", request)
+	return nil
+}
+
+const fragmentedReasoning = `data: {"id":"g","choices":[{"index":0,"delta":{"role":"assistant","reasoning":"Check ","reasoning_details":[{"type":"reasoning.text","text":"Check ","format":"unknown","index":0}],"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"search","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"g","choices":[{"index":0,"delta":{"reasoning":"the date","reasoning_details":[{"type":"reasoning.text","text":"the date","index":0}]},"finish_reason":null}]}
+
+data: {"id":"g","choices":[{"index":0,"delta":{"reasoning":" first.","reasoning_details":[{"type":"reasoning.text","text":" first.","index":0}]},"finish_reason":null}]}
+
+data: {"id":"g","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"query\":\"date\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"g","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: {"id":"g","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":5,"total_tokens":10,"cost":0.0001}}
+
+data: [DONE]
+
+`
+
+const twoReasoningBlocks = `data: {"id":"g","choices":[{"index":0,"delta":{"role":"assistant","reasoning_details":[{"type":"reasoning.text","text":"first ","index":0}],"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"search","arguments":"{}"}}]},"finish_reason":null}]}
+
+data: {"id":"g","choices":[{"index":0,"delta":{"reasoning_details":[{"type":"reasoning.text","text":"thought","index":0}]},"finish_reason":null}]}
+
+data: {"id":"g","choices":[{"index":0,"delta":{"reasoning_details":[{"type":"reasoning.summary","summary":"second thought","index":1}]},"finish_reason":null}]}
+
+data: {"id":"g","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: {"id":"g","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":5,"total_tokens":10,"cost":0.0001}}
+
+data: [DONE]
+
+`
 
 // Once the first token ships the status is committed, so a provider failure
 // arrives in-band rather than as an HTTP error.

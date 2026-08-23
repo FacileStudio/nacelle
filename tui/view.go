@@ -150,10 +150,10 @@ func (m *model) working() string {
 // of those is unreadable.
 //
 // Reasoning accumulates separately. It is not part of the answer: the two
-// written into one buffer come out concatenated with no separator, and the
-// concatenation is what would be sent back as the assistant's message on every
-// later turn — paying for a chain of thought again, in a field the providers
-// do not want it replayed in.
+// written into one buffer come out concatenated with no separator, and that
+// concatenation is what would go back as the assistant's message on every
+// later turn, putting a chain of thought in the one field no provider wants it
+// replayed in.
 func (m *model) absorb(event nacelle.Event) {
 	switch event.Kind {
 	case nacelle.KindText:
@@ -219,11 +219,14 @@ func describe(tool *nacelle.ToolEvent) string {
 // it from the screen at the exact moment it finished — which is what this did
 // until it was used.
 //
-// Reasoning is shown and then dropped rather than reported. nacelle.Reasoning
-// exists and would hold it, but neither backend will send one back — Anthropic
-// wants the signature the stream never carries, and OpenRouter is asked to
-// exclude reasoning outright — so recording it would fill the conversation with
-// a part that is only ever skipped on the way out.
+// Reasoning is shown and then dropped rather than recorded. nacelle.Reasoning
+// exists and would hold it, but what this buffer holds is the readable copy
+// and not the one a provider will take back. Within a run the backend already
+// carries the real thing on the assistant message it rebuilds, in the shape
+// the provider signs and validates; across runs no provider wants a chain of
+// thought from an answer it has already given, and both backends drop the part
+// on the way out. Recording it here would fill the conversation with something
+// that is only ever skipped.
 func (m *model) flush() string {
 	if reasoning := m.run.reasoning.String(); reasoning != "" {
 		m.run.reasoning.Reset()

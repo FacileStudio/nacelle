@@ -55,12 +55,20 @@ func (e *Unsupported) Error() string
 type Effort string
 
 const (
-	EffortLow    Effort = "low"
-	EffortMedium Effort = "medium"
-	EffortHigh   Effort = "high"
-	EffortXHigh  Effort = "xhigh"
-	EffortMax    Effort = "max"
+	EffortNone    Effort = "none"
+	EffortMinimal Effort = "minimal"
+	EffortLow     Effort = "low"
+	EffortMedium  Effort = "medium"
+	EffortHigh    Effort = "high"
+	EffortXHigh   Effort = "xhigh"
+	EffortMax     Effort = "max"
 )
+
+type Thinking struct {
+	Effort Effort // depth; "" is the backend's own default, EffortNone is off
+	Budget int64  // reasoning-token ceiling; 0 is no ceiling from here
+	Show   bool   // stream it as KindThinking; default false
+}
 
 const DefaultMaxTokens = 32000
 ```
@@ -71,8 +79,7 @@ const DefaultMaxTokens = 32000
 type Config struct {
 	Backend       Backend       // required
 	System        string        // required
-	Effort        Effort        // defaults to the backend's own
-	Thinking      bool          // default false
+	Thinking      Thinking      // depth, budget and whether it is shown
 	MaxTokens     int64         // default DefaultMaxTokens
 	MaxIterations int           // default 0, no cap
 	Tools         []Tool
@@ -106,8 +113,7 @@ type Request struct {
 	Messages      []Message
 	Tools         []Tool
 	MCP           []mcp.Server
-	Effort        Effort
-	Thinking      bool
+	Thinking      Thinking
 	MaxTokens     int64
 	MaxIterations int
 }

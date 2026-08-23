@@ -33,11 +33,17 @@ type sorted struct {
 
 // sift sorts one message's parts, dropping the two the schema cannot carry.
 //
-// Reasoning goes because OpenRouter is asked to exclude it unless the caller
-// opted in, and replaying it would bill a chain of thought twice. Finish goes
-// because there is no field for it. A tool call still streaming goes too: its
-// arguments are a truncated JSON object, which is a rejected request rather
-// than a partial one.
+// Reasoning goes, and it is worth being precise about why, because this
+// package works hard elsewhere to preserve exactly this. Within one run the
+// model's reasoning travels on the assistant message the turn loop rebuilds,
+// as reasoning_details, which is the form the provider will accept back. What
+// reaches here is the caller's own conversation, replayed across runs, and a
+// chain of thought from an answer already given is not something any provider
+// wants returned to it: it is billed again as input and it is not the thought
+// the model is currently in the middle of. Finish goes because there is no
+// field for it. A tool call still streaming goes too: its arguments are a
+// truncated JSON object, which is a rejected request rather than a partial
+// one.
 func sift(parts []nacelle.Part) sorted {
 	var out sorted
 	for _, part := range parts {

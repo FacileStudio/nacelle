@@ -2,7 +2,6 @@ package openrouter
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/FacileStudio/nacelle"
@@ -34,11 +33,11 @@ type toolCall struct {
 // the ordering constraint visible: the finish reason and the usage have to be
 // folded in before the turn is emitted, and any chunk can carry either.
 type turnStream struct {
-	accumulator      openai.ChatCompletionAccumulator
-	reasoningDetails json.RawMessage
-	stop             nacelle.Stop
-	usage            nacelle.Usage
-	total            *nacelle.Usage
+	accumulator openai.ChatCompletionAccumulator
+	reasoning   details
+	stop        nacelle.Stop
+	usage       nacelle.Usage
+	total       *nacelle.Usage
 }
 
 // turn streams one assistant turn, emitting its text and reasoning as it
@@ -72,7 +71,7 @@ func (b *Backend) turn(
 	for stream.Next() {
 		chunk := stream.Current()
 		state.observe(chunk)
-		if !state.emit(chunk, request.Thinking, call.out) {
+		if !state.emit(chunk, request.Thinking.Show, call.out) {
 			return nil, errStopped
 		}
 	}
@@ -110,7 +109,7 @@ func (t *turnStream) observe(chunk openai.ChatCompletionChunk) {
 		t.stop = stopOf(reason)
 	}
 	if raw, ok := extra(chunk.Choices[0].Delta.JSON.ExtraFields, "reasoning_details"); ok {
-		t.reasoningDetails = raw
+		t.reasoning.add(raw)
 	}
 }
 
@@ -157,7 +156,7 @@ func (t *turnStream) finish(out *emitter) (*turnResult, error) {
 	}
 
 	return &turnResult{
-		assistant: assistantMessage(message, t.reasoningDetails),
+		assistant: assistantMessage(message, t.reasoning.blocks),
 		calls:     calls,
 		stop:      t.stop,
 	}, nil
@@ -165,17 +164,23 @@ func (t *turnStream) finish(out *emitter) (*turnResult, error) {
 
 // assistantMessage rebuilds the model's turn for the next request.
 //
-// reasoning_details is echoed back exactly as it arrived. Reasoning models
-// require the sequence of reasoning blocks to match what they produced, and a
-// tool loop that drops them loses the model's train of thought at precisely
-// the moment it is waiting on a tool result.
-func assistantMessage(message openai.ChatCompletionMessage, reasoningDetails json.RawMessage) openai.ChatCompletionMessageParamUnion {
+// The reasoning goes back with it. A tool call is the model pausing mid-thought
+// to wait for something it cannot look up itself, and the turn that follows is
+// meant to be the same thought continuing; a loop that replays the turn without
+// the reasoning has quietly asked the model to start again from what it said
+// out loud. OpenRouter's rule is that the blocks must match what the model
+// produced, in order and unmodified, which is why they are reassembled in
+// details rather than taken off the last chunk that happened to carry them.
+//
+// The blocks are set as an extra field because the OpenAI schema has no place
+// for them. They are handed over as decoded objects rather than raw JSON so
+// that the SDK encodes them once, on its own terms, instead of this package
+// marshalling a string that then has to survive being embedded in another
+// document.
+func assistantMessage(message openai.ChatCompletionMessage, blocks []map[string]any) openai.ChatCompletionMessageParamUnion {
 	assistant := message.ToParam()
-	if len(reasoningDetails) > 0 && assistant.OfAssistant != nil {
-		var decoded any
-		if err := json.Unmarshal(reasoningDetails, &decoded); err == nil {
-			assistant.OfAssistant.SetExtraFields(map[string]any{"reasoning_details": decoded})
-		}
+	if len(blocks) > 0 && assistant.OfAssistant != nil {
+		assistant.OfAssistant.SetExtraFields(map[string]any{"reasoning_details": blocks})
 	}
 	return assistant
 }

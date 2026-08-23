@@ -181,6 +181,13 @@ func augmentSystem(config *Config) loaded {
 // so the caller can say which one answered. approve is nil unless
 // -approve-tools was asked for — see nacelle.Approve's own doc comment for
 // why nil, not a rubber-stamp function, is what "off" means here.
+//
+// The three reasoning settings fold into one nacelle.Thinking here, and the
+// one rename in that fold is worth knowing about: this client's -thinking
+// becomes Show, which decides what the transcript displays and nothing else.
+// The model reasons and is billed for it either way, and the reasoning now
+// travels back over the wire either way, so turning -thinking off no longer
+// costs the model its own last thought on the next tool round.
 func build(config Config, local []nacelle.Tool, approve nacelle.Approve) (*nacelle.Agent, nacelle.Backend, error) {
 	backend, err := chosen(config)
 	if err != nil {
@@ -188,10 +195,13 @@ func build(config Config, local []nacelle.Tool, approve nacelle.Approve) (*nacel
 	}
 
 	agent, err := nacelle.New(nacelle.Config{
-		Backend:       nacelle.Retry(backend, nacelle.RetryOptions{}),
-		System:        config.System,
-		Effort:        nacelle.Effort(config.Effort),
-		Thinking:      *config.Thinking,
+		Backend: nacelle.Retry(backend, nacelle.RetryOptions{}),
+		System:  config.System,
+		Thinking: nacelle.Thinking{
+			Effort: nacelle.Effort(config.Effort),
+			Budget: *config.Budget,
+			Show:   *config.Thinking,
+		},
 		Tools:         local,
 		MaxIterations: *config.MaxIterations,
 		Approve:       approve,

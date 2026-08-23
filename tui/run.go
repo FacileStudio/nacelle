@@ -15,8 +15,10 @@ import (
 //
 // Reasoning gets a buffer of its own: sharing the answer's put the last
 // thought against the first word with no separator, and worse, committed the
-// reasoning to the conversation — re-sending a chain of thought every later
-// turn that the provider bills for and does not want replayed.
+// reasoning to the conversation as prose, re-sending a chain of thought every
+// later turn in the one field no provider wants it replayed in. The copy that
+// does travel back is assembled inside the backend, where the provider's own
+// shape for it survives.
 //
 // usage is this run alone, because KindTurn accumulates and KindDone
 // replaces: a counter carried over from the last run would double-count its

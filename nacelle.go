@@ -33,21 +33,6 @@ import (
 // truncates an answer mid-sentence and buys a retry.
 const DefaultMaxTokens = 32000
 
-// Effort tunes how hard the model works, trading cost against quality.
-//
-// It replaces the fixed thinking budget older models took: a token budget is
-// rejected outright by current Anthropic models, and this is what took its
-// place. A backend that does not support it says so in its Capabilities.
-type Effort string
-
-const (
-	EffortLow    Effort = "low"
-	EffortMedium Effort = "medium"
-	EffortHigh   Effort = "high"
-	EffortXHigh  Effort = "xhigh"
-	EffortMax    Effort = "max"
-)
-
 // Config describes an agent. Backend and System are required; everything else
 // has a working default.
 type Config struct {
@@ -59,16 +44,10 @@ type Config struct {
 	// System is the system prompt.
 	System string
 
-	// Effort defaults to the backend's own default.
-	Effort Effort
-
-	// Thinking streams the model's reasoning as KindThinking events.
-	//
-	// Off by default, which matches the APIs: the raw chain of thought is
-	// never returned and a readable summary is opt-in. Turning it on
-	// changes what is displayed, never what is billed — the model thinks
-	// either way.
-	Thinking bool
+	// Thinking is how hard the model thinks and whether the reasoning
+	// reaches the consumer. The zero value asks for the backend's own
+	// depth, shown to nobody.
+	Thinking Thinking
 
 	// MaxTokens defaults to DefaultMaxTokens.
 	MaxTokens int64
@@ -173,7 +152,6 @@ func (c Config) request() Request {
 		System:        c.System,
 		Tools:         c.Tools,
 		MCP:           c.MCP,
-		Effort:        c.Effort,
 		Thinking:      c.Thinking,
 		MaxTokens:     maxTokens,
 		MaxIterations: c.MaxIterations,
@@ -193,10 +171,12 @@ func supports(cfg Config) error {
 	switch {
 	case len(cfg.MCP) > 0 && !can.MCP:
 		return &Unsupported{Backend: name, Feature: "MCP servers"}
-	case cfg.Thinking && !can.Thinking:
+	case cfg.Thinking.Show && !can.Thinking:
 		return &Unsupported{Backend: name, Feature: "streamed thinking"}
-	case cfg.Effort != "" && !can.Effort:
+	case cfg.Thinking.Effort != "" && !can.Effort:
 		return &Unsupported{Backend: name, Feature: "effort levels"}
+	case cfg.Thinking.Budget > 0 && !can.Effort:
+		return &Unsupported{Backend: name, Feature: "reasoning budgets"}
 	}
 	return nil
 }

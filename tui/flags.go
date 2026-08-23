@@ -22,17 +22,26 @@ func (p *pathList) Set(v string) error { *p = append(*p, v); return nil }
 // fills each one in through — kept together so fromFlags can hand the whole
 // set to typedSetters rather than threading ten variables through it by hand.
 //
-// discoveryFlags is embedded for the same reason Config embeds Discovery:
-// every field on it is still reached as f.mycelium, not f.discoveryFlags.mycelium,
-// and grouping it only keeps this struct's own field count from growing by
-// one every time that list does.
+// The embedded groups mirror the ones Config has, for the reason Config has
+// them: every field on them is still reached as f.mycelium or f.effort, not as
+// f.discoveryFlags.mycelium, and grouping only keeps this struct's own field
+// count from growing by one every time one of those lists does.
 type declared struct {
-	backend, model, effort, root, system *string
+	backend, model, root, system *string
+	reasoningFlags
 	webFlags
-	bash, thinking, approveTools *bool
-	iterations                   *int
+	bash, approveTools *bool
+	iterations         *int
 	sourceFlags
 	discoveryFlags
+}
+
+// reasoningFlags is declared's half of Reasoning, one flag pointer per field
+// there.
+type reasoningFlags struct {
+	effort   *string
+	thinking *bool
+	budget   *int64
 }
 
 // webFlags is declared's half of Web — one flag pointer per field there.
@@ -57,15 +66,14 @@ type discoveryFlags struct {
 // where `flag.Parse` will leave its answers.
 func declareFlags(fallback Config) declared {
 	return declared{
-		sourceFlags: declareSources(),
-		backend:     flag.String("backend", fallback.Backend, "anthropic or openrouter"),
-		model:       flag.String("model", fallback.Model, "model id, defaulting to the backend's own"),
-		effort:      flag.String("effort", fallback.Effort, "low, medium, high, xhigh or max"),
-		root:        flag.String("root", fallback.Root, "directory the file tools may reach"),
-		system:      flag.String("system", fallback.System, "system prompt"),
-		webFlags:    declareWeb(fallback),
-		bash:        flag.Bool("bash", *fallback.Bash, "let the model run commands"),
-		thinking:    flag.Bool("thinking", *fallback.Thinking, "stream the model's reasoning"),
+		sourceFlags:    declareSources(),
+		backend:        flag.String("backend", fallback.Backend, "anthropic or openrouter"),
+		model:          flag.String("model", fallback.Model, "model id, defaulting to the backend's own"),
+		root:           flag.String("root", fallback.Root, "directory the file tools may reach"),
+		system:         flag.String("system", fallback.System, "system prompt"),
+		reasoningFlags: declareReasoning(fallback),
+		webFlags:       declareWeb(fallback),
+		bash:           flag.Bool("bash", *fallback.Bash, "let the model run commands"),
 		approveTools: flag.Bool("approve-tools", *fallback.ApproveTools,
 			"ask before every tool call runs, y/a/n; off by default, every call runs unasked"),
 		iterations: flag.Int("max-iterations", *fallback.MaxIterations, "how many times the model may be asked"),
@@ -100,6 +108,22 @@ func declareSources() sourceFlags {
 	return sourceFlags{skillDirs: skillDirs, mcp: mcp}
 }
 
+// declareReasoning registers the three settings that decide how hard the model
+// thinks, kept out of declareFlags for the reason declareWeb is.
+//
+// -effort and -reasoning-budget are two spellings of one idea rather than a
+// choice between them, and typing both is not a contradiction to resolve here:
+// the backends disagree about which they accept, so each sends the one its own
+// API understands and ignores the other.
+func declareReasoning(fallback Config) reasoningFlags {
+	return reasoningFlags{
+		effort:   flag.String("effort", fallback.Effort, "none, minimal, low, medium, high, xhigh or max"),
+		thinking: flag.Bool("thinking", *fallback.Thinking, "stream the model's reasoning"),
+		budget: flag.Int64("reasoning-budget", *fallback.Budget,
+			"tokens one turn may spend on reasoning; 0 sets no ceiling and leaves the backend's own default"),
+	}
+}
+
 // declareWeb registers the two network settings, kept out of declareFlags so
 // that function stays inside the length the gate allows.
 func declareWeb(fallback Config) webFlags {
@@ -116,23 +140,24 @@ func declareWeb(fallback Config) webFlags {
 // on its own cannot say where in Config it belongs.
 func typedSetters(f declared) map[string]func(*Config) {
 	return map[string]func(*Config){
-		"backend":         func(c *Config) { c.Backend = *f.backend },
-		"model":           func(c *Config) { c.Model = *f.model },
-		"effort":          func(c *Config) { c.Effort = *f.effort },
-		"root":            func(c *Config) { c.Root = *f.root },
-		"system":          func(c *Config) { c.System = *f.system },
-		"search":          func(c *Config) { c.Search = f.search },
-		"fetch":           func(c *Config) { c.Fetch = f.fetch },
-		"bash":            func(c *Config) { c.Bash = f.bash },
-		"thinking":        func(c *Config) { c.Thinking = f.thinking },
-		"mycelium":          func(c *Config) { c.Mycelium = f.mycelium },
-		"project-context": func(c *Config) { c.ProjectContext = f.projectContext },
-		"skills":          func(c *Config) { c.Skills = f.skills },
-		"trust-skills":    func(c *Config) { c.TrustSkills = f.trustSkills },
-		"approve-tools":   func(c *Config) { c.ApproveTools = f.approveTools },
-		"max-iterations":  func(c *Config) { c.MaxIterations = f.iterations },
-		"skill-dir":       func(c *Config) { c.SkillDirs = []string(*f.skillDirs) },
-		"mcp":             func(c *Config) { c.MCP = []string(*f.mcp) },
+		"backend":          func(c *Config) { c.Backend = *f.backend },
+		"model":            func(c *Config) { c.Model = *f.model },
+		"effort":           func(c *Config) { c.Effort = *f.effort },
+		"root":             func(c *Config) { c.Root = *f.root },
+		"system":           func(c *Config) { c.System = *f.system },
+		"search":           func(c *Config) { c.Search = f.search },
+		"fetch":            func(c *Config) { c.Fetch = f.fetch },
+		"bash":             func(c *Config) { c.Bash = f.bash },
+		"thinking":         func(c *Config) { c.Thinking = f.thinking },
+		"mycelium":           func(c *Config) { c.Mycelium = f.mycelium },
+		"project-context":  func(c *Config) { c.ProjectContext = f.projectContext },
+		"skills":           func(c *Config) { c.Skills = f.skills },
+		"trust-skills":     func(c *Config) { c.TrustSkills = f.trustSkills },
+		"approve-tools":    func(c *Config) { c.ApproveTools = f.approveTools },
+		"max-iterations":   func(c *Config) { c.MaxIterations = f.iterations },
+		"reasoning-budget": func(c *Config) { c.Budget = f.budget },
+		"skill-dir":        func(c *Config) { c.SkillDirs = []string(*f.skillDirs) },
+		"mcp":              func(c *Config) { c.MCP = []string(*f.mcp) },
 	}
 }
 

@@ -27,14 +27,17 @@ func fromEnv() Config {
 	return Config{
 		Backend:       os.Getenv(EnvPrefix + "BACKEND"),
 		Model:         os.Getenv(EnvPrefix + "MODEL"),
-		Effort:        os.Getenv(EnvPrefix + "EFFORT"),
 		Root:          os.Getenv(EnvPrefix + "ROOT"),
 		System:        os.Getenv(EnvPrefix + "SYSTEM"),
 		Bash:          envBool(EnvPrefix + "BASH"),
-		Thinking:      envBool(EnvPrefix + "THINKING"),
 		ApproveTools:  envBool(EnvPrefix + "APPROVE_TOOLS"),
 		MaxIterations: envInt(EnvPrefix + "MAX_ITERATIONS"),
 		Sources:       Sources{SkillDirs: envList(EnvPrefix + "SKILL_DIRS")},
+		Reasoning: Reasoning{
+			Effort:   os.Getenv(EnvPrefix + "EFFORT"),
+			Thinking: envBool(EnvPrefix + "THINKING"),
+			Budget:   envInt64(EnvPrefix + "REASONING_BUDGET"),
+		},
 		Web: Web{
 			Search: envString(EnvPrefix + "SEARCH"),
 			Fetch:  envBool(EnvPrefix + "FETCH"),
@@ -88,6 +91,26 @@ func envInt(name string) *int {
 		return nil
 	}
 	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return nil
+	}
+	return &value
+}
+
+// envInt64 is envInt in the width a token count is measured in.
+//
+// Two of these rather than one generic reader because they answer to two
+// different fields: MaxIterations counts requests and is an int, the reasoning
+// budget counts tokens and is the int64 nacelle.Thinking carries. Narrowing to
+// int here only to widen again at the call site is a conversion that silently
+// loses a ceiling on a 32-bit build, which is exactly the kind of bug nobody
+// finds by reading the config file back.
+func envInt64(name string) *int64 {
+	raw, ok := os.LookupEnv(name)
+	if !ok || raw == "" {
+		return nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
 		return nil
 	}

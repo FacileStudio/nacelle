@@ -6,7 +6,56 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
-Nothing yet.
+Reasoning, which was in here from the first day and wrong from the first day.
+
+### Fixed
+
+- **A streamed reasoning block was reassembled by keeping the last fragment of it.** OpenRouter
+  delivers `reasoning_details` a piece at a time and every piece looks like a whole block: a
+  type, a format, an index, some text. `openrouter/turn.go` assigned each one over the last,
+  so the array replayed on the next request held whatever the final chunk happened to carry.
+  Measured against `stealth/ox-alpha` on 2026-08-23: fourteen chunks, all index 0, the last of
+  them the single token `"27."`. The API's rule is that the sequence sent back must match what
+  the model produced, unmodified, so this was a corrupted chain of thought handed to the model
+  at every step of every tool loop, and on a provider that signs its blocks it is a rejected
+  request instead. Fragments are now rejoined in `openrouter/reasoning.go`, which holds the
+  blocks as decoded objects rather than a struct so that a field OpenRouter adds later still
+  survives the round trip.
+- **The default configuration asked every OpenRouter provider to throw the reasoning away.**
+  `exclude` was set whenever the caller had not asked to watch the model think, which is a
+  transport decision taken from a display flag. It does not stop the model reasoning and does
+  not stop the reasoning being billed. All it stops is the reasoning coming back, and what
+  comes back is the only thing the tool loop can replay. The parameter is gone rather than
+  demoted to an option: a switch whose sole effect is to break a tool loop is not a preference.
+
+### Changed
+
+- **BREAKING: `Config.Effort` and `Config.Thinking bool` are one `Config.Thinking Thinking`**,
+  carrying `Effort`, `Budget` and `Show`. `Request` changed the same way. Three separate
+  questions had been sharing two fields, which is how a display flag ended up deciding what
+  travelled over the wire. The struct is also what made the compiler list every site that had
+  been reading one and meaning the other.
+- **`Effort` gained `EffortNone` and `EffortMinimal`**, matching the vocabulary the gateway
+  documents. `EffortNone` is now the only thing that means off, and a model that cannot
+  switch reasoning off refuses the run rather than ignoring the request: measured against
+  `stealth/ox-alpha`, OpenRouter answers it with a 400 saying reasoning is mandatory for that
+  endpoint. An empty `Effort` hands the decision to the provider instead, which on that same
+  model resolves to its own maximum. Anthropic's `output_config.effort` is a closed enum of five, so the two
+  it lacks are answered in the backend rather than forwarded: `none` sends no effort at all
+  beside its disabled thinking block, and `minimal` clamps to `low`, which is the direction a
+  caller asking for the least reasoning wants to fail in. OpenRouter clamps the same way on its
+  own, measured 2026-08-23, so the backends agree.
+
+### Added
+
+- **`Thinking.Budget`**, a reasoning-token ceiling for one turn. It travels as
+  `reasoning.max_tokens` on OpenRouter and as the enabled thinking variant's `budget_tokens` on
+  Anthropic. Effort and budget are two spellings of one idea and the providers disagree about
+  which they take, so both are carried and each backend sends what its API understands.
+- **`reasoning_budget` in `~/.nacelle.yml`**, with `-reasoning-budget` and
+  `NACELLE_REASONING_BUDGET` beside it. `effort` and `thinking` keep their place at the top
+  level of the file: the loader decodes with `KnownFields`, so a relocated key would be a
+  startup crash on every config already written.
 
 ## [0.1.0] - 2026-08-22
 

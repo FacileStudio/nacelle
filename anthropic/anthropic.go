@@ -89,10 +89,8 @@ func (b *Backend) params(request nacelle.Request) sdk.BetaToolRunnerParams {
 	if amortises(request) {
 		params.CacheControl = sdk.NewBetaCacheControlEphemeralParam()
 	}
-	if request.Effort != "" {
-		params.OutputConfig = sdk.BetaOutputConfigParam{
-			Effort: sdk.BetaOutputConfigEffort(request.Effort),
-		}
+	if effort, wanted := outputEffort(request.Thinking.Effort); wanted {
+		params.OutputConfig = sdk.BetaOutputConfigParam{Effort: effort}
 	}
 	applyMCP(&params.BetaMessageNewParams, request.MCP)
 	return params
@@ -123,16 +121,68 @@ func amortises(request nacelle.Request) bool {
 	return len(request.Tools) > 0 || len(request.Messages) > 0
 }
 
-// thinkingConfig asks for adaptive thinking, with the summary shown or not.
+// thinkingConfig renders a request's thinking settings as the union the API
+// takes, picking the variant that can express what was asked for.
 //
-// Adaptive is the only mode current models accept — a fixed token budget is a
-// 400 — and it is on by default on Claude Opus 5 whether or not it is named
-// here. Naming it makes the display setting reachable, which is the only part
-// a caller actually controls.
-func thinkingConfig(visible bool) sdk.BetaThinkingConfigParamUnion {
-	adaptive := sdk.BetaThinkingConfigAdaptiveParam{}
-	if visible {
-		adaptive.Display = sdk.BetaThinkingConfigAdaptiveDisplaySummarized
+// There are three variants because there are three different asks. EffortNone
+// is the caller saying not to reason at all, and the disabled variant is the
+// only one that can say it. A budget is a ceiling on reasoning tokens, and
+// BudgetTokens exists nowhere else in the union, so a request carrying one has
+// to travel as the enabled variant. Everything else is adaptive, which is what
+// current models default to and the only mode they accept without a budget: a
+// fixed budget handed to a model that does not take one comes back a 400.
+//
+// The display setting is asked for only when the consumer wants to watch, and
+// it decides less than its name suggests. The API returns a summarized display
+// by default, so the reasoning travels back either way, which is what
+// nacelle.Thinking asks for: the model needs its own last thought on the turn
+// after, and the tokens are billed whether or not they are returned. Show gates
+// what a consumer is shown and nothing else. The disabled variant has no
+// display setting, and loses nothing by it, because a run that asked for no
+// reasoning has none to show.
+// outputEffort is the level to put on the request, and whether to put one
+// there at all.
+//
+// nacelle.Effort is the union of what the providers accept, and Anthropic
+// takes five of the seven. The two it does not are answered here rather than
+// cast straight through, because output_config.effort is a closed enum:
+// "minimal" is not in it, and "none" would sit next to a thinking block that
+// thinkingConfig has already switched off, which is a request contradicting
+// itself.
+//
+// minimal becomes low rather than nothing. A caller asking for the least
+// reasoning available and getting the model's own default would receive more
+// of it, not less, and failing in that direction is worse than the small lie.
+// Clamping is also what the other backend gets for free: measured against
+// OpenRouter on 2026-08-23, a level a model does not advertise is clamped to
+// one it does rather than refused, so doing it here is what keeps the two
+// backends agreeing about what an unavailable level means.
+func outputEffort(effort nacelle.Effort) (sdk.BetaOutputConfigEffort, bool) {
+	switch effort {
+	case "", nacelle.EffortNone:
+		return "", false
+	case nacelle.EffortMinimal:
+		return sdk.BetaOutputConfigEffort(nacelle.EffortLow), true
 	}
-	return sdk.BetaThinkingConfigParamUnion{OfAdaptive: &adaptive}
+	return sdk.BetaOutputConfigEffort(effort), true
+}
+
+func thinkingConfig(t nacelle.Thinking) sdk.BetaThinkingConfigParamUnion {
+	switch {
+	case t.Effort == nacelle.EffortNone:
+		disabled := sdk.NewBetaThinkingConfigDisabledParam()
+		return sdk.BetaThinkingConfigParamUnion{OfDisabled: &disabled}
+	case t.Budget > 0:
+		enabled := sdk.BetaThinkingConfigEnabledParam{BudgetTokens: t.Budget}
+		if t.Show {
+			enabled.Display = sdk.BetaThinkingConfigEnabledDisplaySummarized
+		}
+		return sdk.BetaThinkingConfigParamUnion{OfEnabled: &enabled}
+	default:
+		adaptive := sdk.BetaThinkingConfigAdaptiveParam{}
+		if t.Show {
+			adaptive.Display = sdk.BetaThinkingConfigAdaptiveDisplaySummarized
+		}
+		return sdk.BetaThinkingConfigParamUnion{OfAdaptive: &adaptive}
+	}
 }

@@ -22,21 +22,6 @@ func TestCapabilitiesCoverEverythingButCost(t *testing.T) {
 	}
 }
 
-func TestThinkingIsAlwaysAdaptive(t *testing.T) {
-	params := New(Config{}).params(nacelle.Request{})
-	if params.Thinking.OfAdaptive == nil {
-		t.Fatal("thinking is not adaptive; a fixed token budget is rejected by current models")
-	}
-	if params.Thinking.OfAdaptive.Display != "" {
-		t.Error("the reasoning summary is on by default; it should be opt-in")
-	}
-
-	visible := New(Config{}).params(nacelle.Request{Thinking: true})
-	if visible.Thinking.OfAdaptive.Display != sdk.BetaThinkingConfigAdaptiveDisplaySummarized {
-		t.Error("asking for thinking did not request the summary")
-	}
-}
-
 // Both halves or the API rejects the request: mcp_servers without a matching
 // mcp_toolset is a validation error that does not read like a missing toolset.
 func TestMCPDeclaresServersToolsetsAndTheBeta(t *testing.T) {

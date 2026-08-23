@@ -28,7 +28,7 @@ func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2
 		sink := &nacelle.ToolSink{Approve: request.Approve}
 		state := &session{
 			pending:  newInvocations(),
-			thinking: request.Thinking,
+			thinking: request.Thinking.Show,
 			out:      &emitter{yield: yield, sink: sink},
 		}
 		runner := b.client.Beta.Messages.NewToolRunnerStreaming(adapt(request.Tools, sink, state.pending), b.params(request))

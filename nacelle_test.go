@@ -62,8 +62,9 @@ func TestAskingForWhatABackendLacksIsRefused(t *testing.T) {
 
 	cases := map[string]nacelle.Config{
 		"mcp":      {Backend: bare, System: "s", MCP: []mcp.Server{{Name: "p", URL: "https://p.test"}}},
-		"thinking": {Backend: bare, System: "s", Thinking: true},
-		"effort":   {Backend: bare, System: "s", Effort: nacelle.EffortHigh},
+		"thinking": {Backend: bare, System: "s", Thinking: nacelle.Thinking{Show: true}},
+		"effort":   {Backend: bare, System: "s", Thinking: nacelle.Thinking{Effort: nacelle.EffortHigh}},
+		"budget":   {Backend: bare, System: "s", Thinking: nacelle.Thinking{Budget: 1024}},
 	}
 
 	for name, cfg := range cases {
@@ -84,8 +85,7 @@ func TestACapableBackendAcceptsEverything(t *testing.T) {
 	agent, err := nacelle.New(nacelle.Config{
 		Backend:  full(),
 		System:   "s",
-		Thinking: true,
-		Effort:   nacelle.EffortMax,
+		Thinking: nacelle.Thinking{Effort: nacelle.EffortMax, Budget: 1024, Show: true},
 		MCP:      []mcp.Server{{Name: "p", URL: "https://p.test"}},
 	})
 	if err != nil {

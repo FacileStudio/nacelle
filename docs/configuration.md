@@ -12,15 +12,16 @@ literal a consumer builds.
 |---|---|---|
 | `Backend` | — required | The model this agent runs on. No default: a package that picks one for you is a package that hides the most consequential decision in the configuration |
 | `System` | — required | The system prompt. Empty is refused rather than defaulted — an agent with no system prompt is a general-purpose assistant wearing a product's name |
-| `Effort` | the backend's own default | `low`, `medium`, `high`, `xhigh`, `max` |
-| `Thinking` | `false` | Stream the model's reasoning as `KindThinking`. Off by default, matching the APIs: the raw chain of thought is never returned and a readable summary is opt-in |
+| `Thinking.Effort` | the backend's own default | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. `none` is the only value that asks for no reasoning, and a model whose reasoning is mandatory answers it with a 400 rather than ignoring it (measured on `stealth/ox-alpha`, 2026-08-23). Empty hands the decision to the provider, which on a model whose reasoning is mandatory means that model's own maximum. Not validated against the model: OpenRouter clamps a level a model does not advertise rather than refusing it |
+| `Thinking.Budget` | `0` (no ceiling from here) | Reasoning-token ceiling for one turn. The other spelling of `Effort`, and providers disagree about which they accept, so both are carried and each backend sends what its API understands |
+| `Thinking.Show` | `false` | Stream the model's reasoning as `KindThinking`. Off by default, matching the APIs: the raw chain of thought is never returned and a readable summary is opt-in. It changes what a consumer is shown and nothing else. The reasoning always travels back over the wire, because that is what the tool loop replays to keep the model's train of thought intact across a tool call |
 | `MaxTokens` | `DefaultMaxTokens` (32000) | Per-turn output ceiling. Generous on purpose — every request is streamed, so a large ceiling costs nothing in latency, while a small one truncates an answer mid-sentence and buys a retry |
 | `MaxIterations` | `0` (no cap) | How many times the model may be asked. A cap is only safe when every tool is read-only and cheap; reaching it ends the run with `Stop: StopIterations`, not a failure |
 | `Tools` | `nil` | Tools the model may call in this process |
 | `MCP` | `nil` | MCP servers the model may call tools on. Only `anthropic` can reach them — see [architecture.md](architecture.md#capabilities) |
 | `Logger` | `slog.Default()` | Receives the few things worth recording that are not events — retry attempts, mainly |
 
-`Backend`, `Thinking`, `Effort` and `MCP` are all checked against the chosen backend's
+`Backend`, `Thinking` and `MCP` are all checked against the chosen backend's
 `Capabilities` at construction; a config asking for something the backend cannot do is refused
 with an `*Unsupported` error rather than silently running with less.
 
@@ -72,7 +73,7 @@ could tell apart.
 | Layer | Source | Notes |
 |---|---|---|
 | Flags | `-backend`, `-model`, `-effort`, `-root`, `-system`, `-bash`, `-thinking`, `-mycelium`, `-project-context`, `-skills`, `-trust-skills`, `-skill-dir`, `-mcp`, `-approve-tools`, `-max-iterations` | Only flags actually **typed** are collected, via `flag.Visit` — Go's `flag` package cannot otherwise tell a flag left alone from one passed its own default value. `-skill-dir` and `-mcp` are repeatable (`-mcp a.json -mcp b.json`); every other flag keeps only its last occurrence |
-| Environment | `NACELLE_BACKEND`, `NACELLE_MODEL`, `NACELLE_EFFORT`, `NACELLE_ROOT`, `NACELLE_SYSTEM`, `NACELLE_BASH`, `NACELLE_THINKING`, `NACELLE_MYCELIUM`, `NACELLE_PROJECT_CONTEXT`, `NACELLE_SKILLS`, `NACELLE_TRUST_SKILLS`, `NACELLE_SKILL_DIRS`, `NACELLE_APPROVE_TOOLS`, `NACELLE_MAX_ITERATIONS`, `NACELLE_SEARCH`, `NACELLE_FETCH` | A misspelt boolean (`NACELLE_BASH=yez`) is treated as unmentioned, not as `false`, and falls through to the layer below. `NACELLE_SKILL_DIRS` is colon-separated, the same convention `PATH` itself uses for a list of directories |
+| Environment | `NACELLE_BACKEND`, `NACELLE_MODEL`, `NACELLE_EFFORT`, `NACELLE_REASONING_BUDGET`, `NACELLE_ROOT`, `NACELLE_SYSTEM`, `NACELLE_BASH`, `NACELLE_THINKING`, `NACELLE_MYCELIUM`, `NACELLE_PROJECT_CONTEXT`, `NACELLE_SKILLS`, `NACELLE_TRUST_SKILLS`, `NACELLE_SKILL_DIRS`, `NACELLE_APPROVE_TOOLS`, `NACELLE_MAX_ITERATIONS`, `NACELLE_SEARCH`, `NACELLE_FETCH` | A misspelt boolean (`NACELLE_BASH=yez`) is treated as unmentioned, not as `false`, and falls through to the layer below. `NACELLE_SKILL_DIRS` is colon-separated, the same convention `PATH` itself uses for a list of directories |
 | File | `~/.nacelle.yml` | Preferences only, **no credentials** — those already have two homes: the environment, and the Anthropic SDK's own profile. `KnownFields(true)`: an unrecognised key (`max_iteration:`, one letter short) is refused rather than silently ignored |
 | Defaults | — | `backend: anthropic`, `root: .`, `bash: false`, `thinking: false`, `mycelium: true`, `project_context: true`, `skills: true`, `trust_skills: false`, `skill_dirs: []`, `mcp: []`, `approve_tools: false`, `max_iterations: 40`, `search: ""` (no web search), `fetch: true` |
 
@@ -93,6 +94,7 @@ the person running this should opt into, not defaults sprung on them. See
 backend: anthropic
 model: claude-opus-5
 effort: high
+reasoning_budget: 8192
 root: .
 system: You are a terminal coding assistant.
 bash: true

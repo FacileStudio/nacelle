@@ -41,7 +41,7 @@ interface at the request level would have forced the Anthropic path to give up t
 it gets for free, to look symmetrical with a backend that cannot have it.
 
 `Agent.Stream` is the only entry point a consumer calls. It fills in the agent's configured
-`System`, `Tools`, `MCP`, `Effort`, `Thinking` and `MaxTokens` around the conversation handed
+`System`, `Tools`, `MCP`, `Thinking` and `MaxTokens` around the conversation handed
 in, validates the conversation (see [The `Message` union](#the-message-union)), and delegates
 to the backend.
 
@@ -51,7 +51,7 @@ to the backend.
 type Capabilities struct {
 	MCP      bool // remote MCP servers
 	Thinking bool // KindThinking events
-	Effort   bool // an Effort level on the request
+	Effort   bool // a reasoning depth on the request, as a level or a budget
 	Cost     bool // Usage.Cost carries real money
 }
 ```

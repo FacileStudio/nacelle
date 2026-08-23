@@ -44,10 +44,13 @@ func toolParams(tools []nacelle.Tool) []openai.ChatCompletionToolUnionParam {
 
 // deltaEvents maps one streamed delta onto nacelle events.
 //
-// Reasoning is only forwarded when the caller asked for it. The request
-// already told OpenRouter to exclude it, so this is a second gate on a stream
-// that should be empty anyway — cheap, and it keeps a provider that ignores
-// `exclude` from surprising a consumer that never opted in.
+// Reasoning is only forwarded when the caller asked for it, and this is now
+// the only gate on it. The request used to ask OpenRouter to withhold the
+// reasoning as well, which made this a second line of defence on a stream that
+// was supposed to be empty. That request is gone, because the reasoning is
+// what the tool loop replays to keep the model's train of thought intact, so
+// the stream is full every time and the decision about who sees it is made
+// here, once, on the way out.
 func deltaEvents(delta openai.ChatCompletionChunkChoiceDelta, thinking bool) []nacelle.Event {
 	var events []nacelle.Event
 
