@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -39,15 +38,17 @@ func TestMinimalEnvFallsBackWhenNoPathAtAll(t *testing.T) {
 	}
 }
 
-func TestCommandEnvStillWinsOverMinimal(t *testing.T) {
+func TestCommandEnvWinsOverMinimal(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", "/from/process")
 	set, err := New(Config{Root: t.TempDir(), CommandEnv: []string{"PATH=/custom"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer set.Close()
-	set.commandEnv = []string{"PATH=/custom"}
-	if set.commandEnv[0] != "PATH=/custom" {
-		t.Errorf("explicit CommandEnv overwritten")
+	got := strings.Join(set.commandEnv, " ")
+	if strings.Contains(got, "/from/process") || strings.Contains(got, "HOME=") {
+		t.Errorf("explicit CommandEnv leaked the minimal env: %q", set.commandEnv)
 	}
 }
 
@@ -76,5 +77,4 @@ func TestUserBinsWithoutHome(t *testing.T) {
 	if bins := userBins(); bins != nil {
 		t.Errorf("userBins with no HOME = %v, want nil rather than a relative path", bins)
 	}
-	_ = os.Getenv
 }
