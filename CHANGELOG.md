@@ -6,7 +6,24 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
-No library change. Tooling and documentation only.
+### Added
+
+- **The status line separates input from output tokens** (`tui/`). The old single total merged
+  input, output and cache tokens, which read as a counting bug on agentic sessions: every turn
+  re-bills the whole conversation as input, so a short chat showed a huge number. The count was
+  correct billing; the display now reads `in 2.6k · out 1.1k · 9.8k cached`, exact below 1k.
+
+## [0.2.3] - 2026-08-23
+
+### Changed
+
+- **`run_command` inherits the launching shell's PATH.** The minimal command environment
+  hardcoded `/usr/local/bin:/usr/bin:/bin`, so `mycelium`, mise shims and anything in
+  `~/.local/bin` were invisible even when nacelle itself had been launched from an interactive
+  shell that had them — the same failure class Claude Code users fix by hand-editing
+  `~/.zshenv`. PATH is now taken from this process's own environment, with `~/.local/bin` and
+  `$HOME/bin` appended if absent. Nothing else inherits: the environment stays where services
+  keep credentials out of the model's reach.
 
 ### Added
 
@@ -447,5 +464,6 @@ hand every time the core moved, twice in the last day alone.
   and six unseen sleeps, roughly six minutes under `Retry-After: 60` against a documented
   eight seconds. A context deadline is the only real bound, and nothing said so.
 
-[Unreleased]: https://github.com/FacileStudio/nacelle/compare/v0.1.0...main
+[Unreleased]: https://github.com/FacileStudio/nacelle/compare/v0.2.3...main
+[0.2.3]: https://github.com/FacileStudio/nacelle/compare/v0.2.2...v0.2.3
 [0.1.0]: https://github.com/FacileStudio/nacelle/releases/tag/v0.1.0

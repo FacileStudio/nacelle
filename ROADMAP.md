@@ -1,12 +1,129 @@
 # Roadmap
 
-Written 2026-08-19, updated 2026-08-20. A cold-start handoff: everything needed to pick up a
+Written 2026-08-19, updated 2026-08-23. A cold-start handoff: everything needed to pick up a
 track with no prior conversation. Ordering lives here; the reasoning behind each item lives in
 the commit that closes it.
 
-**Done: Tracks A, B and C.** Every track that was planned is closed. What is left is unplanned —
-see "Where this is" below for what a next session would actually pick up. Closed items are kept
-below rather than deleted, because their reasoning is still the argument for not undoing them.
+**Done: Tracks A, B and C.** Every track that was planned is closed. **Planned next: Tracks D
+through H**, from the 2026-08-23 gap analysis against pi / Claude Code / Codex CLI and a real
+session transcript — see "Tracks D–H" below. Closed items are kept below rather than deleted,
+because their reasoning is still the argument for not undoing them.
+
+### Shipped 2026-08-23, outside any track
+
+Two changes that came out of the same observation that opened Tracks D–H (the registre
+transcript), before any track started:
+
+- **Status line splits input from output tokens** (`389047a`, `tui/` only). The old single
+  total merged Input+Output+CacheRead+CacheCreation, which read as a counting bug on every
+  agentic session: each turn re-bills the whole conversation as input, so a short chat showed a
+  huge number. The count was correct billing, not a bug; the display now reads
+  `in 2.6k · out 1.1k · 9.8k cached`. Track E6's footer builds directly on this.
+- **`run_command` inherits the launching shell's PATH** (`4430e76`, core, behavior-only).
+  `minimalEnv` hardcoded `/usr/local/bin:/usr/bin:/bin`, so `mycelium`, mise shims and anything
+  in `~/.local/bin` were invisible even when nacelle was launched from a shell that had them —
+  the same failure class Claude Code users fix by hand-editing `~/.zshenv`. The no-inheritance
+  rule stays (secrets stay out); PATH is now nacelle's own process PATH with `~/.local/bin`
+  and `$HOME/bin` appended if absent. This closes the "three repeated `export PATH=` hacks"
+  symptom from the transcript below without touching Track F.
+
+## Tracks D–H: the 2026-08-23 plan (planned, not started)
+
+A live transcript of a real nacelle session (registre deploy task) showed where the harness
+actually falls short, and it is not mostly missing features. Observed in one session: full raw
+JSON tool inputs printed per call; ten `⤷ … done in 2ms` silent-success lines; reasoning printed
+as body prose between tool calls; three repeated `export PATH=` hacks; two `read_file` failures on
+paths outside the working directory; a `run_command` call carrying **two `"command"` JSON keys**
+accepted silently by decoder-last-wins; and improvised shell pipelines where recorded mycelium flows
+existed. Track order follows that evidence.
+
+### Track D — legibility (`tui/` only, no core change)
+
+1. **Tool-call line summarizer** — `tui/view.go` `absorb` replaces the raw-input `say`
+   with name + primary argument (`command`, `path`, `pattern`, `query`), truncated via the
+   existing `truncate` (mind `len("…")`, 3 bytes).
+2. **Silent successes** — a successful tool result prints nothing; duration folds into the call
+   line. Failures keep their own loud line; repeated identical failures collapse into one line
+   with a count.
+3. **Refuse malformed tool-call JSON** — duplicate keys at the trust boundary surface as a
+   refused call with a reason, not decoder-last-wins. If the decode is core-side this rides
+   Track F's tag instead.
+4. **Collapsed thinking** — new `tui/thinking.go`: `KindThinking` renders one dim line while
+   running, then `· thought for Ns (ctrl+t to read)`; ctrl+t toggles a viewport over
+   `m.run.reasoning`. Buffering already exists in `absorb`.
+
+Exit: transcript tests assert first-printed-line ordering; no raw JSON reaches any capture.
+
+### Track E — Claude-Code-grade organisation (builds on D)
+
+5. **Batching** — consecutive same-kind calls render as one updating line
+   (`⏺ 4 commands · mycelium sync · ls docs · …`), flushed on kind change or `settle`. Must grow
+   within the frame by re-render, never `tea.Println`: the headroom budget governs, and an
+   in-place-updating line sits exactly in the shrink geometry the ultraviolet entry warns about.
+   Test under tmux at small pane sizes (80x14), asserting pane geometry first
+   (`window-size manual`).
+6. **Status footer** — elapsed timer and cumulative cost on the existing status line (usage
+   already tracked in `m.run.usage`). Verb variety in `spin.go`.
+7. **Turn boundaries** — spacing plus running totals at `KindTurn`.
+8. **Recap before quit** — tools run, tokens, cost, two lines, printed after `Run` returns
+   beside the existing exit-transcript dump.
+
+Exit: before/after captures of a registre-shaped session at 80x24; measured line-count drop.
+
+### Track F — hooks (core + tui, one tag, two-commit release)
+
+9. **`Config.Hooks []Hook`** invoked in `RunTool` (`toolsink.go`) beside `Config.Approve` —
+   the same single seam both backends already pass through for approval. Three points:
+   pre-tool (allow/deny/replace), post-tool (observe/redact), on-stop (block until checks pass).
+   Synchronous function signature only. Deliberately not an extension ABI: no async hooks, no
+   hook-authored UI, no lifecycle-event surface — pi's 3000-line extensions doc is the cautionary
+   tale.
+10. **Mycelium-flow adapter** — a hook that shells `mycelium flow run <name>` and maps the artifact
+    to allow/deny. Trust inherited from flow trust, not reinvented. Check
+    `~/.mycelium/memory/conventions/subagent-blast-radius.md` before wiring; deny-by-default for
+    on-stop hooks (they can wedge a run — decide v1 vs deferred at implementation time).
+11. **Config surface** — `~/.nacelle.yml`: deny patterns, auto-approve rules, and flow
+    suggestions injected into context ("a suite-check flow exists; prefer it") so the model
+    reaches for recorded procedures instead of improvising pipelines.
+12. Release per the standing two-commit procedure: core tag, then `tui/` adoption commit.
+
+Exit: a deny-pattern hook blocks a `run_command` identically on both backends, one test each.
+
+### Track G — headless mode (unblocks CI and Atelier)
+
+13. Extract the settings/precedence chain from `tui/config.go` so a non-TUI entry point reuses
+    it [filet: config.go trips ceilings easily; budget the split].
+14. `-print "prompt"` / piped-stdin mode: build the agent, iterate `Stream`, text deltas to
+    stdout, nonzero exit on error or refusal. No bubbletea on this path. Hooks (F) are what make
+    headless safe; sessions (H) make it resumable.
+
+Exit: `echo q | nacelle -print -root .` answers with no TTY.
+
+### Track H — sessions, then compaction
+
+15. **`session/` root package** — append-only JSONL over the event stream, using the A6 message
+    union as the record format (its wire-level round-trip tests are the proof). Decide the
+    secret-redaction policy *before* writing the first line: tool results can carry command
+    output containing credentials. Core stays print-free.
+16. **Resume** — `--continue` picks the newest session under `~/.nacelle/sessions/<project>/`;
+    `/resume` picker in the TUI. Supersedes the exit-time transcript dump's role as the only
+    session memory.
+17. **Compaction in `tui/`, not the core** — strategy stays consumer-side per `trim.go`'s own
+    doc. Watch per-turn usage against the window, summarize near the limit, continue; surface
+    `Event.Stop == StopContext` as actionable rather than fatal.
+
+Exit: kill mid-session, `--continue`, ask what we were doing, get a correct answer including
+prior tool calls. A conversation crossing the window compacts instead of dying.
+
+### Standing constraints across D–H
+
+- Any core change ships as two commits (core tag, then tui adoption); see "Where this is".
+- Filet ceilings: `tui/model.go` sits at exactly 250 lines; budget a split on sight in every
+  track.
+- Compaction quality is a model-quality question and untestable here; guard mechanically only.
+- Not in scope, still: extension ABI, subagents, plan-mode state machine, checkpoints, IDE/LSP,
+  profiles/themes, `.mcp.json` discovery, server-side web search, `sandbox/` (until Atelier
+  asks).
 
 ## Where this is
 
@@ -156,8 +273,8 @@ the argument against redoing them differently.
 
 ## Tracks
 
-**A**, **B** and **C** are all closed. Nothing here is currently ordered — the next work is
-whichever of the "not built" items above, or something not yet named, earns a session of its own.
+**A**, **B** and **C** are all closed. The open work is Tracks D–H at the top of this file —
+nothing below this line is ordered.
 
 ---
 
