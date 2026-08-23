@@ -11,9 +11,18 @@ because their reasoning is still the argument for not undoing them.
 
 ### Shipped 2026-08-23, outside any track
 
-Two changes that came out of the same observation that opened Tracks D–H (the registre
+Three changes that came out of the same observation that opened Tracks D–H (the registre
 transcript), before any track started:
 
+- **Microcompaction** (`5b45bea`, `bb4a153`, `tui/compact.go`). When a finished turn's measured
+  input size (input + cache read + cache creation) passes 100k tokens, tool results older than
+  the newest four messages and larger than 1KB are replaced with `[dropped N bytes. Re-run the
+  tool if the detail matters.]`, keeping id and name so call/result pairing survives provider
+  validation. The status line appends `· N trimmed`. The trim budget is in bytes (`tokens * 4`);
+  `/clear` resets the counters. The threshold sits high partly to amortize the prompt-cache bust
+  a rewrite causes — do not lower it casually. This is the mechanical half of Track H item 17;
+  what remains there is summarization, which needs a real model round trip to validate. pi has
+  no compaction at all (badlogic/pi-mono#92); this closes the gap against it.
 - **Status line splits input from output tokens** (`389047a`, `tui/` only). The old single
   total merged Input+Output+CacheRead+CacheCreation, which read as a counting bug on every
   agentic session: each turn re-bills the whole conversation as input, so a short chat showed a
@@ -109,7 +118,11 @@ Exit: `echo q | nacelle -print -root .` answers with no TTY.
     `/resume` picker in the TUI. Supersedes the exit-time transcript dump's role as the only
     session memory.
 17. **Compaction in `tui/`, not the core** — strategy stays consumer-side per `trim.go`'s own
-    doc. Watch per-turn usage against the window, summarize near the limit, continue; surface
+    doc. **Mechanical half shipped 2026-08-23** (see "Shipped outside any track"): old large
+    tool results drop past a measured 100k input threshold, no model call. What remains:
+    summarize near the limit when dropping alone cannot keep up — assistant-text-heavy
+    sessions, or early turns carrying decisions rather than tool output. Needs a real model
+    round trip to validate quality; guard mechanically only. Surface
     `Event.Stop == StopContext` as actionable rather than fatal.
 
 Exit: kill mid-session, `--continue`, ask what we were doing, get a correct answer including
@@ -146,7 +159,10 @@ an MCP server added to mycelium, because it needed no change outside this repo.
 of dropping tool history, renders answers as markdown, scrolls, shows a spinner for the gap before
 the first token, and (as of this round) discovers `CLAUDE.md`/`AGENTS.md` above `-root` and can
 reach mycelium's flows and memory search, both default on and both fail soft to nothing when there
-is nothing to find.
+is nothing to find. It also compacts (see "Shipped outside any track"): past a measured 100k
+input threshold, old large tool results drop mechanically, so a long agentic session degrades
+instead of dying at `StopContext`. The tui module pins the core via go.mod; cut 0.2.3 covers
+everything through `bb4a153` except the changelog entry, which lands under Unreleased for 0.2.4.
 
 **Reasoning, added 2026-08-23 and never on this roadmap.** `Config.Effort` and
 `Config.Thinking bool` became one `Thinking{Effort, Budget, Show}`, which is the API break
