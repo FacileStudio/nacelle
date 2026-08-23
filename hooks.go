@@ -94,19 +94,30 @@ type HookResult struct {
 // guard that crashed must not wave the request through.
 type Hook func(ctx context.Context, ev HookEvent) HookResult
 
-// WithTimeout wraps a hook so it cannot hang the run. A hook that exceeds d
-// is treated as having denied a BeforeToolCall — fail closed, since the only
-// hooks worth timing out are guards — and as having said nothing otherwise.
+// WithTimeout wraps a hook so it cannot hang the run, and cancels the
+// context it handed out when it does: a wrapper that only returns while the
+// work keeps going is not a timeout but an orphaned goroutine per call —
+// for the execHook case, an orphaned process per call.
+//
+// A hook that exceeds d is treated as having denied a BeforeToolCall — fail
+// closed, since the only hooks worth timing out are guards — and as having
+// said nothing otherwise.
 func WithTimeout(d time.Duration, h Hook) Hook {
 	return func(ctx context.Context, ev HookEvent) HookResult {
 		run := make(chan HookResult, 1)
-		go func() { run <- h(ctx, ev) }()
+		work, cancel := context.WithCancel(ctx)
+		defer cancel()
+		go func() {
+			run <- h(work, ev)
+			cancel()
+		}()
 		timer := time.NewTimer(d)
 		defer timer.Stop()
 		select {
 		case res := <-run:
 			return res
 		case <-timer.C:
+			cancel()
 			if ev.Point == BeforeToolCall {
 				return HookResult{Deny: fmt.Sprintf("hook watching %q timed out after %s", ev.Tool, d)}
 			}

@@ -60,6 +60,9 @@ func TestAProjectHooksFileIsRefusedUntilTrusted(t *testing.T) {
 	}
 }
 
+// TestTrustingAHooksFileLoadsItAndAnEditRearms checks that trust is
+// remembered per content hash: loading works after trusting, and one byte
+// changed is a different file, whatever the path says.
 func TestTrustingAHooksFileLoadsItAndAnEditRearms(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := writeHooks(t, guardYAML)
@@ -75,8 +78,9 @@ func TestTrustingAHooksFileLoadsItAndAnEditRearms(t *testing.T) {
 		t.Fatalf("loaded %d before-hooks, want 1", len(hooks[nacelle.BeforeToolCall]))
 	}
 
-	// One byte changed is a different file, whatever the path says.
-	if err := os.WriteFile(filepath.Join(root, HooksFile), []byte(guardYAML+"\n"), 0o644); err != nil {
+	edited := guardYAML + "\n"
+	err = os.WriteFile(filepath.Join(root, HooksFile), []byte(edited), 0o644)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, notice, _ := loadProjectHooks(root, false); notice == "" {
@@ -102,49 +106,74 @@ func TestUnknownEventOrEmptyCommandIsRefusedAtLoad(t *testing.T) {
 	}
 }
 
-// The whole contract in one round trip: exit 0 with stdout injects, exit 2
-// denies with stderr as the reason, another failure denies but keeps its
-// output away from the model.
+// contractCase is one row of the process-contract table: a command, the
+// point it is registered at, and what the tool call should produce.
+type contractCase struct {
+	name      string
+	run       string
+	point     nacelle.HookPoint
+	wantIn    []string
+	wantErr   string
+	denyCalls bool
+}
+
+// contractCases covers the whole protocol: exit 0 with stdout injects, exit 2
+// denies with stderr as the reason, any other failure fails closed with its
+// output kept from the model.
+func contractCases() []contractCase {
+	return []contractCase{
+		{
+			name:   "exit zero injects stdout into the result",
+			run:    `echo seen`,
+			point:  nacelle.AfterToolCall,
+			wantIn: []string{"found it", "seen"},
+		},
+		{
+			name:      "exit two denies with stderr as the reason",
+			run:       `echo not allowed >&2; exit 2`,
+			point:     nacelle.BeforeToolCall,
+			wantErr:   "not allowed",
+			denyCalls: true,
+		},
+		{
+			name:      "any other failure fails closed without its stderr reaching the model",
+			run:       `exit 1`,
+			point:     nacelle.BeforeToolCall,
+			wantErr:   "failed",
+			denyCalls: true,
+		},
+	}
+}
+
 func TestTheProcessContract(t *testing.T) {
-	build := func(t *testing.T, run string) *nacelle.ToolSink {
-		t.Helper()
-		hooks, err := buildHooks(hookConfig{{On: "after_tool_call", Run: run}})
-		if err != nil {
-			t.Fatalf("buildHooks: %v", err)
+	for _, tt := range contractCases() {
+		t.Run(tt.name, func(t *testing.T) { runContractCase(t, tt) })
+	}
+}
+
+// runContractCase executes one row and asserts its outcome.
+func runContractCase(t *testing.T, tt contractCase) {
+	t.Helper()
+	hooks, err := buildHooks(hookConfig{{On: string(tt.point), Run: tt.run}})
+	if err != nil {
+		t.Fatalf("buildHooks: %v", err)
+	}
+	sink := &nacelle.ToolSink{Hooks: hooks}
+	result, err := nacelle.RunTool(context.Background(), searchTool(t),
+		nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink)
+
+	if tt.denyCalls {
+		if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+			t.Fatalf("err = %v; want it to contain %q", err, tt.wantErr)
 		}
-		return &nacelle.ToolSink{Hooks: hooks}
+		return
 	}
-	run := func(t *testing.T, sink *nacelle.ToolSink) string {
-		t.Helper()
-		result, err := nacelle.RunTool(context.Background(), searchTool(t),
-			nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink)
-		if err != nil {
-			t.Fatalf("RunTool: %v", err)
+	if err != nil {
+		t.Fatalf("RunTool: %v", err)
+	}
+	for _, want := range tt.wantIn {
+		if !strings.Contains(result, want) {
+			t.Errorf("result = %q; want it to contain %q", result, want)
 		}
-		return result
-	}
-
-	if got := run(t, build(t, `echo seen`)); !strings.Contains(got, "found it") || !strings.Contains(got, "seen") {
-		t.Errorf("exit 0 result = %q; want tool output plus the hook's stdout", got)
-	}
-
-	deny := build(t, `echo not allowed >&2; exit 2`)
-	deny.Hooks = map[nacelle.HookPoint][]nacelle.Hook{
-		nacelle.BeforeToolCall: deny.Hooks[nacelle.AfterToolCall],
-	}
-	_, err := nacelle.RunTool(context.Background(), searchTool(t),
-		nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), deny)
-	if err == nil || !strings.Contains(err.Error(), "not allowed") {
-		t.Errorf("exit 2 err = %v; want stderr as the denial reason", err)
-	}
-
-	crash := build(t, `exit 1`)
-	crash.Hooks = map[nacelle.HookPoint][]nacelle.Hook{
-		nacelle.BeforeToolCall: crash.Hooks[nacelle.AfterToolCall],
-	}
-	_, err = nacelle.RunTool(context.Background(), searchTool(t),
-		nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), crash)
-	if err == nil || !strings.Contains(err.Error(), "failed") {
-		t.Errorf("exit 1 err = %v; want a fail-closed denial", err)
 	}
 }
