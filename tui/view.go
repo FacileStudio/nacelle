@@ -117,9 +117,11 @@ func (m *model) absorb(event nacelle.Event) {
 		m.say(fromResult, describe(event.Tool))
 	case nacelle.KindTurn:
 		m.run.usage = m.run.usage.Add(event.Usage)
+		m.sized(event.Usage)
 	case nacelle.KindDone:
 		m.run.usage = event.Usage
 		m.run.stop = event.Stop
+		m.sized(event.Usage)
 	}
 }
 

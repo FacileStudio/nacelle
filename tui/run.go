@@ -192,6 +192,7 @@ func (m *model) settle() tea.Cmd {
 	m.closeTurn(m.run.stop)
 	m.spent = m.spent.Add(m.run.usage)
 	m.run.usage = nacelle.Usage{}
+	m.compact()
 
 	return m.deliver()
 }

@@ -66,6 +66,9 @@ func (m *model) status() string {
 	if total.Cost > 0 {
 		line += fmt.Sprintf(" · $%.4f", total.Cost)
 	}
+	if m.trimmed > 0 {
+		line += fmt.Sprintf(" · %d trimmed", m.trimmed)
+	}
 	return lipgloss.NewStyle().Faint(true).Render(truncate(line, max(m.width, 1)))
 }
 

@@ -42,7 +42,8 @@ type model struct {
 	unprinted []string
 
 	conversation []nacelle.Message
-	spent        nacelle.Usage
+
+	account
 
 	theme  palette
 	pretty *glamour.TermRenderer
