@@ -85,7 +85,12 @@ func run() error {
 
 	approvalGate, approve := buildApprovals(config)
 
-	agent, backend, err := build(config, local, approve)
+	hooks, hookNotice, err := sessionHooks(config)
+	if err != nil {
+		return err
+	}
+
+	agent, backend, err := build(config, local, approve, hooks)
 	if err != nil {
 		return err
 	}
@@ -93,6 +98,9 @@ func run() error {
 	client := newModel(agent, banner(backend, config, found, mcp), found.skills)
 	if found.notice != "" {
 		client.say(fromClient, found.notice)
+	}
+	if hookNotice != "" {
+		client.say(fromClient, hookNotice)
 	}
 
 	program := tea.NewProgram(client)
@@ -202,7 +210,7 @@ func augmentSystem(config *Config) loaded {
 // The model reasons and is billed for it either way, and the reasoning now
 // travels back over the wire either way, so turning -thinking off no longer
 // costs the model its own last thought on the next tool round.
-func build(config Config, local []nacelle.Tool, approve nacelle.Approve) (*nacelle.Agent, nacelle.Backend, error) {
+func build(config Config, local []nacelle.Tool, approve nacelle.Approve, hooks map[nacelle.HookPoint][]nacelle.Hook) (*nacelle.Agent, nacelle.Backend, error) {
 	backend, err := chosen(config)
 	if err != nil {
 		return nil, nil, err
@@ -219,6 +227,7 @@ func build(config Config, local []nacelle.Tool, approve nacelle.Approve) (*nacel
 		Tools:         local,
 		MaxIterations: *config.MaxIterations,
 		Approve:       approve,
+		Hooks:         hooks,
 	})
 	if err != nil {
 		return nil, nil, err

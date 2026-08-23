@@ -59,7 +59,7 @@ type sourceFlags struct {
 // discoveryFlags is declared's half of Discovery — one flag pointer per
 // field there.
 type discoveryFlags struct {
-	mycelium, projectContext, skills, trustSkills *bool
+	mycelium, projectContext, skills, trustSkills, trustHooks *bool
 }
 
 // declareFlags registers every flag against fallback's values and returns
@@ -86,6 +86,8 @@ func declareFlags(fallback Config) declared {
 				"tell the model about skills found in ~/.agents/skills and trusted .agents/skills directories"),
 			trustSkills: flag.Bool("trust-skills", *fallback.TrustSkills,
 				"trust every .agents/skills directory found under root this run, and remember the decision"),
+			trustHooks: flag.Bool("trust-hooks", *fallback.TrustHooks,
+				"trust this project's .nacelle/hooks.yml as it reads right now, and remember that version"),
 		},
 	}
 }
@@ -153,6 +155,7 @@ func typedSetters(f declared) map[string]func(*Config) {
 		"project-context":  func(c *Config) { c.ProjectContext = f.projectContext },
 		"skills":           func(c *Config) { c.Skills = f.skills },
 		"trust-skills":     func(c *Config) { c.TrustSkills = f.trustSkills },
+		"trust-hooks":      func(c *Config) { c.TrustHooks = f.trustHooks },
 		"approve-tools":    func(c *Config) { c.ApproveTools = f.approveTools },
 		"max-iterations":   func(c *Config) { c.MaxIterations = f.iterations },
 		"reasoning-budget": func(c *Config) { c.Budget = f.budget },

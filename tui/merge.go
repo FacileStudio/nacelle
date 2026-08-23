@@ -5,7 +5,8 @@ package main
 // an empty string: nothing yet lets a layer clear it on purpose, so an empty
 // slice only ever means a layer that never mentioned it.
 //
-// MCP is the one list that accumulates rather than replaces. Sources.MCP is
+// MCP is the one list that accumulates rather than replaces — Hooks now
+// accumulates with it, for the same reason. Sources.MCP is
 // where the reason is written down, because it is a fact about what that list
 // is for and not about how layers are resolved.
 func (c *Config) merge(over Config) {
@@ -27,6 +28,7 @@ func (c *Config) merge(over Config) {
 		c.SkillDirs = over.SkillDirs
 	}
 	c.MCP = append(c.MCP, over.MCP...)
+	c.Hooks = append(c.Hooks, over.Hooks...)
 }
 
 // mergeStrings overwrites every string setting over actually mentions. Empty
@@ -72,6 +74,9 @@ func (c *Config) mergeToggles(over Config) {
 	}
 	if over.TrustSkills != nil {
 		c.TrustSkills = over.TrustSkills
+	}
+	if over.TrustHooks != nil {
+		c.TrustHooks = over.TrustHooks
 	}
 	if over.ApproveTools != nil {
 		c.ApproveTools = over.ApproveTools

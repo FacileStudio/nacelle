@@ -35,6 +35,13 @@ type Discovery struct {
 	ProjectContext *bool `yaml:"project_context"`
 	Skills         *bool `yaml:"skills"`
 	TrustSkills    *bool `yaml:"trust_skills"`
+
+	// TrustHooks approves this project's .nacelle/hooks.yml, hashing its
+	// contents so an edit re-arms the question. Off by default for the
+	// reason TrustSkills is, and one step stricter: skills are trusted per
+	// directory and stay trusted as their files change, where a hooks file
+	// is a list of commands re-read on every launch.
+	TrustHooks *bool `yaml:"trust_hooks"`
 }
 
 // Sources is every list of paths this client only ever reads because somebody

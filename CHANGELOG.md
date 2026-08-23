@@ -8,6 +8,23 @@ while on `v0`, a breaking change bumps the minor.
 
 ### Added
 
+- **Lifecycle hooks around local tool calls** (`hooks.go`, `toolsink.go`). Two closed hook
+  points, `BeforeToolCall` and `AfterToolCall`; a hook is `func(ctx, HookEvent) HookResult`
+  with `Deny` (final, checked before `Config.Approve`) and `Inject` (appended to the tool
+  result, capped at `MaxInject`). `Retry` flags a tool name already denied this run so guards
+  can stand down instead of deny-looping; panics in a before-hook deny rather than wave
+  through; `WithTimeout` fails closed on before-hooks; `Async` detaches audit hooks from the
+  hot path. Wired through `Config.Hooks` / `Request.Hooks` into the one seam both backends
+  already pass through.
+
+- **YAML hooks in the tui** (`tui/hooks.go`). A `hooks:` list in the config files plus a
+  project-level `.nacelle/hooks.yml`, each entry compiled down to a library hook. Process
+  contract follows the Claude Code / Codex CLI convention: JSON on stdin, exit 0 allow with
+  stdout as injected context, exit 2 deny with stderr as the model's reason, any other failure
+  fail-closed with stderr to the human. Per-hook `timeout` (default 5s), exact-name `match`,
+  `async`. The project file is trust-gated by content hash (`~/.nacelle/hooks.json`,
+  `-trust-hooks`): editing it re-arms the question.
+
 - **Microcompaction in the tui** (`tui/compact.go`). When a finished turn's measured input
   size (input + cache read + cache creation) passes 100k tokens, tool results older than the
   newest four messages and larger than 1KB are replaced with `[dropped N bytes. Re-run the

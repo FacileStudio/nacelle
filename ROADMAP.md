@@ -1,13 +1,13 @@
 # Roadmap
 
-Written 2026-08-19, updated 2026-08-23. A cold-start handoff: everything needed to pick up a
+Written 2026-08-19, updated 2026-08-23 (hooks core landed). A cold-start handoff: everything needed to pick up a
 track with no prior conversation. Ordering lives here; the reasoning behind each item lives in
 the commit that closes it.
 
-**Done: Tracks A, B and C.** Every track that was planned is closed. **Planned next: Tracks D
-through H**, from the 2026-08-23 gap analysis against pi / Claude Code / Codex CLI and a real
-session transcript — see "Tracks D–H" below. Closed items are kept below rather than deleted,
-because their reasoning is still the argument for not undoing them.
+**Done: Tracks A, B and C, plus the hooks core from Track F.** **Planned next: Tracks D
+through H** — see "Tracks D–H" below; Track F's remaining work is the TUI YAML layer.
+Closed items are kept below rather than deleted, because their reasoning is still the argument
+for not undoing them.
 
 ### Shipped 2026-08-23, outside any track
 
@@ -81,22 +81,38 @@ Exit: before/after captures of a registre-shaped session at 80x24; measured line
 
 ### Track F — hooks (core + tui, one tag, two-commit release)
 
-9. **`Config.Hooks []Hook`** invoked in `RunTool` (`toolsink.go`) beside `Config.Approve` —
-   the same single seam both backends already pass through for approval. Three points:
-   pre-tool (allow/deny/replace), post-tool (observe/redact), on-stop (block until checks pass).
-   Synchronous function signature only. Deliberately not an extension ABI: no async hooks, no
-   hook-authored UI, no lifecycle-event surface — pi's 3000-line extensions doc is the cautionary
-   tale.
-10. **Mycelium-flow adapter** — a hook that shells `mycelium flow run <name>` and maps the artifact
-    to allow/deny. Trust inherited from flow trust, not reinvented. Check
-    `~/.mycelium/memory/conventions/subagent-blast-radius.md` before wiring; deny-by-default for
-    on-stop hooks (they can wedge a run — decide v1 vs deferred at implementation time).
-11. **Config surface** — `~/.nacelle.yml`: deny patterns, auto-approve rules, and flow
-    suggestions injected into context ("a suite-check flow exists; prefer it") so the model
-    reaches for recorded procedures instead of improvising pipelines.
-12. Release per the standing two-commit procedure: core tag, then `tui/` adoption commit.
+**Core shipped 2026-08-23** (hooks.go, toolsink.go, both backends, hooks_test.go). The shape
+that landed, against the plan below: `HookPoint` is a closed two-value set (`BeforeToolCall`,
+`AfterToolCall`) rather than three points — on-stop was deferred until a consumer needs it, per
+the pi cautionary note. A `Hook` is `func(ctx, HookEvent) HookResult` with `Deny string` and
+`Inject string`; deny is final and fires **before** `Config.Approve` (the policy outranks the
+person), inject is truncated at `MaxInject` (10k, Claude Code's additionalContext cap) and
+appended to the tool result. `Retry bool` on the event tells a hook its tool name was already
+denied this run, the stop_hook_active loop-guard borrowed from Claude Code. Panics in a
+before-hook deny rather than wave through; `WithTimeout` fails closed on before, silent
+otherwise; `Async` drops the result entirely, for audit hooks. `Config.Hooks
+map[HookPoint][]Hook` on both `Config` and `Request`, executed in the one seam both backends
+already pass through (`RunTool`).
 
-Exit: a deny-pattern hook blocks a `run_command` identically on both backends, one test each.
+What remains of the track:
+
+10. ~~Mycelium-flow adapter~~ — superseded by the generic mechanism: any flow adapter is now a
+    user-land closure or a `hooks:` YAML entry shelling `mycelium flow run <name>`. Nothing to
+    build in the core.
+11. ~~Config surface~~ — shipped with the core as `Config.Hooks`; the YAML surface is the
+    remaining half (below).
+12. **TUI YAML hooks** — `tui/hooks.go`: `hooks:` entries in `~/.nacelle.yml` plus a
+    project-level `.nacelle/hooks.yml`, compiled down to library hooks. Process contract
+    follows the de facto standard (JSON on stdin with `event`/`tool`/`input`/`result`/`retry`
+    keys; exit 0 allow with stdout as injected context; exit 2 deny with stderr as the model's
+    reason; other failures deny with stderr to the human). Per-hook `timeout` (default 5s,
+    hooks sit in the tool-call hot path), `match` (exact tool names, no regex — the Claude
+    Code matcher gotcha), `async` for audit. The project file is trust-gated like skills but
+    keyed by **content hash** (`~/.nacelle/hooks.json`): editing the file re-arms the
+    question, `-trust-hooks` approves. Release per the standing two-commit procedure.
+
+Exit: a deny-pattern hook blocks a `run_command` identically on both backends, one test each;
+a YAML hook file loads, is refused until trusted, and fires after `-trust-hooks`.
 
 ### Track G — headless mode (unblocks CI and Atelier)
 
@@ -104,7 +120,8 @@ Exit: a deny-pattern hook blocks a `run_command` identically on both backends, o
     it [filet: config.go trips ceilings easily; budget the split].
 14. `-print "prompt"` / piped-stdin mode: build the agent, iterate `Stream`, text deltas to
     stdout, nonzero exit on error or refusal. No bubbletea on this path. Hooks (F) are what make
-    headless safe; sessions (H) make it resumable.
+    headless safe — the core half shipped 2026-08-23, the YAML surface is Track F item 12; sessions
+    (H) make it resumable.
 
 Exit: `echo q | nacelle -print -root .` answers with no TTY.
 
@@ -190,6 +207,14 @@ also what answered the design objection recorded below: nothing had to intercept
 runner, because the callback blocks inside the tool call that runner already makes.
 `tui/approve.go` answers allow / allow-for-session / deny and waits on the run's own context, so
 ctrl+c rescues a forgotten prompt. Off by default (`-approve-tools`): by default agents yolo.
+
+**Hooks** shipped 2026-08-23 on top of that same seam — see Track F for what landed and why it
+differs from this track's original three-point plan. The design decisions worth keeping:
+deny-before-approve ordering (a hook policy holds even where a human would have said yes), the
+`Retry` loop-guard, fail-closed timeouts, and injection capped at 10k bytes. The research that
+shaped those choices: Claude Code and Codex CLI converged on the same JSON-on-stdin/exit-code
+hook contract, which the TUI layer copies; Strands Agents was the counterexample read for what
+*not* to grow (20+ event types, retry/resume/interrupt powers nobody here asked for).
 
 **Slash commands** shipped in the same stretch — `/clear`, `/help`, `/quit` and `/skill:name`,
 with a fuzzy-matching dropdown while typing `/` rather than ghost text — plus `-skill-dir`, which

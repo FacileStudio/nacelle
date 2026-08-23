@@ -63,6 +63,12 @@ type Config struct {
 	// of every config file already written rather than relocating it
 	// under a key nobody has.
 	Sources `yaml:",inline"`
+
+	// Hooks are lifecycle commands compiled down to library hooks at
+	// launch. Inline so the key stays at the file's top level like every
+	// other; accumulated by merge for the reason MCP is — a second
+	// layer's hooks are more hooks, not replacements.
+	Hooks hookConfig `yaml:"hooks"`
 }
 
 // defaults is the bottom layer, and the only one that answers everything.
@@ -92,8 +98,8 @@ type Config struct {
 // this is the layer that answers everything and every deref above it depends
 // on that being true.
 func defaults() Config {
-	bash, thinking, mycelium, projectContext, skills, trustSkills, approveTools :=
-		false, false, true, true, true, false, false
+	bash, thinking, mycelium, projectContext, skills, trustSkills, approveTools, trustHooks :=
+		false, false, true, true, true, false, false, false
 	iterations, budget := 40, int64(0)
 	search, fetch := "", true
 	return Config{
@@ -110,6 +116,7 @@ func defaults() Config {
 			ProjectContext: &projectContext,
 			Skills:         &skills,
 			TrustSkills:    &trustSkills,
+			TrustHooks:     &trustHooks,
 		},
 	}
 }
