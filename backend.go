@@ -101,4 +101,8 @@ type Request struct {
 	// Approve, if set, is asked before every local tool call runs. Nil
 	// means every call runs unasked — see Approve's own doc comment.
 	Approve Approve
+
+	// Hooks run at fixed points around each local tool call. Nil means
+	// none; see HookPoint.
+	Hooks map[HookPoint][]Hook
 }

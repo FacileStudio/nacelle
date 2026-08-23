@@ -19,7 +19,7 @@ import (
 // answer is a set of tool calls, run them, append the results, and ask again.
 func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error] {
 	return func(yield func(nacelle.Event, error) bool) {
-		sink := &nacelle.ToolSink{Approve: request.Approve}
+		sink := &nacelle.ToolSink{Approve: request.Approve, Hooks: request.Hooks}
 		out := &emitter{yield: yield, sink: sink}
 
 		total, stop, err := b.converse(ctx, request, out, sink)

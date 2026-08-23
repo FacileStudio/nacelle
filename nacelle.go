@@ -74,6 +74,10 @@ type Config struct {
 	// the default rather than the safe-looking choice.
 	Approve Approve
 
+	// Hooks run at fixed points of every local tool call. See HookPoint
+	// for what exists and what a hook may decide. Nil means none.
+	Hooks map[HookPoint][]Hook
+
 	// Logger receives the few things worth recording that are not events.
 	// Defaults to slog.Default().
 	Logger *slog.Logger
@@ -152,6 +156,7 @@ func (c Config) request() Request {
 		MaxTokens:     c.maxTokens(),
 		MaxIterations: c.MaxIterations,
 		Approve:       c.Approve,
+		Hooks:         c.Hooks,
 	}
 }
 

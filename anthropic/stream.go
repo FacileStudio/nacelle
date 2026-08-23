@@ -25,7 +25,7 @@ type session struct {
 // Stream runs the conversation on the SDK's streaming tool runner.
 func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error] {
 	return func(yield func(nacelle.Event, error) bool) {
-		sink := &nacelle.ToolSink{Approve: request.Approve}
+		sink := &nacelle.ToolSink{Approve: request.Approve, Hooks: request.Hooks}
 		state := &session{
 			pending:  newInvocations(),
 			thinking: request.Thinking.Show,
