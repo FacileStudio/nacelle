@@ -51,7 +51,8 @@ Reasoning, which was in here from the first day and wrong from the first day.
 - **`Thinking.Budget`**, a reasoning-token ceiling for one turn. It travels as
   `reasoning.max_tokens` on OpenRouter and as the enabled thinking variant's `budget_tokens` on
   Anthropic. Effort and budget are two spellings of one idea and the providers disagree about
-  which they take, so both are carried and each backend sends what its API understands.
+  how to take them: Anthropic accepts both at once on separate fields, while OpenRouter answers
+  the pair with a 400 and its backend therefore lets the budget win.
 - **`reasoning_budget` in `~/.nacelle.yml`**, with `-reasoning-budget` and
   `NACELLE_REASONING_BUDGET` beside it. `effort` and `thinking` keep their place at the top
   level of the file: the loader decodes with `KnownFields`, so a relocated key would be a

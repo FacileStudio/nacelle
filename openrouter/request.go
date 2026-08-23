@@ -36,10 +36,18 @@ func (b *Backend) requestOptions(request nacelle.Request) []option.RequestOption
 // demoted to an option: a switch whose only effect is to corrupt a tool loop
 // is not a preference.
 //
-// Effort and max_tokens are both sent when both were given. They are two
-// spellings of one idea and providers behind this gateway accept one or the
-// other, so sending both is how a request stays correct across a model swap
-// rather than silently losing its depth on half of them.
+// A budget beats an effort when both were given, because the gateway refuses
+// to take them together: "Only one of reasoning.effort and reasoning.max_tokens
+// can be specified", 400, measured 2026-08-23. They are two spellings of one
+// idea and OpenRouter documents the levels as percentages of the budget, so a
+// budget is an effort said precisely and dropping the coarser one loses
+// nothing. The Anthropic backend keeps both, because there they are different
+// fields on the request and the API takes them together; a caller who sets
+// both and swaps backend gets the ceiling honoured either way.
+//
+// Sending both is what this did until a real request was made with a real
+// config. The fake server the tests run against accepts any JSON, so the shape
+// was asserted and the rule was not, which is why assertOneDepth exists.
 //
 // A caller who asked for nothing gets no reasoning object at all, which hands
 // the decision to the provider. That is not the same as off, and on a model
@@ -51,11 +59,11 @@ func reasoningParam(thinking nacelle.Thinking) map[string]any {
 	}
 
 	reasoning := map[string]any{}
-	if thinking.Effort != "" {
-		reasoning["effort"] = string(thinking.Effort)
-	}
-	if thinking.Budget > 0 {
+	switch {
+	case thinking.Budget > 0:
 		reasoning["max_tokens"] = thinking.Budget
+	case thinking.Effort != "":
+		reasoning["effort"] = string(thinking.Effort)
 	}
 	if len(reasoning) == 0 {
 		if !thinking.Show {

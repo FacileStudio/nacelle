@@ -49,7 +49,7 @@ func TestDepthReachesTheRequestAndExclusionNeverDoes(t *testing.T) {
 	}{
 		{"effort alone", nacelle.Thinking{Effort: nacelle.EffortHigh}, map[string]any{"effort": "high"}},
 		{"budget alone", nacelle.Thinking{Budget: 2048}, map[string]any{"max_tokens": 2048.0}},
-		{"both spellings", nacelle.Thinking{Effort: nacelle.EffortMax, Budget: 4096}, map[string]any{"effort": "max", "max_tokens": 4096.0}},
+		{"a budget beats an effort", nacelle.Thinking{Effort: nacelle.EffortMax, Budget: 4096}, map[string]any{"max_tokens": 4096.0}},
 		{"off", nacelle.Thinking{Effort: nacelle.EffortNone}, map[string]any{"enabled": false}},
 		{"off beats a ceiling", nacelle.Thinking{Effort: nacelle.EffortNone, Budget: 4096}, map[string]any{"enabled": false}},
 		{"watching without a depth", nacelle.Thinking{Show: true}, map[string]any{"enabled": true}},
@@ -65,6 +65,7 @@ func TestDepthReachesTheRequestAndExclusionNeverDoes(t *testing.T) {
 			if _, sent := reasoning["exclude"]; sent {
 				t.Errorf("exclude was sent: %+v", reasoning)
 			}
+			assertOneDepth(t, reasoning)
 			if !maps.Equal(reasoning, testCase.want) {
 				t.Errorf("reasoning = %+v, want %+v", reasoning, testCase.want)
 			}
@@ -227,5 +228,21 @@ func TestMCPIsRefusedAtConstruction(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "MCP") {
 		t.Errorf("error = %v, want it to name MCP", err)
+	}
+}
+
+// assertOneDepth holds the rule the fake server cannot: OpenRouter answers a
+// request naming both reasoning.effort and reasoning.max_tokens with a 400,
+// "Only one of reasoning.effort and reasoning.max_tokens can be specified".
+//
+// A test server that accepts any JSON will never catch that, which is exactly
+// how it shipped once. Asserting the rule rather than the shape is the closest
+// a test without a network can get to the provider's own validation.
+func assertOneDepth(t *testing.T, reasoning map[string]any) {
+	t.Helper()
+	_, byEffort := reasoning["effort"]
+	_, byBudget := reasoning["max_tokens"]
+	if byEffort && byBudget {
+		t.Errorf("both spellings of the depth were sent, which the gateway rejects: %+v", reasoning)
 	}
 }

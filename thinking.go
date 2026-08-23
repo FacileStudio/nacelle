@@ -56,9 +56,12 @@ type Thinking struct {
 	// backend still applies whatever it defaults to.
 	//
 	// Effort and Budget are two spellings of one idea, and the providers
-	// disagree about which they accept. Both are carried so that neither
-	// backend has to invent the other's, and each sends what its API
-	// understands.
+	// disagree about how to take them. Anthropic takes both at once, on
+	// separate fields. OpenRouter refuses the pair with a 400 and each
+	// backend therefore resolves it its own way, the OpenRouter one by
+	// letting a budget win: the levels are documented there as percentages
+	// of the budget, so the precise number is the coarse one said properly.
+	// Set one or the other unless a backend swap is the point.
 	Budget int64
 
 	// Show streams the model's reasoning as KindThinking events.
