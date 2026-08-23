@@ -13,6 +13,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -44,9 +45,22 @@ Answer as briefly as the question allows, and lead with the result rather than t
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "nacelle:", err)
+		fmt.Fprintln(os.Stderr, "nacelle:", unprefixed(err))
 		os.Exit(1)
 	}
+}
+
+// unprefixed drops the library's own name from a message this program is about
+// to put its name in front of.
+//
+// nacelle's errors say which package refused, which is correct for a library:
+// a caller with several dependencies needs to know which one turned it down.
+// This program is that library's front end and has already written the name, so
+// keeping both prints "nacelle: nacelle: backend ...". A backend's prefix is
+// left alone on purpose, because "nacelle/openrouter" says which backend and
+// that half is worth reading twice.
+func unprefixed(err error) string {
+	return strings.TrimPrefix(err.Error(), "nacelle: ")
 }
 
 func run() error {

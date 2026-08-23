@@ -8,6 +8,35 @@ while on `v0`, a breaking change bumps the minor.
 
 Nothing yet.
 
+## [0.2.2] - 2026-08-23
+
+### Added
+
+- **`Capabilities.MinBudget`**, the smallest `Thinking.Budget` a backend's API accepts. A number
+  rather than a bool, because a refusal is only useful if it says what to change to. `anthropic`
+  reports 1024 and the SDK documents the rejection; `openrouter` reports zero and means it, since
+  it fronts hundreds of models whose floors are their own.
+
+### Fixed
+
+- **A reasoning budget that could never work is refused at construction.** Two cases, different in
+  kind. At or above `MaxTokens` it is a contradiction no provider could satisfy: reasoning comes
+  out of the output allowance, so the turn has nothing left to answer with. Below the backend's
+  floor it is that backend's own rule. Both reached the provider as a 400 on the first real
+  request, which points at the question rather than at the `reasoning_budget:` line written weeks
+  earlier.
+- **The client no longer prints its own name twice.** A library error already says which package
+  refused, and `tui/` was adding `nacelle:` in front of `nacelle:`. A backend's prefix is left
+  alone, because `nacelle/openrouter` says which backend.
+
+### Verified
+
+- **Signed reasoning blocks round-trip.** The merge existed to survive `anthropic-claude-v1`
+  blocks, where a mangled sequence is a rejection rather than quiet corruption, and nothing had
+  exercised one. Measured against `anthropic/claude-sonnet-5` through OpenRouter: the signature
+  arrives alone on the final fragment with no text beside it, the merge keeps it whole at 420
+  characters, and a four-turn tool loop replaying it was accepted at every step.
+
 ## [0.2.1] - 2026-08-23
 
 ### Fixed

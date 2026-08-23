@@ -52,6 +52,7 @@ type Capabilities struct {
 	MCP      bool // remote MCP servers
 	Thinking bool // KindThinking events
 	Effort   bool // a reasoning depth on the request, as a level or a budget
+	MinBudget int64 // smallest budget the API takes; 0 means no floor
 	Cost     bool // Usage.Cost carries real money
 }
 ```
@@ -69,6 +70,7 @@ silence looks like a model that will not use them, and that is a bad afternoon t
 | MCP | yes — Anthropic connects on its own side | no — no server-side connector to drive |
 | Thinking | yes | yes, gated by the request |
 | Effort | yes | yes |
+| MinBudget | 1024, documented and enforced by the API | 0, it fronts models whose floors are their own |
 | Cost | no — the API returns tokens only | yes — OpenRouter prices every generation |
 | Tool loop | the SDK's own `BetaToolRunnerStreaming` | hand-rolled, turn by turn |
 

@@ -63,6 +63,16 @@ type Capabilities struct {
 	// would add a field that can only ever agree with its neighbour.
 	Effort bool
 
+	// MinBudget is the smallest Thinking.Budget this backend's API will
+	// take, or zero when it has no floor to report.
+	//
+	// A number rather than a bool because the refusal is only useful if it
+	// says what to change to. Anthropic documents 1024 and rejects less;
+	// the OpenRouter backend leaves this at zero and means it, because it
+	// fronts hundreds of models whose floors are their own and a figure
+	// invented here would refuse requests the gateway would have accepted.
+	MinBudget int64
+
 	// Cost reports whether Usage carries money rather than only tokens.
 	// A backend that prices requests itself can fill it; one that does not
 	// leaves Usage.Cost at zero and the caller prices the tokens.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,5 +127,17 @@ func TestTheBannerNamesSearchOnlyWhenAnInstanceIsSet(t *testing.T) {
 	with := banner(&answeringStub{}, asSettled(Config{Root: ".", Web: Web{Search: ptr("https://furet.example")}}), loaded{}, connected{})
 	if !strings.Contains(with, "search on") {
 		t.Errorf("banner = %q, want it to confirm search is on", with)
+	}
+}
+
+// "nacelle: nacelle: backend ..." is what a misconfigured budget printed before
+// this, and a doubled name is the first thing a person sees on the first run
+// that fails.
+func TestTheLibraryPrefixIsNotPrintedTwice(t *testing.T) {
+	if got := unprefixed(errors.New("nacelle: backend \"anthropic\" does not support x")); got != `backend "anthropic" does not support x` {
+		t.Errorf("unprefixed = %q, want the library's own name dropped", got)
+	}
+	if got := unprefixed(errors.New("nacelle/openrouter: no API key")); got != "nacelle/openrouter: no API key" {
+		t.Errorf("unprefixed = %q, want a backend's prefix left alone", got)
 	}
 }

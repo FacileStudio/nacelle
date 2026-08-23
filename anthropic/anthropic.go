@@ -61,7 +61,7 @@ func (b *Backend) Name() string { return "anthropic" }
 // responses — it returns tokens, and the caller multiplies. TokenCounting is
 // present because the API ships a dedicated endpoint for it — see tokens.go.
 func (b *Backend) Capabilities() nacelle.Capabilities {
-	return nacelle.Capabilities{MCP: true, Thinking: true, Effort: true, TokenCounting: true}
+	return nacelle.Capabilities{MCP: true, Thinking: true, Effort: true, MinBudget: 1024, TokenCounting: true}
 }
 
 // Model is the model id this backend was built for.

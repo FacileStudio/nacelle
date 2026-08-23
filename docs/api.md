@@ -104,6 +104,7 @@ type Capabilities struct {
 	MCP           bool
 	Thinking      bool
 	Effort        bool
+	MinBudget     int64 // smallest Thinking.Budget the API takes; 0 = no floor
 	Cost          bool
 	TokenCounting bool
 }
@@ -459,7 +460,7 @@ type Backend struct{ /* unexported */ }
 
 func New(cfg Config) *Backend
 func (b *Backend) Name() string             // "anthropic"
-func (b *Backend) Capabilities() nacelle.Capabilities // {MCP: true, Thinking: true, Effort: true}
+func (b *Backend) Capabilities() nacelle.Capabilities // {MCP: true, Thinking: true, Effort: true, MinBudget: 1024}
 func (b *Backend) Model() string
 func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error]
 ```

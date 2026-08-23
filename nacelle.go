@@ -144,19 +144,30 @@ func New(cfg Config) (*Agent, error) {
 // request is the run this config describes, with every default filled, so a
 // backend never has to guess what an empty field meant.
 func (c Config) request() Request {
-	maxTokens := c.MaxTokens
-	if maxTokens == 0 {
-		maxTokens = DefaultMaxTokens
-	}
 	return Request{
 		System:        c.System,
 		Tools:         c.Tools,
 		MCP:           c.MCP,
 		Thinking:      c.Thinking,
-		MaxTokens:     maxTokens,
+		MaxTokens:     c.maxTokens(),
 		MaxIterations: c.MaxIterations,
 		Approve:       c.Approve,
 	}
+}
+
+// maxTokens is the per-turn ceiling this config asks for, with the default
+// filled in.
+//
+// It is a method rather than a line inside request because supports needs the
+// same number before request has run, and a reasoning budget is checked
+// against it. Two copies of "zero means DefaultMaxTokens" is one copy too
+// many: the one that drifted would validate a budget against a ceiling the
+// request never used.
+func (c Config) maxTokens() int64 {
+	if c.MaxTokens == 0 {
+		return DefaultMaxTokens
+	}
+	return c.MaxTokens
 }
 
 // Backend returns the backend this agent runs on, so a caller can report which
@@ -164,6 +175,18 @@ func (c Config) request() Request {
 func (a *Agent) Backend() Backend { return a.backend }
 
 // supports refuses a config the backend cannot honour.
+//
+// The two budget checks are different in kind and that is why they read
+// differently. A budget at or above the turn's own ceiling is a contradiction
+// no provider could satisfy: reasoning tokens come out of the output
+// allowance, so it asks for a turn with nothing left to answer with. A budget
+// under the backend's floor is that backend's rule, which is why it arrives
+// through Capabilities and names the number it broke.
+//
+// Both are caught here rather than left to the provider because the settings
+// that reach them are written once, in a config file, and spent at
+// question-time. An API error arriving on the first real request points at the
+// question, not at the line that caused it.
 func supports(cfg Config) error {
 	can := cfg.Backend.Capabilities()
 	name := cfg.Backend.Name()
@@ -177,6 +200,15 @@ func supports(cfg Config) error {
 		return &Unsupported{Backend: name, Feature: "effort levels"}
 	case cfg.Thinking.Budget > 0 && !can.Effort:
 		return &Unsupported{Backend: name, Feature: "reasoning budgets"}
+	case cfg.Thinking.Budget >= cfg.maxTokens():
+		return fmt.Errorf(
+			"nacelle: a reasoning budget of %d cannot fit a turn capped at %d tokens",
+			cfg.Thinking.Budget, cfg.maxTokens())
+	case cfg.Thinking.Budget > 0 && cfg.Thinking.Budget < can.MinBudget:
+		return &Unsupported{
+			Backend: name,
+			Feature: fmt.Sprintf("a reasoning budget below %d tokens", can.MinBudget),
+		}
 	}
 	return nil
 }
