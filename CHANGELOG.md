@@ -6,6 +6,22 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.1] - 2026-08-23
+
+### Fixed
+
+- **A request naming both `reasoning.effort` and `reasoning.max_tokens` was rejected.**
+  OpenRouter answers the pair with 400, "Only one of reasoning.effort and reasoning.max_tokens
+  can be specified". A budget now wins: the gateway documents each level as a percentage of the
+  budget, so the precise number is the coarse one said properly. The Anthropic backend keeps
+  both, where they are separate fields the API takes together. This reached 0.2.0 because the
+  tests run against a fake server that accepts any JSON, so the shape was asserted and the
+  provider's own rule was not; `assertOneDepth` now holds that rule on every case in the table.
+
+## [0.2.0] - 2026-08-23
+
 Reasoning, which was in here from the first day and wrong from the first day.
 
 ### Fixed
