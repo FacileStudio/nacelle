@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,6 +87,12 @@ const abandoned nacelle.Stop = "abandoned"
 // run reads as the old total plus the new turns and then falls back to the new
 // total on its own, which is a number nobody can act on.
 //
+// The count separates input from output, because in an agentic session they
+// are different animals: every turn re-bills the whole conversation as input,
+// so a short chat with many tool calls shows an input figure that dwarfs the
+// words actually on screen. One merged number reads as a counting bug; two
+// numbers read as what they are.
+//
 // Cost is only shown when a backend reports one. Anthropic returns tokens and
 // nothing else, and a zero next to a currency symbol reads as free rather than
 // as unknown.
@@ -106,14 +113,31 @@ func (m *model) status() string {
 	}
 
 	total := m.spent.Add(m.run.usage)
-	line := fmt.Sprintf("%s · %d tokens", state, total.Total())
+	line := fmt.Sprintf("%s · in %s · out %s", state,
+		shortTokens(total.InputTokens+total.CacheCreationTokens),
+		shortTokens(total.OutputTokens))
 	if total.CacheReadTokens > 0 {
-		line += fmt.Sprintf(" (%d cached)", total.CacheReadTokens)
+		line += fmt.Sprintf(" · %s cached", shortTokens(total.CacheReadTokens))
 	}
 	if total.Cost > 0 {
 		line += fmt.Sprintf(" · $%.4f", total.Cost)
 	}
 	return lipgloss.NewStyle().Faint(true).Render(truncate(line, max(m.width, 1)))
+}
+
+// shortTokens renders a token count the way a status line wants it: exact
+// below a thousand, one decimal up to a hundred thousand, whole thousands
+// above that. The precision is decoration; nobody audits the third digit of
+// a cache read.
+func shortTokens(n int64) string {
+	switch {
+	case n >= 100000:
+		return fmt.Sprintf("%dk", n/1000)
+	case n >= 1000:
+		return fmt.Sprintf("%.1fk", float64(n)/1000)
+	default:
+		return strconv.FormatInt(n, 10)
+	}
 }
 
 // working is what a busy run is doing, spun so the line moves even when

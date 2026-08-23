@@ -20,8 +20,8 @@ func TestTheTokenCountIsASessionTotalThatOnlyEverGrows(t *testing.T) {
 	m.absorb(nacelle.Event{Kind: nacelle.KindTurn, Usage: nacelle.Usage{OutputTokens: 60}})
 	m.absorb(nacelle.Event{Kind: nacelle.KindDone, Usage: nacelle.Usage{OutputTokens: 100}})
 	m.settle()
-	if status := m.status(); !strings.Contains(status, "100 tokens") {
-		t.Fatalf("status after the first run = %q, want its 100 tokens", status)
+	if status := m.status(); !strings.Contains(status, "out 100") {
+		t.Fatalf("status after the first run = %q, want its 100 output tokens", status)
 	}
 
 	m.prompt.SetValue("again please")
@@ -29,14 +29,14 @@ func TestTheTokenCountIsASessionTotalThatOnlyEverGrows(t *testing.T) {
 	defer m.run.cancel()
 
 	m.absorb(nacelle.Event{Kind: nacelle.KindTurn, Usage: nacelle.Usage{OutputTokens: 5}})
-	if status := m.status(); !strings.Contains(status, "105 tokens") {
-		t.Errorf("status during the second run = %q, want the session's 105", status)
+	if status := m.status(); !strings.Contains(status, "out 105") {
+		t.Errorf("status during the second run = %q, want the session's 105 output tokens", status)
 	}
 
 	m.absorb(nacelle.Event{Kind: nacelle.KindDone, Usage: nacelle.Usage{OutputTokens: 7}})
 	m.settle()
-	if status := m.status(); !strings.Contains(status, "107 tokens") {
-		t.Errorf("status after the second run = %q, want 100 + 7 rather than 7", status)
+	if status := m.status(); !strings.Contains(status, "out 107") {
+		t.Errorf("status after the second run = %q, want 100 + 7 rather than 7 output tokens", status)
 	}
 }
 
