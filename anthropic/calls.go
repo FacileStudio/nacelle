@@ -152,8 +152,20 @@ func (c *callTracker) finish() []nacelle.Event {
 //
 // Both spellings count. A tool this process runs arrives as tool_use and one
 // reached over MCP as mcp_tool_use, and a consumer has no reason to care which
-// side of the request executed it — which is exactly why both must also end up
+// side of the request executed it, which is exactly why both must also end up
 // closed by a KindToolResult, whoever ran them.
+//
+// A third spelling is missing on purpose. Anthropic sends server_tool_use for
+// a tool it runs on its own side, paired with a web_search_tool_result block,
+// and neither can arrive here because nothing in this package ever puts a
+// server-side tool on a request. Accepting them today would be code no test
+// could reach.
+//
+// If that changes, this function is half of the work and stopOf in turn.go is
+// the other half: the blocks would land here unrecognised, and the pause_turn
+// that accompanies a long search would end the run as an unnameable stop
+// holding a half-finished answer. They have to move together. ROADMAP.md's
+// server-side search entry carries the rest, including what it costs.
 func isToolUse(blockType string) bool {
 	return blockType == "tool_use" || blockType == "mcp_tool_use"
 }

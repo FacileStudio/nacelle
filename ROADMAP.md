@@ -31,6 +31,17 @@ the first token, and (as of this round) discovers `CLAUDE.md`/`AGENTS.md` above 
 reach mycelium's flows and memory search, both default on and both fail soft to nothing when there
 is nothing to find.
 
+**Reasoning, added 2026-08-23 and never on this roadmap.** `Config.Effort` and
+`Config.Thinking bool` became one `Thinking{Effort, Budget, Show}`, which is the API break
+`v0.2.0` is named for. It was not a feature request: `openrouter/turn.go` was assembling a
+streamed reasoning block by keeping the last fragment of it and replaying that to the model as its
+whole previous thought, and the default configuration was asking every provider to discard the
+reasoning entirely, so the merge that would have caught it never ran. `openrouter/reasoning.go`
+rejoins the fragments and `docs/configuration.md` carries the settings. The thing worth taking
+from it, recorded because this roadmap is where the next person looks: both defects survived a
+green gate, because the backend tests run against a fake server that accepts any JSON, and both
+were found by making a real request.
+
 A later round added `~/.agents/AGENTS.md` (the AGENTS.md standard's own global-base path,
 deliberately not a user's `~/.claude/CLAUDE.md` — see `tui/context.go`'s doc comment) and skill
 loading from `~/.agents/skills/` and trusted `.agents/skills/`, following the Agent Skills
@@ -51,9 +62,36 @@ ctrl+c rescues a forgotten prompt. Off by default (`-approve-tools`): by default
 with a fuzzy-matching dropdown while typing `/` rather than ghost text — plus `-skill-dir`, which
 loads another tool's skills instead of duplicating them.
 
-No tag yet. Tagging is a decision for whoever owns this repo to take, not a thing to be
-blocked on somebody else's roadmap; the cost of staying untagged is real and paid every time
-`tui/go.mod`'s pseudo-version has to be bumped by hand.
+Tagged since 2026-08-22, correcting what this paragraph said for three days. `v0.1.0` was the
+first; the reasoning work took the core to `v0.2.2` the day after. Every core tag is paired with
+a `tui/vX.Y.Z`, because `tui/go.mod` requires a *published* core rather than the working tree.
+
+That pairing is the standing cost of the two-module layout, and the shape of it is worth reading
+once rather than rediscovering at a push.
+
+`scripts/check.sh` checks `tui/` against **both** cores. The build step runs with `GOWORK=off`, so
+`tui/` resolves the core from the proxy at the version its `go.mod` names; `vet`, `test -race` and
+the nested lint pass run with the workspace on, against the tree. CI does not do that second
+thing: `.github/workflows/ci.yml` sets `GOWORK: "off"` in **both** jobs, so what main is ever
+judged on is `tui/` source built against the *published* core.
+
+That difference is the whole procedure. A breaking core change lands as **two commits, never
+one**:
+
+1. **Core only**, `tui/` untouched and still pinned to the old core. CI builds old `tui/` source
+   against the old published core and is green. Tag `vX.Y.Z` here and push it.
+2. **`tui/` adoption**: `go mod edit -require` onto the new tag, plus the source migration. CI
+   builds new `tui/` source against the now-published core and is green. Tag `tui/vX.Y.Z`.
+
+Only the local gate objects, and only at step 1, where workspace-on `vet` sees a core the
+unmigrated `tui/` cannot compile against. At a release boundary that is a false alarm by
+construction, which is what `--core-ahead` is for: it skips the three nested checks that resolve
+the core from the tree and runs everything else, where `git push --no-verify` runs nothing.
+
+`8d8a2b9` is what the one-commit version looks like: it changed the core and nine `tui/` files
+together, so no published core could satisfy it and CI went red until the next commit. Checked
+2026-08-23 by simulating both orderings against the real gate rather than reasoning about them,
+which is also how the first two attempts at writing this paragraph were found to be wrong.
 
 What is not built, flagged rather than silently dropped. None is ordered, and none has earned a
 `###` entry yet — each needs its own scoping session first. Two of them were built on 2026-08-21
@@ -96,6 +134,11 @@ the argument against redoing them differently.
   `server_tool_use` / `web_search_tool_result` blocks; and `stopOf` parks `pause_turn` in
   `StopOther`, which server-side search makes reachable in practice rather than in theory — a
   long search would end a run as an unnameable stop with a half-finished answer.
+
+  Both sites now say so in their own doc comments, and point at each other, so the trap is
+  reachable from the code rather than only from this file (2026-08-23). That matters because the
+  two have to move together: whoever adds the request parameter will be reading `calls.go`, not
+  a roadmap bullet about pricing.
 
   This bullet used to call that "the same gap behind the known `mcp_tool_use` orphan". There is
   no such orphan and there has not been for some time: `isToolUse` takes both spellings,
@@ -317,9 +360,15 @@ helps but does not settle it.
 ## Conventions checked
 
 `log-levels-for-retries` (A0 exists because of it), `facile-docs-standard` (B5),
-`project-architecture`, `facile-cli-repo-pattern`, `project-naming` — commits are an
-imperative subject stating the consequence, no conventional-commit prefix; the wiki's
-stated rule is stale and the repos disagree with it.
+`project-architecture`, `facile-cli-repo-pattern`, `project-naming`.
+
+The line that used to sit here, that commits take an imperative subject with no
+conventional-commit prefix, was true when it was written and is not any more. `2f6b3a9` replaced
+the tracked githooks with `lefthook.yml`, which pulls `github.com/FacileStudio/hooks` at `v1` and
+installs a `commit-msg` hook that validates Conventional Commits and refuses anything else; the
+hook derives the gitmoji from the type, so writing one by hand is also wrong. `git log` disagrees
+with itself either side of that commit, which is exactly why this is written down rather than
+inferred from the history.
 
 Not applicable: migrations, auth/porte, muse, events, cross-repo distribution. nacelle is a
 flat library like tronc — no database, no HTTP surface, no UI.

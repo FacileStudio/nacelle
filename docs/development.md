@@ -113,6 +113,41 @@ Semver tags, never branch tracking. While on `v0`, a breaking change bumps the *
 Every change is recorded in [CHANGELOG.md](../CHANGELOG.md) in Keep a Changelog format, with
 the reason it exists. Add an `Unreleased` entry as part of the change, not after.
 
-No tag exists yet, and nothing outside this repo decides when one does. Staying untagged has
-a running cost: every consumer pins a pseudo-version, and `tui/go.mod`'s has to be bumped by
-hand each time the core moves. See [`ROADMAP.md`](../ROADMAP.md) at the repo root.
+Tagged since 2026-08-22: `v0.1.0`, then `v0.2.0` through `v0.2.2` for the reasoning work.
+Two modules means two tags per release, `vX.Y.Z` for the core and `tui/vX.Y.Z` for the client,
+because `tui/go.mod` requires a published core rather than the working tree.
+
+### Cutting a release
+
+Check first with the suite-wide flow, which is what muse's deleted `scripts/release.sh` was
+replaced by and is why this repo has no release script of its own:
+
+```sh
+mycelium flow run release-preflight
+```
+
+An additive change is one commit, two tags, nothing special. A **breaking** core change is two
+commits, and the order matters:
+
+```sh
+# 1. core only, tui/ untouched and still pinned to the old core
+sh scripts/check.sh --core-ahead     # see below for why the plain gate refuses this commit
+git commit && git push --no-verify && git tag vX.Y.Z && git push origin vX.Y.Z
+
+# 2. tui/ adoption, once the tag is published
+cd tui && go mod edit -require=github.com/FacileStudio/nacelle@vX.Y.Z && GOWORK=off go mod tidy
+sh scripts/check.sh                  # the plain gate, which must pass here
+git commit && git push && git tag tui/vX.Y.Z && git push origin tui/vX.Y.Z
+```
+
+**Why the split.** [The quality gate](#the-quality-gate) checks `tui/` against both cores: it
+builds with `GOWORK=off`, resolving the core from the proxy at the version `tui/go.mod` names,
+and it vets, tests and lints with the workspace on, against the tree. [CI](#ci) does only the
+first, setting `GOWORK: "off"` in both jobs, so main is only ever judged on `tui/` source built
+against the published core. Splitting the commit keeps CI green at every point; putting the core
+change and the `tui/` migration in one commit cannot, because no published core satisfies it yet.
+
+`--core-ahead` skips the three nested checks that resolve the core from the tree, for the single
+push at step 1 where the disagreement they report is the point of the commit. gofmt, the root
+vet, the root `test -race`, the root lint and the nested `GOWORK=off` build all still run, which
+is the difference between it and `--no-verify`, under which none of them do.

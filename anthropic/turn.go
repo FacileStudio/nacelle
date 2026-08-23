@@ -71,6 +71,13 @@ func usageOf(usage sdk.BetaMessageDeltaUsage) nacelle.Usage {
 // stopped at, so the text before it is the answer that was asked for.
 // compaction and pause_turn land in StopOther deliberately: neither says the
 // answer is whole, and neither is something a caller can act on today.
+//
+// pause_turn is the one that would have to move. It is not Anthropic reporting
+// an ending at all, it is Anthropic asking for the turn to be continued, and
+// it becomes reachable the moment a server-side tool goes on a request. A run
+// that stopped there would carry a half-finished answer under a name that says
+// nothing about why. See isToolUse in calls.go, which is the other half of
+// that same change and must move with this one.
 func stopOf(reason sdk.BetaStopReason) nacelle.Stop {
 	switch reason {
 	case sdk.BetaStopReasonEndTurn, sdk.BetaStopReasonStopSequence:
