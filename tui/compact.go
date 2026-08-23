@@ -80,11 +80,21 @@ func (m *model) sized(usage nacelle.Usage) {
 //
 // One pass trims toward compactAt minus compactSlack and stops there, so a
 // session sitting just over the line does not shave a result off every turn.
+//
+// The threshold is high on purpose beyond leaving room to answer: rewriting
+// any message invalidates the provider's prompt cache for everything after
+// it, so the turn after a pass re-bills the whole prefix as a cache write.
+// Compacting rarely, and deeply when it does, amortizes that bust; trimming
+// a little every turn would pay it every turn and save nothing.
+//
+// The trim budget is in bytes rather than tokens: size counts tokens, four
+// bytes per token is the rough English rate, and comparing the two directly
+// would trim about a quarter of what was intended.
 func (m *model) compact() {
 	if m.size <= compactAt || len(m.conversation) <= compactKeepMessages {
 		return
 	}
-	budget := m.size - compactAt + compactSlack
+	budget := (m.size - compactAt + compactSlack) * 4
 	limit := len(m.conversation) - compactKeepMessages
 	for i := 0; i < limit && budget > 0; i++ {
 		budget -= m.trimResults(&m.conversation[i], budget)

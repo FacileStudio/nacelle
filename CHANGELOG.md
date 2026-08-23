@@ -8,6 +8,14 @@ while on `v0`, a breaking change bumps the minor.
 
 ### Added
 
+- **Microcompaction in the tui** (`tui/compact.go`). When a finished turn's measured input
+  size (input + cache read + cache creation) passes 100k tokens, tool results older than the
+  newest four messages and larger than 1KB are replaced with `[dropped N bytes. Re-run the
+  tool if the detail matters.]`, keeping id and name so call/result pairing survives provider
+  validation. The status line appends `· N trimmed` so context edits are visible. The threshold
+  sits high partly to amortize the prompt-cache bust a rewrite causes: compact rarely, deeply.
+  Summarization (the Claude Code move) stays future work — ROADMAP Track H item 17.
+
 - **The status line separates input from output tokens** (`tui/`). The old single total merged
   input, output and cache tokens, which read as a counting bug on agentic sessions: every turn
   re-bills the whole conversation as input, so a short chat showed a huge number. The count was

@@ -106,6 +106,7 @@ func commandNames() []string {
 func (m *model) clear() tea.Cmd {
 	m.conversation = nil
 	m.spent = nacelle.Usage{}
+	m.size, m.trimmed = 0, 0
 	echoed := m.prints()
 	m.say(fromClient, m.banner+" · cleared")
 	return tea.Sequence(echoed, m.printed(scrolledAway(m.windowHeight)), m.prints())
