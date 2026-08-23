@@ -128,7 +128,7 @@ A call an attempt made and then a retry superseded — Anthropic's fallback path
 a `tool_use` block mid-stream and never run it — still has to close its `KindToolCall` with a
 `KindToolResult`, or a consumer's pending call hangs forever. `Discarded = true` marks that
 closure as fictional: the call never ran, and a consumer building the next request from the
-event stream (as `tui/` does) must drop it rather than replay it as answered history. An MCP
+event stream (as nacelle-tui does) must drop it rather than replay it as answered history. An MCP
 call a server genuinely failed to answer is the opposite case — it really was issued — and
 closes with `Discarded = false`.
 
@@ -263,7 +263,7 @@ Two contracts fall out of that and are stated where an implementer will meet the
 may be called from several goroutines at once**, because a model can ask for two tools in one turn
 and a backend runs those together — this happens on a single conversation, before anything shares
 an agent between requests. **`Approve` may be asked concurrently** for the same reason, which is
-why `tui/` serialises its prompts: two questions racing for one terminal is one question nobody
+why the terminal client serialises its prompts: two questions racing for one terminal is one question nobody
 can read.
 
 Both tool sets are safe to call concurrently and both say so. `tools/` gets it from `os.Root`,
@@ -295,7 +295,8 @@ No sandbox, no sessions, no auth, no persistence layer. `nacelle` is a flat libr
 `tronc` — no database, no HTTP surface, no UI of its own. See [`ROADMAP.md`](../ROADMAP.md) at
 the repo root for what is scoped in and explicitly out.
 
-The one piece of trust-gating in this codebase lives outside it entirely, in `tui/`: a
+The one piece of trust-gating in this ecosystem lives outside this repository, in
+nacelle-tui: a
 project's `.agents/skills/` is not read until something has trusted it, because a `SKILL.md`
 can instruct the model to run scripts it ships alongside itself. Plain instruction text
 (`AGENTS.md`, `CLAUDE.md`, global or project) is not gated the same way — the model reads

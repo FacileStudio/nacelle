@@ -1,9 +1,8 @@
 # nacelle — API
 
-The complete exported surface, package by package. Five packages importable under
-`github.com/FacileStudio/nacelle/<package>`, plus `tui`, which is a separate module
-(`github.com/FacileStudio/nacelle/tui`) with its own `go.mod` and Go floor. Behaviour and
-rationale live in [architecture.md](architecture.md); this page is the reference.
+The complete exported surface, package by package. Five packages, all importable under
+`github.com/FacileStudio/nacelle/<package>`. Behaviour and rationale live in
+[architecture.md](architecture.md); this page is the reference.
 
 ## `nacelle`
 
@@ -569,8 +568,9 @@ has been a real bypass elsewhere. Pages are parsed with `html.Parse` rather than
 because real pages leave tags unclosed and only the tree-construction algorithm closes them the
 way a browser does.
 
-## `tui`
+## The terminal client
 
-A `main` package, not a library — nothing here is importable. `go build -o` it directly; see
-[development.md](development.md) and the root [`README.md`](../README.md#the-terminal-client)
-for the flags, environment variables and config file it reads.
+The terminal client is not part of this module. It lives in its own repository,
+[FacileStudio/nacelle-tui](https://github.com/FacileStudio/nacelle-tui), as a `main` package —
+nothing in it is importable. Its flags, environment variables and config file are documented
+there.

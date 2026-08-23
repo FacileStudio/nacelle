@@ -9,8 +9,8 @@ and it gets rewritten in every project that needs one, slightly differently, wit
 different bug in the tool-result handling. `nacelle` is the single version.
 
 > **Status: it has its first consumer.** Both backends, `tools/`, retry, prompt caching and
-> per-turn usage are implemented and tested, and `tui/` runs on them. `sandbox/` is not
-> written. Untagged, so the API still moves.
+> per-turn usage are implemented and tested, and [nacelle-tui](https://github.com/FacileStudio/nacelle-tui)
+> runs on them. `sandbox/` is not written.
 
 ## Who it is for
 
@@ -20,7 +20,7 @@ Three consumers, which is the reason this is a library and not a package inside 
 |---|---|---|
 | **A headless Go service** | embedded in an API | core loop, MCP tools, streaming that maps onto SSE, transcripts |
 | **Atelier** | agents in isolated container boxes, best-of-N | swappable models, per-run cost and token accounting, a sandbox it can spin and reap |
-| **A `pi` replacement** | terminal coding agent | local read/write/edit/bash tools, a TUI, config and profiles |
+| **[nacelle-tui](https://github.com/FacileStudio/nacelle-tui)** | terminal coding agent | local read/write/edit/bash tools, a TUI, config and profiles |
 
 They want the same core and three different skins. The design brief follows from that: **a
 backend must be able to import the core without pulling in a terminal UI or a container
@@ -37,20 +37,21 @@ nacelle/                 core: Agent, Backend seam, events, tools, usage   [buil
   openrouter/            backend: hand-rolled loop, 400+ models, real cost [built]
   mcp/                   MCP server connections and credentials            [built]
   tools/                 local tool set: read, write, edit, find, search, run [built]
-  tui/        (submodule) terminal client — Bubble Tea lands here and nowhere else [built]
   sandbox/    (submodule) container and microVM execution for Atelier
 ```
 
-A backend importing `nacelle` and `nacelle/mcp` gets the loop and nothing else. `tui/` and
-`sandbox/` are separate Go modules for the same reason `tronc/migrate` and `tronc/testdb`
-are: an import should not cost you a dependency you will never call.
+A backend importing `nacelle` and `nacelle/mcp` gets the loop and nothing else — no Bubble
+Tea, no provider SDK wire types. The terminal client lives in its own repository,
+[nacelle-tui](https://github.com/FacileStudio/nacelle-tui), for the same reason
+`tronc/migrate` and `tronc/testdb` are separate modules: an import should not cost you a
+dependency you will never call. `sandbox/` stays a submodule here until Atelier needs it.
 
 ## Documentation
 
 | Doc | What's in it |
 |---|---|
 | [Architecture](docs/architecture.md) | The `Backend` seam, the event stream, the `Message` union, retry, caching |
-| [Configuration](docs/configuration.md) | Every `Config` field, the TUI's settings layer, and precedence |
+| [Configuration](docs/configuration.md) | Every `Config` field the library reads; client settings live in nacelle-tui |
 | [Development](docs/development.md) | Local setup, the quality gate, CI, versioning |
 | [API](docs/api.md) | Every exported symbol, package by package |
 
@@ -317,19 +318,17 @@ model's train of thought exactly when it is waiting on a tool result.
 
 ## The terminal client
 
-```sh
-go run ./tui -root . -bash
-go run ./tui -backend openrouter -model anthropic/claude-opus-5
-```
+The terminal client lives in its own repository now:
+[nacelle-tui](https://github.com/FacileStudio/nacelle-tui). It is the SDK's first consumer and
+that is its job: a terminal exercises every event kind a backend can produce — text, reasoning,
+a tool starting, a tool finishing, what a turn cost — while someone is watching, which is more
+of the contract than a headless caller touches.
 
-`tui/` is a separate Go module, so importing `nacelle` never costs you Bubble Tea. It is the
-SDK's first consumer and that is its job: a terminal exercises every event kind a backend can
-produce — text, reasoning, a tool starting, a tool finishing, what a turn cost — while someone
-is watching, which is more of the contract than a headless caller touches.
+Being outside the tree is the point. The client resolves the core from the proxy at the
+version its go.mod names, exactly like every future consumer will, so an API change that
+breaks it is visible at release time instead of hidden by a workspace file.
 
-It is deliberately small. Sessions, profiles, themes and panes are what a product grows, and
-none of them test the API. The point is to find where the API is annoying before three
-consumers depend on it — and it has already found things:
+It already earned its keep while living here:
 
 - ~~`openrouter` never emits `KindToolCall`.~~ Fixed. It also turned out that announcing calls
   without reporting a failure for an unknown tool would have left an orphan call, so that is
@@ -341,12 +340,7 @@ consumers depend on it — and it has already found things:
   resumed conversation carries its real tool history instead of dropping it.
 
 Three problems for one week-old client, all three now closed. That is what a first consumer is
-for. It has since grown a few things past floor scope, each because the client itself asked for
-them rather than because a product roadmap did: a spinner for the gap before the first token,
-markdown rendering, project- and global-scope `AGENTS.md`/`CLAUDE.md` discovery, skill loading
-(trust-gated for project-local skills, since a skill can carry scripts to run — plain context
-files are not gated the same way), and access to this machine's `mycelium` flows and memory
-search when it is installed. See [configuration.md](docs/configuration.md) for all of it.
+for.
 
 ## Not a port of `pi`
 

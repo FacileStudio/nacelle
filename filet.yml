@@ -16,8 +16,8 @@ disabled:
 # callable by every backend, which is why nacelle.Tool is this package's own
 # interface and not an SDK's — an Anthropic-shaped type in there would mean the
 # OpenRouter backend converting from a vocabulary that has nothing to do with
-# it. The same goes for tui/, which picks a backend by name and never sees a
-# provider's wire types.
+# it. The terminal client (nacelle-tui) picks a backend by name and never sees
+# a provider's wire types either; its gate lives in its own repository.
 architecture:
   fileNamePattern: '^[a-z0-9_]+\.go$'
   maxDepth: 3
@@ -27,7 +27,6 @@ architecture:
     tools: [github.com/anthropics/anthropic-sdk-go, github.com/openai/openai-go/v3]
     mcp: [github.com/anthropics/anthropic-sdk-go, github.com/openai/openai-go/v3]
     mcp/client: [github.com/anthropics/anthropic-sdk-go, github.com/openai/openai-go/v3]
-    tui: [github.com/anthropics/anthropic-sdk-go, github.com/openai/openai-go/v3]
 
 # info, not error. Every style rule filet has is info severity, so failing on
 # error alone can only fire on a Go file that does not parse or on a forbidden

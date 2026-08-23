@@ -6,7 +6,19 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+### Changed
+
+- **The terminal client moved to its own repository** —
+  [FacileStudio/nacelle-tui](https://github.com/FacileStudio/nacelle-tui). It was already a
+  separate Go module resolving the core from the proxy, so the split only makes visible what
+  was true: the SDK is a library and releases a module version; the client is an app and now
+  releases a binary (Homebrew tap and `facile install nacelle` included). The `go.work`, the
+  nested-module reconciliation in `scripts/check.sh --core-ahead`, and CI's matrix job all go
+  with it. **Breaking**: the import path `github.com/FacileStudio/nacelle/tui` no longer
+  exists; nothing outside this repository ever imported it.
+
 ### Added
+
 
 - **Lifecycle hooks around local tool calls** (`hooks.go`, `toolsink.go`). Two closed hook
   points, `BeforeToolCall` and `AfterToolCall`; a hook is `func(ctx, HookEvent) HookResult`

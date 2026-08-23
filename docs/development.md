@@ -4,22 +4,21 @@ Local setup, the quality gate, CI, and how versions are cut.
 
 ## Prerequisites
 
-- **Go 1.25.0** for the root module (`go.mod`). `tui/` is a separate module on
-  **Go 1.26.4** — Bubble Tea v2 declares that floor, and the root stays on 1.25 so the
-  documented floor for a backend importing the core loop stays honest. `mise.toml` pins
-  `1.26.4`, the higher of the two, so one toolchain covers both.
+- **Go 1.25.0** (`go.mod`), which is the documented floor for a backend importing the core
+  loop. `mise.toml` pins exactly that.
 - **mise**, for the task runner. Optional — every task is a one-line shell command runnable
   directly.
 - **golangci-lint v2**, optional locally. CI pins `v2.12.2`. The local gate skips the lint
   pass and says so when the binary is missing or fails to run.
 
-There is no database, no Docker, and no client half beyond `tui/` itself.
+There is no database, no Docker, and no client half — the terminal client lives in its own
+repository, [FacileStudio/nacelle-tui](https://github.com/FacileStudio/nacelle-tui).
 
 ## Tasks
 
 ```sh
-mise run check      # gofmt + vet + test + golangci-lint, every module
-mise run test       # go test ./... && go -C tui test ./...
+mise run check      # gofmt + vet + test + golangci-lint
+mise run test       # go test ./...
 mise run format     # rewrite Go sources in place
 ```
 
@@ -61,11 +60,6 @@ than one thing at a time. Worth knowing before changing it:
 - **`golangci-lint` is probed by running it**, not by `command -v` — a mise shim for a version
   never installed resolves on `PATH` and then fails on every invocation, which would read as a
   repository that does not lint rather than a machine that cannot.
-- **`tui/` is built with `GOWORK=off`.** With the workspace on, every import is satisfied from
-  the local source tree and a stale `require` in `tui/go.mod` is invisible — which is how it
-  once sat several commits behind a core it could not actually compile against, while the gate
-  printed `ok`. `GOWORK=off` builds what `go install github.com/FacileStudio/nacelle/tui@latest`
-  would actually get.
 - **`-race`, not a nicety.** Tool handlers run concurrently on the SDK's own goroutines and
   park their results in a mutex-guarded sink — exactly the shape the detector exists for.
 
@@ -80,8 +74,8 @@ excluded from `errcheck` and `bodyclose`. Issue caps are lifted
 ## `filet`
 
 `filet.yml`'s `architecture` block is the layering enforced, not just documented: the two
-backends must never import each other, and `tools/`, `mcp/` and `tui/` must never import a
-provider SDK directly — a tool has to be callable by every backend, which is why `nacelle.Tool`
+backends must never import each other, and `tools/` and `mcp/` must never import a provider
+SDK directly — a tool has to be callable by every backend, which is why `nacelle.Tool`
 is this package's own interface. `failOn: info`, deliberately strict — every style rule filet
 has is `info` severity, so a looser threshold could only ever fire on a Go file that does not
 parse or a forbidden import.
@@ -90,9 +84,8 @@ parse or a forbidden import.
 
 Two workflows under `.github/workflows/`, both on push to `main` and on every pull request:
 
-- **`ci.yml`** — `check` (root module, Go 1.25, `GOWORK=off`/`GOTOOLCHAIN=local`): gofmt, vet,
-  `test -race`, `golangci-lint-action@v7` at `v2.12.2`. `check-modules` (matrix, currently just
-  `tui` on Go 1.26.4): build, vet, `test -race`, lint with `--config ../.golangci.yml`.
+- **`ci.yml`** — one job on Go 1.25 with `GOTOOLCHAIN=local`: gofmt, build, vet, `test -race`,
+  `golangci-lint-action@v7` at `v2.12.2`.
 - **`filet.yml`** — runs `filet check`, `fail-on: info`.
 
 CI is what makes the gate unbypassable: the pre-push hook stops a local `git push --no-verify`
@@ -103,9 +96,7 @@ skip from reaching `main` unnoticed, but only CI actually blocks a PR.
 Every package carries its own `_test.go` files. Converter tests assert on the marshalled wire
 bytes, not on internal Go structs — `anthropic/conversation_test.go` and
 `openrouter/conversation_test.go` both check the literal JSON a request would carry, because
-that is the only level at which "the model sees it" means anything. `tui/`'s tests drive the
-Bubble Tea model directly (`m.consume(...)`, `m.settle()`, `m.absorb(...)`) rather than through
-a rendered terminal, and check the resulting viewport text with ANSI stripped.
+that is the only level at which "the model sees it" means anything.
 
 ## Versioning
 
@@ -113,41 +104,25 @@ Semver tags, never branch tracking. While on `v0`, a breaking change bumps the *
 Every change is recorded in [CHANGELOG.md](../CHANGELOG.md) in Keep a Changelog format, with
 the reason it exists. Add an `Unreleased` entry as part of the change, not after.
 
-Tagged since 2026-08-22: `v0.1.0`, then `v0.2.0` through `v0.2.2` for the reasoning work.
-Two modules means two tags per release, `vX.Y.Z` for the core and `tui/vX.Y.Z` for the client,
-because `tui/go.mod` requires a published core rather than the working tree.
+Tagged since 2026-08-22: `v0.1.0`, then `v0.2.0` onward for the reasoning and hooks work.
+One module, one tag per release. The terminal client pins whichever tag it has tested against;
+its require bump is a commit in its own repository, not a second tag here.
 
 ### Cutting a release
 
-Check first with the suite-wide flow, which is what muse's deleted `scripts/release.sh` was
-replaced by and is why this repo has no release script of its own:
+Check first with the suite-wide flow:
 
 ```sh
 mycelium flow run release-preflight
 ```
 
-An additive change is one commit, two tags, nothing special. A **breaking** core change is two
-commits, and the order matters:
+Then it is one commit, one tag:
 
 ```sh
-# 1. core only, tui/ untouched and still pinned to the old core
-sh scripts/check.sh --core-ahead     # see below for why the plain gate refuses this commit
-git commit && git push --no-verify && git tag vX.Y.Z && git push origin vX.Y.Z
-
-# 2. tui/ adoption, once the tag is published
-cd tui && go mod edit -require=github.com/FacileStudio/nacelle@vX.Y.Z && GOWORK=off go mod tidy
-sh scripts/check.sh                  # the plain gate, which must pass here
-git commit && git push && git tag tui/vX.Y.Z && git push origin tui/vX.Y.Z
+sh scripts/check.sh
+git commit && git push && git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
-**Why the split.** [The quality gate](#the-quality-gate) checks `tui/` against both cores: it
-builds with `GOWORK=off`, resolving the core from the proxy at the version `tui/go.mod` names,
-and it vets, tests and lints with the workspace on, against the tree. [CI](#ci) does only the
-first, setting `GOWORK: "off"` in both jobs, so main is only ever judged on `tui/` source built
-against the published core. Splitting the commit keeps CI green at every point; putting the core
-change and the `tui/` migration in one commit cannot, because no published core satisfies it yet.
-
-`--core-ahead` skips the three nested checks that resolve the core from the tree, for the single
-push at step 1 where the disagreement they report is the point of the commit. gofmt, the root
-vet, the root `test -race`, the root lint and the nested `GOWORK=off` build all still run, which
-is the difference between it and `--no-verify`, under which none of them do.
+A **breaking** change bumps the minor while on v0 (see above) and deserves an entry in
+[CHANGELOG.md](../CHANGELOG.md) saying why the break was worth it. Consumers — nacelle-tui
+included — pick the new version up by bumping their own `require`, on their own schedule.
