@@ -3,6 +3,7 @@ package nacelle_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"slices"
@@ -272,7 +273,7 @@ func TestSubAgentRefusesAnEmptyTask(t *testing.T) {
 
 // blocking is a backend whose stream never yields: it waits on its channel,
 // so a delegation against it only ends when the context does.
-type blocking struct{ release chan struct{} }
+type blocking struct{}
 
 func (b *blocking) Name() string                       { return "blocking" }
 func (b *blocking) Capabilities() nacelle.Capabilities { return nacelle.Capabilities{} }
@@ -291,7 +292,7 @@ func (b *blocking) Stream(ctx context.Context, _ nacelle.Request) iter.Seq2[nace
 // to reach the delegate, because a delegation is minutes of billed work.
 func TestDelegateHonoursACancelledContext(t *testing.T) {
 	tool, err := nacelle.NewSubAgentTool(
-		nacelle.Config{Backend: &blocking{release: make(chan struct{})}, System: "outer"},
+		nacelle.Config{Backend: &blocking{}, System: "outer"},
 		nacelle.SubAgentOptions{},
 	)
 	if err != nil {
@@ -354,5 +355,46 @@ func TestDelegateReportsTurnUsage(t *testing.T) {
 	}
 	if len(seen) != 1 || seen[0].OutputTokens != 5 {
 		t.Fatalf("usage = %v, want the one turn's spend", seen)
+	}
+}
+
+// A delegation retried through the same Retry wrapper another agent is
+// using stays correct. The TUI builds exactly this shape — one wrapped
+// backend handed to both the parent config and NewSubAgentTool — and the
+// wrapper keeps its attempt count per Stream call, so the delegate's
+// transient failure retries there and lands as a tool result rather than
+// surfacing as the caller's error.
+func TestDelegationRetriesThroughASharedRetryWrapper(t *testing.T) {
+	backend := &flaky{runs: []run{
+		{err: nacelle.Transient(errors.New("overloaded"))},
+		{events: []nacelle.Event{{Kind: nacelle.KindText, Text: "seven"}, done}},
+	}}
+	wrapped := nacelle.Retry(backend, impatient())
+
+	sub, err := nacelle.NewSubAgentTool(
+		nacelle.Config{Backend: wrapped, System: "outer", MaxIterations: 5},
+		nacelle.SubAgentOptions{},
+	)
+	if err != nil {
+		t.Fatalf("NewSubAgentTool: %v", err)
+	}
+	sink := &nacelle.ToolSink{}
+	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"}, json.RawMessage(`{"task":"count the stars"}`), sink)
+
+	var answer string
+	for _, event := range sink.Drain() {
+		if event.Tool == nil {
+			continue
+		}
+		if event.Tool.Err != nil {
+			t.Fatalf("delegation failed: %v", event.Tool.Err)
+		}
+		answer = event.Tool.Result
+	}
+	if answer != "seven" {
+		t.Errorf("answer = %q, want the retried delegation's own text", answer)
+	}
+	if backend.calls != 2 {
+		t.Errorf("calls = %d, want the failed attempt retried once", backend.calls)
 	}
 }
