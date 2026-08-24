@@ -6,6 +6,13 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+### Added
+
+- `NewSubAgentTool` builds a `task`-style delegation tool: a nested agent run on the same
+  backend with its own message list, returning only the delegate's final text. The nested
+  run inherits the parent's tools minus the subagent itself — recursion is one level deep
+  by construction — and denies every tool call unless given an approver of its own.
+
 ### Changed
 
 - **The terminal client moved to its own repository** —

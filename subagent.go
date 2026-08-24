@@ -44,6 +44,14 @@ type SubAgentOptions struct {
 	// can answer honestly. A caller that wants the sub-agent to work hands
 	// it a policy that decides without asking.
 	Approve Approve
+
+	// Usage receives what every nested turn costs, as it is spent. Nil —
+	// the default — drops the delegate's spend on the floor, which makes
+	// the session's own accounting quietly wrong the moment somebody
+	// delegates: the work happened, the bill arrives, the counters never
+	// moved. A caller that shows totals anywhere wires this into them.
+	// It runs on the stream's goroutine; keep it cheap and non-blocking.
+	Usage func(Usage)
 }
 
 // NewSubAgentTool builds a `task`-style delegation tool: a fresh Agent run,
@@ -100,13 +108,17 @@ func NewSubAgentTool(cfg Config, opts SubAgentOptions) (Tool, error) {
 
 	description := opts.Description
 	if description == "" {
-		description = "Delegate a self-contained task to a fresh assistant run with its own context window. " +
-			"The task must carry everything needed to do the work: no part of this conversation carries over, " +
-			"and nothing the delegate does is visible here except the final answer it returns."
+		description = "Delegate a self-contained task to a fresh assistant run with its own " +
+			"context window, which returns only its final answer. Use it when a side task would " +
+			"flood this conversation with material you will not need again: wide file searches, " +
+			"log or output dumps, exploration you only want the conclusion of. The task must " +
+			"carry everything needed to do the work — no part of this conversation carries over, " +
+			"and nothing the delegate does is visible here except what it returns, so ask for " +
+			"the shape of answer you want: findings, files changed, a verdict with its evidence."
 	}
 
 	return NewTool(name, description, func(ctx context.Context, in subAgentInput) (string, error) {
-		return delegate(ctx, nested, in.Task)
+		return delegate(ctx, nested, in.Task, opts.Usage)
 	})
 }
 
@@ -122,7 +134,7 @@ type subAgentInput struct {
 // erroring — out of iterations, cut off mid-answer — comes back as text that
 // says so, because handing the caller a truncated answer shaped like a whole
 // one is the failure Stop exists to prevent.
-func delegate(ctx context.Context, nested *Agent, task string) (string, error) {
+func delegate(ctx context.Context, nested *Agent, task string, report func(Usage)) (string, error) {
 	task = strings.TrimSpace(task)
 	if task == "" {
 		return "", fmt.Errorf("no task given")
@@ -137,7 +149,14 @@ func delegate(ctx context.Context, nested *Agent, task string) (string, error) {
 		switch event.Kind {
 		case KindText:
 			answer.WriteString(event.Text)
-		case KindTurn, KindDone:
+		case KindTurn:
+			if report != nil {
+				report(event.Usage)
+			}
+			if event.Stop != "" && event.Stop != StopTools {
+				stop = event.Stop
+			}
+		case KindDone:
 			if event.Stop != "" && event.Stop != StopTools {
 				stop = event.Stop
 			}
