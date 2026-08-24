@@ -1,4 +1,7 @@
 # nacelle: the Go agent SDK for the Facile Suite.
+
+kind: lib
+
 ignore: [.git, node_modules, vendor, dist, build, target, testdata, .output, coverage]
 extensions: [.go]
 
