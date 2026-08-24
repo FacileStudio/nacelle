@@ -24,7 +24,18 @@ func (a *Agent) Stream(ctx context.Context, conversation []Message) iter.Seq2[Ev
 
 	request := a.request
 	request.Messages = conversation
-	return a.backend.Stream(ctx, request)
+	seq := a.backend.Stream(ctx, request)
+	if a.transcript == nil {
+		return seq
+	}
+	return func(yield func(Event, error) bool) {
+		for event, err := range seq {
+			a.transcript.Record(event)
+			if !yield(event, err) {
+				return
+			}
+		}
+	}
 }
 
 // validateRoles refuses a conversation where a part sits on the wrong side of

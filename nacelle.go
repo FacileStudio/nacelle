@@ -78,6 +78,12 @@ type Config struct {
 	// for what exists and what a hook may decide. Nil means none.
 	Hooks map[HookPoint][]Hook
 
+	// Transcript, if set, receives every event the run produces as a JSONL
+	// session record — see Transcript for what is kept, capped and dropped.
+	// Recording never fails a run: it is bookkeeping at write time, not a
+	// feature the model waits on. Nil means nothing is recorded.
+	Transcript *Transcript
+
 	// Logger receives the few things worth recording that are not events.
 	// Defaults to slog.Default().
 	Logger *slog.Logger
@@ -89,9 +95,10 @@ type Config struct {
 // goroutines: it holds configuration, not state. A single run is not — a
 // sequence returned by Stream must be ranged from one goroutine.
 type Agent struct {
-	backend Backend
-	request Request
-	logger  *slog.Logger
+	backend    Backend
+	request    Request
+	logger     *slog.Logger
+	transcript *Transcript
 }
 
 var (
@@ -142,7 +149,7 @@ func New(cfg Config) (*Agent, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Agent{backend: cfg.Backend, logger: logger, request: cfg.request()}, nil
+	return &Agent{backend: cfg.Backend, logger: logger, request: cfg.request(), transcript: cfg.Transcript}, nil
 }
 
 // request is the run this config describes, with every default filled, so a
