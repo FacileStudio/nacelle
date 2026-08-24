@@ -6,6 +6,15 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-08-24
+
+### Added
+
+- `NewSubAgentTool` builds a task-style delegation tool: a nested agent on
+  the parent's backend with its own context window, one level deep, deny-all
+  approvals inside, and an optional `Usage` hook so a caller showing totals
+  can bill the delegate's turns to the session.
+
 ### Added
 
 - `NewSubAgentTool` builds a `task`-style delegation tool: a nested agent run on the same
