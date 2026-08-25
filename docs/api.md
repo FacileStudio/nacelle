@@ -522,7 +522,6 @@ func (s *Set) Dir() string
 func (s *Set) Tools() ([]nacelle.Tool, error)    // everything, honouring Config.AllowBash
 func (s *Set) ReadOnly() ([]nacelle.Tool, error) // read, find, search — nothing that can write
 
-func Mycelium() ([]nacelle.Tool, error)
 func WebSearch(endpoint string) ([]nacelle.Tool, error)
 func WebFetch() ([]nacelle.Tool, error)
 ```
@@ -533,14 +532,9 @@ ambiguous or absent match), `list_directory` (one directory, subdirectories mark
 nominate itself; see [architecture.md](architecture.md#the-tool-call-loop) for why that
 specific restriction is load-bearing (CVE-2025-59532).
 
-`Mycelium()` is independent of `Set` — no root, no config — and returns `list_flows`, `run_flow`
-and `search_memory` when the `mycelium` binary is on `PATH`, or `nil, nil` when it is not. Each
-shells out via `exec.CommandContext` with argv arguments, never a shell string, so nothing the
-model puts in a flow name or a search query reaches a shell to be interpreted.
-
-`WebSearch(endpoint)` is independent of `Set` in the same way, and returns one tool,
+`WebSearch(endpoint)` is independent of `Set` — no root, no config — and returns one tool,
 `web_search`, against a [SearXNG](https://docs.searxng.org) instance. An empty endpoint returns
-`nil, nil` — the `Mycelium()` convention for "not configured here" — while an endpoint that could
+`nil, nil`, this package's convention for "not configured here", while an endpoint that could
 never work (no scheme, no host) is an error at construction rather than a tool that fails on
 first use. There is deliberately no default: this module is public, so a default would send a
 stranger's queries to one operator's host.

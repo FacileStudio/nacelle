@@ -301,5 +301,5 @@ project's `.agents/skills/` is not read until something has trusted it, because 
 can instruct the model to run scripts it ships alongside itself. Plain instruction text
 (`AGENTS.md`, `CLAUDE.md`, global or project) is not gated the same way — the model reads
 arbitrary file content constantly as part of ordinary tool use, and gating one specific text
-file while every other one stays ungated would not close a real hole, only add friction. See
-[configuration.md](configuration.md#context-skills-and-mycelium-tools).
+file while every other one stays ungated would not close a real hole, only add friction. See nacelle-tui's
+[configuration.md](https://github.com/FacileStudio/nacelle-tui/blob/main/docs/configuration.md#context-and-skills).

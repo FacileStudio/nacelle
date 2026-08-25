@@ -6,6 +6,17 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+### Removed
+
+- **`tools.Mycelium()` is gone, and with it the `list_flows`, `run_flow` and `search_memory`
+  tools.** This is a general-purpose Go agent SDK, and shelling out to one company's binary is
+  not something a general-purpose SDK should carry: the coupling bought nothing a caller could
+  not wire themselves, and it named a Facile tool in a public library that references no other.
+  It is also redundant now. `mycelium mcp` serves the same three tools over stdio, so any client
+  with an MCP server list reaches them through the standard path. Callers who mounted them
+  should drop the constructor and add mycelium's server to that list instead; `mycelium install`
+  writes the `mcpServers` entry. Nothing else in `tools/` changes.
+
 ## [0.4.1] — 2026-08-24
 
 ### Added

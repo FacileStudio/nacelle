@@ -45,8 +45,9 @@ const (
 //
 // # Why there is no default endpoint
 //
-// Empty means no tool, no error, exactly as [Mycelium] means when mycelium is not
-// installed. That is not timidity about defaults, it is the only correct
+// Empty means no tool, no error, which is what any constructor here says
+// about something not configured on this machine: nothing to build is not a
+// failure. That is not timidity about defaults, it is the only correct
 // answer: this package ships in a public repository, so a hardcoded instance
 // would point every stranger's queries at one operator's machine, and put
 // their queries in that operator's logs. There is also no neutral choice to

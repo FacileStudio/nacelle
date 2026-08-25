@@ -239,10 +239,10 @@ Commands run with a scrubbed environment (`PATH` and `HOME`, nothing else), in t
 process group so a timeout kills the children too, with every output capped and truncation
 announced rather than silent.
 
-Three tools sit outside the confined set because they answer questions the working directory
-cannot. `tools.Mycelium()` reaches this machine's recorded flows and wiki. `tools.WebSearch(url)`
-searches the web through a [SearXNG](https://docs.searxng.org) instance you host, and
-`tools.WebFetch()` reads one of the pages it finds:
+Two tools sit outside the confined set because they answer questions the working directory
+cannot. `tools.WebSearch(url)` searches the web through a
+[SearXNG](https://docs.searxng.org) instance you host, and `tools.WebFetch()` reads one of the
+pages it finds:
 
 ```go
 searching, err := tools.WebSearch(os.Getenv("SEARCH_URL"))  // "" builds nothing, and no error

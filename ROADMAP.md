@@ -168,16 +168,18 @@ follow no longer exists post-reset.
 Everything A6 unblocked is now built, not just unparked: `Backend.CountTokens` (real on Anthropic,
 honestly refused on OpenRouter), `Usage.CacheHitRate`, and `Trim` — a boundary-safe truncation
 primitive, deliberately not a summarizer; see `message.go` and `trim.go`'s own doc comments for
-why compaction *strategy* stays out of this package. Track C shipped as `tools.Mycelium()` — a
-nacelle tool package that shells out, the option the roadmap left as "decide first" — rather than
-an MCP server added to mycelium, because it needed no change outside this repo.
+why compaction *strategy* stays out of this package. Track C first shipped as `tools.Mycelium()`,
+a tool package that shelled out, because it needed no change outside this repo. That decision was
+reversed on 2026-08-25 and the package removed: the other option on the table, an MCP server, now
+exists upstream and serves the same three tools over stdio, so the SDK carries no first-party
+dependency to reach them. See "Track C" below.
 
 `tui/` is the SDK's first consumer: rebuilds the real conversation from the event stream instead
 of dropping tool history, renders answers as markdown, scrolls, shows a spinner for the gap before
-the first token, and (as of this round) discovers `CLAUDE.md`/`AGENTS.md` above `-root` and can
-reach mycelium's flows and memory search, both default on and both fail soft to nothing when there
-is nothing to find. It also compacts (see "Shipped outside any track"): past a measured 100k
-input threshold, old large tool results drop mechanically, so a long agentic session degrades
+the first token, and (as of this round) discovers `CLAUDE.md`/`AGENTS.md` above `-root`, default
+on and failing soft to nothing when there is nothing to find. It also compacts (see "Shipped
+outside any track"): past a measured 100k input threshold, old large tool results drop
+mechanically, so a long agentic session degrades
 instead of dying at `StopContext`. The tui module pins the core via go.mod; cut 0.2.3 covers
 everything through `bb4a153` except the changelog entry, which lands under Unreleased for 0.2.4.
 
@@ -478,6 +480,12 @@ harness at all.
 **Decide first:** a nacelle tool package that shells out, or an MCP server added to mycelium.
 MCP would cost nothing here — the wiring already exists — but mycelium has no MCP surface
 today, so that is a mycelium change, not a nacelle one.
+
+**Decided, 2026-08-25: MCP, and this track leaves the repo.** The tool package shipped first and
+was removed. mycelium now serves `list_flows`, `run_flow` and `search_memory` itself over stdio,
+and any MCP-speaking client reaches them through its own server list. The rule this closes on is
+the one the wiki already states for antenne: a hard dependency on one integration trades a
+general-purpose SDK for a Facile client. Nothing here is scoped in.
 
 **Check `~/.mycelium/memory/conventions/subagent-blast-radius.md` before wiring it.** Letting
 a model execute recorded procedures widens what an agent can do; per-machine trust gating
