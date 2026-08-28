@@ -76,7 +76,9 @@ echo "==> go test"
 if [ "$mode" != "nolint" ]; then
   echo "==> golangci-lint"
   if golangci-lint version >/dev/null 2>&1; then
-    golangci-lint run ./... || status=1
+    # $GOROOT/bin first, because golangci-lint shells out to `go` and the two
+    # have to come from the same install.
+    PATH="${GOROOT:+$GOROOT/bin:}$PATH" golangci-lint run ./... || status=1
   else
     echo "check: no usable 'golangci-lint', skipping the lint pass (CI still runs it)" >&2
   fi
