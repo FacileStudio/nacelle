@@ -114,7 +114,9 @@ func (testEchoTool) Run(ctx context.Context, input json.RawMessage) (string, err
 	var payload struct {
 		Msg string `json:"msg"`
 	}
-	_ = json.Unmarshal(input, &payload)
+	if err := json.Unmarshal(input, &payload); err != nil {
+		return "", err
+	}
 	return "echo: " + payload.Msg, nil
 }
 

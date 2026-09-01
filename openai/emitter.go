@@ -21,7 +21,7 @@ func (e *emitter) sendAll(events []nacelle.Event) bool {
 }
 
 func (e *emitter) fail(err error) {
-	_ = e.yield(nacelle.Event{}, err)
+	e.yield(nacelle.Event{}, err)
 }
 
 func (e *emitter) flushTools() bool {
