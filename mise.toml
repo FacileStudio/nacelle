@@ -5,7 +5,7 @@ lockfile = true
 # Nothing in this repository needs more.
 [tools]
 lefthook = "latest"
-go = "1.25.0"
+go = "1.26"
 
 [hooks]
 postinstall = "lefthook install"

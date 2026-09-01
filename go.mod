@@ -1,6 +1,6 @@
 module github.com/FacileStudio/nacelle
 
-go 1.25.0
+go 1.26
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.63.1
