@@ -6,6 +6,17 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+### Added
+
+- **`google` backend (`nacelle/google`)**: runs agents on Google Gemini via its OpenAI-compatible
+  endpoint (`https://generativelanguage.googleapis.com/v1beta/openai`). Authenticates via
+  `GEMINI_API_KEY` (or `GOOGLE_API_KEY`), defaults to `gemini-3.7-flash`, and drives the tool
+  loop with streaming and reasoning support.
+- **`openai` backend (`nacelle/openai`)**: runs agents on the OpenAI API
+  (`https://api.openai.com/v1`). Authenticates via `OPENAI_API_KEY`, defaults to `gpt-5.4`, and
+  supports reasoning effort and tool calling.
+
+
 ### Removed
 
 - **`tools.Mycelium()` is gone, and with it the `list_flows`, `run_flow` and `search_memory`

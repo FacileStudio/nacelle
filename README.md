@@ -34,6 +34,8 @@ separate submodules so they land only on the apps that want them.
 ```
 nacelle/                 core: Agent, Backend seam, events, tools, usage   [built]
   anthropic/             backend: SDK tool runner + server-side MCP        [built]
+  google/                backend: Google Gemini via OpenAI-compat endpoint [built]
+  openai/                backend: OpenAI API with reasoning & tool support [built]
   openrouter/            backend: hand-rolled loop, 400+ models, real cost [built]
   mcp/                   MCP server connections and credentials            [built]
   tools/                 local tool set: read, write, edit, find, search, run [built]

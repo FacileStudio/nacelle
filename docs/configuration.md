@@ -45,6 +45,26 @@ with an `*Unsupported` error rather than silently running with less.
 | `Provider` | `nil` | OpenRouter's provider-routing object, passed through untouched. Worth setting `require_parameters: true` when tool calling matters — it keeps the request away from providers that would drop the tool schema |
 | `Options` | `nil` | Extra request options for the underlying client |
 
+## `google.Config`
+
+| Field | Default | What it does |
+|---|---|---|
+| `APIKey` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | — |
+| `Model` | `DefaultModel` (`gemini-3.7-flash`) | The Gemini model to run |
+| `BaseURL` | `DefaultBaseURL` (`https://generativelanguage.googleapis.com/v1beta/openai`) | Point at a compatible proxy or gateway |
+| `Options` | `nil` | Extra request options for the underlying client |
+
+## `openai.Config`
+
+| Field | Default | What it does |
+|---|---|---|
+| `APIKey` | `OPENAI_API_KEY` | — |
+| `Model` | `DefaultModel` (`gpt-5.4`) | The OpenAI model to run |
+| `BaseURL` | `DefaultBaseURL` (`https://api.openai.com/v1`) | Point at a compatible gateway or proxy in tests |
+| `Organization` | `""` | Optional `OpenAI-Organization` header |
+| `Project` | `""` | Optional `OpenAI-Project` header |
+| `Options` | `nil` | Extra request options for the underlying client |
+
 ## `tools.Config`
 
 | Field | Default | What it does |

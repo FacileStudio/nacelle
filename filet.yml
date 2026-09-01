@@ -25,8 +25,10 @@ architecture:
   fileNamePattern: '^[a-z0-9_]+\.go$'
   maxDepth: 3
   forbiddenImports:
-    anthropic: [github.com/FacileStudio/nacelle/openrouter]
-    openrouter: [github.com/FacileStudio/nacelle/anthropic]
+    anthropic: [github.com/FacileStudio/nacelle/openrouter, github.com/FacileStudio/nacelle/openai, github.com/FacileStudio/nacelle/google]
+    openrouter: [github.com/FacileStudio/nacelle/anthropic, github.com/FacileStudio/nacelle/openai, github.com/FacileStudio/nacelle/google]
+    openai: [github.com/FacileStudio/nacelle/anthropic, github.com/FacileStudio/nacelle/openrouter, github.com/FacileStudio/nacelle/google]
+    google: [github.com/FacileStudio/nacelle/anthropic, github.com/FacileStudio/nacelle/openrouter, github.com/FacileStudio/nacelle/openai]
     tools: [github.com/anthropics/anthropic-sdk-go, github.com/openai/openai-go/v3]
     mcp: [github.com/anthropics/anthropic-sdk-go, github.com/openai/openai-go/v3]
     mcp/client: [github.com/anthropics/anthropic-sdk-go, github.com/openai/openai-go/v3]

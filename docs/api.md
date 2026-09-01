@@ -496,6 +496,57 @@ func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2
 rather than a 401 on the first turn. Drives the tool-call loop itself, turn by turn — there is
 no `/v1/messages` and no server-side MCP connector behind the OpenAI-compatible schema.
 
+## `google`
+
+```go
+const DefaultBaseURL = "https://generativelanguage.googleapis.com/v1beta/openai"
+const DefaultModel = "gemini-3.7-flash"
+
+type Config struct {
+	APIKey  string // defaults to GEMINI_API_KEY or GOOGLE_API_KEY
+	Model   string // defaults to DefaultModel
+	BaseURL string // defaults to DefaultBaseURL
+	Options []option.RequestOption
+}
+
+type Backend struct{ /* unexported */ }
+
+func New(cfg Config) (*Backend, error)
+func (b *Backend) Name() string             // "google"
+func (b *Backend) Capabilities() nacelle.Capabilities // {MCP: false, Thinking: true, Effort: true, Cost: false}
+func (b *Backend) Model() string
+func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error]
+```
+
+Runs on Google Gemini via its OpenAI-compatible endpoint. Drives the tool loop itself with
+streaming, tool calls, and reasoning.
+
+## `openai`
+
+```go
+const DefaultBaseURL = "https://api.openai.com/v1"
+const DefaultModel = "gpt-5.4"
+
+type Config struct {
+	APIKey       string // defaults to OPENAI_API_KEY
+	Model        string // defaults to DefaultModel
+	BaseURL      string // defaults to DefaultBaseURL
+	Organization string
+	Project      string
+	Options      []option.RequestOption
+}
+
+type Backend struct{ /* unexported */ }
+
+func New(cfg Config) (*Backend, error)
+func (b *Backend) Name() string             // "openai"
+func (b *Backend) Capabilities() nacelle.Capabilities // {MCP: false, Thinking: true, Effort: true, Cost: false}
+func (b *Backend) Model() string
+func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error]
+```
+
+Runs on the OpenAI API, supporting reasoning effort and tool calling.
+
 ## `tools`
 
 ```go
