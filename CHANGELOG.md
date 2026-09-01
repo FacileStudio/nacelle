@@ -6,6 +6,8 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-01
+
 ### Added
 
 - **`google` backend (`nacelle/google`)**: runs agents on Google Gemini via its OpenAI-compatible
