@@ -83,7 +83,6 @@ func New(cfg Config) (*Backend, error) {
 	if key == "" {
 		return nil, fmt.Errorf("nacelle/openrouter: no API key; set OPENROUTER_API_KEY or Config.APIKey")
 	}
-
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
 		baseURL = os.Getenv("OPENROUTER_BASE_URL")
@@ -91,11 +90,7 @@ func New(cfg Config) (*Backend, error) {
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
-
-	options := []option.RequestOption{
-		option.WithBaseURL(baseURL),
-		option.WithAPIKey(key),
-	}
+	options := []option.RequestOption{option.WithBaseURL(baseURL), option.WithAPIKey(key)}
 	if cfg.Referer != "" {
 		options = append(options, option.WithHeader("HTTP-Referer", cfg.Referer))
 	}
@@ -103,7 +98,6 @@ func New(cfg Config) (*Backend, error) {
 		options = append(options, option.WithHeader("X-OpenRouter-Title", cfg.Title))
 	}
 	options = append(options, cfg.Options...)
-
 	return &Backend{
 		client:   openai.NewClient(options...),
 		model:    cfg.Model,

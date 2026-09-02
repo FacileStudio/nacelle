@@ -123,10 +123,6 @@ func checkTarget(hostport, name string) error {
 		host = hostport
 	}
 
-	// DNS resolution failure passes through: we cannot block what we cannot
-	// resolve, and refusing every unreachable hostname would break local
-	// dev and DNS-misconfigured servers. The SSRF gate still runs on every
-	// dial via secured; this is a best-effort pre-check only.
 	ips, _ := net.DefaultResolver.LookupNetIP(context.Background(), "ip", host)
 
 	for _, ip := range ips {
