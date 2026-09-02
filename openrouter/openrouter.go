@@ -69,7 +69,6 @@ type Backend struct {
 
 var _ nacelle.Backend = (*Backend)(nil)
 
-
 // New builds the backend. It fails rather than degrading: a missing key or
 // model produces a 401 or a routing error on the first turn, which is a worse
 // place to learn about it.
@@ -111,8 +110,6 @@ func New(cfg Config) (*Backend, error) {
 		provider: cfg.Provider,
 	}, nil
 }
-
-
 
 // Name identifies the backend.
 func (b *Backend) Name() string { return "openrouter" }
