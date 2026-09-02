@@ -27,7 +27,7 @@ func (s *Set) listTool() (nacelle.Tool, error) {
 	return nacelle.NewTool("list_directory",
 		"List one directory: the files in it, and the subdirectories in it marked with a trailing slash. Use it to find your way around a tree you have not seen, before searching it. Generated directories such as .git, node_modules and vendor are left out, exactly as they are when searching.",
 		func(_ context.Context, in listInput) (string, error) {
-			name := cleanDir(in.Path)
+			name := cleanDir(in.Path, s.dir)
 			entries, err := s.readDir(name)
 			if err != nil {
 				return "", err
@@ -44,13 +44,22 @@ func (s *Set) listTool() (nacelle.Tool, error) {
 //
 // clean is written for files and rejects "." outright, which is the one path a
 // listing has to accept: the most useful call this tool takes is the one with
-// no argument, made by a model that has nothing to name yet. The rest is
-// clean's behaviour, leading slash included — os.Root is what confines this, so
-// tidiness here buys nothing and refusing a rooted-looking path costs a turn.
-func cleanDir(name string) string {
+// no argument, made by a model that has nothing to name yet.
+//
+// Absolute paths under root are resolved relative to it, the same way clean
+// does. os.Root is what confines this either way, so an absolute path that
+// points outside root is stripped of its leading slash and refused by the
+// kernel when opened — authoritative, not guesswork from string prefixes.
+func cleanDir(name, root string) string {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
 		return "."
+	}
+	if path.IsAbs(trimmed) {
+		if rel, err := resolvePath(trimmed, root); err == nil {
+			return rel
+		}
+		trimmed = strings.TrimPrefix(trimmed, "/")
 	}
 	return path.Clean(strings.TrimPrefix(trimmed, "/"))
 }

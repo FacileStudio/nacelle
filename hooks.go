@@ -24,6 +24,18 @@ const (
 	// not. A hook here cannot undo the call; what it returns as Inject is
 	// appended to the result the model reads.
 	AfterToolCall HookPoint = "after_tool_call"
+
+	// BeforeCompact fires before the conversation is compacted — old tool
+	// results and thinking blocks replaced with placeholders to keep the
+	// context window under budget. A hook here cannot deny the compact
+	// itself; it exists for audit, metrics, or to stash conversation state
+	// before it is trimmed.
+	BeforeCompact HookPoint = "before_compact"
+
+	// AfterCompact fires after a compaction pass finished. The conversation
+	// has been trimmed by this point. A hook here reads the post-compact
+	// size and decides what to do about it (log, alert, adjust throttle).
+	AfterCompact HookPoint = "after_compact"
 )
 
 // MaxInject caps one hook's Inject, in bytes, before it reaches the model.
@@ -35,11 +47,15 @@ const MaxInject = 10000
 
 // HookEvent is what a hook is told about the moment it fired.
 //
-// Input is raw JSON exactly as the model produced it, decoded by nobody here
-// for the same reason ToolEvent.Input is: the core does not know any tool's
-// schema. Retry reports that an earlier hook already denied this same tool
-// name during this run, so a hook enforcing a policy can stand down rather
-// than deny-loop a model that keeps retrying.
+// On tool-related points (BeforeToolCall, AfterToolCall), Input is raw JSON
+// exactly as the model produced it and Result is the tool's output. Retry
+// reports that an earlier hook already denied this same tool name during this
+// run, so a hook enforcing a policy can stand down rather than deny-loop a
+// model that keeps retrying.
+//
+// On compaction points (BeforeCompact, AfterCompact), Input carries the
+// pre-compact conversation size in tokens ("<size>") and Result carries the
+// post-compact size when available. Tool and Retry are empty.
 type HookEvent struct {
 	// Point is which moment fired. A hook registered at one point can be
 	// handed to another by mistake; reading this first is cheaper than
@@ -71,7 +87,8 @@ type HookEvent struct {
 type HookResult struct {
 	// Deny, when non-empty, blocks a BeforeToolCall. The string is the
 	// reason the model reads in place of a tool result. On AfterToolCall
-	// it is too late to block anything and a Deny is ignored.
+	// it is too late to block anything and a Deny is ignored. On compaction
+	// points (BeforeCompact, AfterCompact), a Deny is always ignored.
 	Deny string
 
 	// Inject is text appended to what the model sees. On BeforeToolCall

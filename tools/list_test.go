@@ -94,7 +94,7 @@ func TestListDefaultsToTheWorkingDirectory(t *testing.T) {
 		"./src": "src",
 	}
 	for in, want := range cases {
-		if got := cleanDir(in); got != want {
+		if got := cleanDir(in, "."); got != want {
 			t.Errorf("cleanDir(%q) = %q, want %q", in, got, want)
 		}
 	}

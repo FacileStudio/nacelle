@@ -29,9 +29,16 @@ func (s *Set) globTool() (nacelle.Tool, error) {
 	return nacelle.NewTool("find_files",
 		"List files matching a glob, relative to the working directory. Use it to learn what exists before reading anything. Generated directories such as .git, node_modules and vendor are skipped.",
 		func(_ context.Context, in globInput) (string, error) {
-			pattern := strings.TrimSpace(strings.TrimPrefix(in.Pattern, "/"))
+			pattern := strings.TrimSpace(in.Pattern)
 			if pattern == "" {
 				return "", fmt.Errorf("no pattern given")
+			}
+			if path.IsAbs(pattern) {
+				if rel, err := resolvePath(pattern, s.dir); err == nil {
+					pattern = rel
+				} else {
+					pattern = strings.TrimPrefix(pattern, "/")
+				}
 			}
 
 			var found []string
@@ -66,7 +73,14 @@ func (s *Set) grepTool() (nacelle.Tool, error) {
 			if err != nil {
 				return "", fmt.Errorf("that is not a valid regular expression: %w", err)
 			}
-			glob := strings.TrimSpace(strings.TrimPrefix(in.Glob, "/"))
+			glob := strings.TrimSpace(in.Glob)
+if path.IsAbs(glob) {
+	if rel, err := resolvePath(glob, s.dir); err == nil {
+		glob = rel
+	} else {
+		glob = strings.TrimPrefix(glob, "/")
+	}
+}
 
 			var matches []string
 			err = s.walk(func(name string, _ fs.DirEntry) error {

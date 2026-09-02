@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -35,16 +36,51 @@ func (l *readLog) seen(name string) bool {
 	return l.files[name]
 }
 
+// resolvePath tries to make an absolute path relative to root, returning the
+// relative segment when the path sits under root. When it is outside, the
+// caller gets an error and should fall back to stripping the leading slash,
+// letting os.Root be the authoritative boundary.
+func resolvePath(name, root string) (string, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	absName, err := filepath.Abs(name)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(absRoot, absName)
+	if err != nil {
+		return "", err
+	}
+	if strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("path %q is outside the working directory", name)
+	}
+	return rel, nil
+}
+
 // clean normalises a model-supplied path into one os.Root will accept.
 //
-// It strips a leading slash rather than rejecting it: a model that has been
-// shown absolute-looking paths will send them back, and refusing is a turn
-// wasted on a difference that means nothing here. The confinement is os.Root's
-// job either way, and it does not depend on this having been tidy.
-func clean(name string) (string, error) {
+// When the model passes an absolute path that sits inside the working
+// directory, it is resolved to a relative one — the model sees paths that
+// look absolute from banner/environment and sends them back, and refusing or
+// silently stripping the leading slash costs a turn. When the absolute path
+// points outside root, it is tried anyway (os.Root refuses it at the kernel
+// boundary, so the denial is authoritative, not guesswork from string
+// prefixes).
+//
+// root is the working directory the tools are confined to.
+func clean(name, root string) (string, error) {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
 		return "", fmt.Errorf("no path given")
+	}
+	if path.IsAbs(trimmed) {
+		if rel, err := resolvePath(trimmed, root); err == nil {
+			return rel, nil
+		}
+		// Outside root — strip leading slash and let os.Root refuse it
+		trimmed = strings.TrimPrefix(trimmed, "/")
 	}
 	cleaned := path.Clean(strings.TrimPrefix(trimmed, "/"))
 	if cleaned == "." || cleaned == "" {
@@ -64,7 +100,7 @@ func (s *Set) readTool() (nacelle.Tool, error) {
 	return nacelle.NewTool("read_file",
 		"Read a file from the working directory. Returns the contents with line numbers, so you can quote a line back exactly. Use it before editing anything.",
 		func(_ context.Context, in readInput) (string, error) {
-			name, err := clean(in.Path)
+			name, err := clean(in.Path, s.dir)
 			if err != nil {
 				return "", err
 			}
@@ -115,7 +151,7 @@ func (s *Set) writeTool() (nacelle.Tool, error) {
 	return nacelle.NewTool("write_file",
 		"Create a file, or replace one entirely. The content you give is the whole file, not a fragment. To change part of an existing file use edit_file instead, which cannot silently discard the rest.",
 		func(_ context.Context, in writeInput) (string, error) {
-			name, err := clean(in.Path)
+			name, err := clean(in.Path, s.dir)
 			if err != nil {
 				return "", err
 			}
@@ -143,7 +179,7 @@ func (s *Set) editTool() (nacelle.Tool, error) {
 	return nacelle.NewTool("edit_file",
 		"Replace an exact piece of text in a file. The old text must appear exactly once: include the lines around it until it does. Read the file first.",
 		func(_ context.Context, in editInput) (string, error) {
-			name, err := clean(in.Path)
+			name, err := clean(in.Path, s.dir)
 			if err != nil {
 				return "", err
 			}
