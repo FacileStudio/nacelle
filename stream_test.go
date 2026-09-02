@@ -63,4 +63,6 @@ func (c *countingBackend) Capabilities() nacelle.Capabilities { return nacelle.C
 func (c *countingBackend) Stream(context.Context, nacelle.Request) iter.Seq2[nacelle.Event, error] {
 	return func(yield func(nacelle.Event, error) bool) { yield(nacelle.Event{Kind: nacelle.KindDone}, nil) }
 }
-func (c *countingBackend) CountTokens(context.Context, nacelle.Request) (int64, error) { return c.count, nil }
+func (c *countingBackend) CountTokens(context.Context, nacelle.Request) (int64, error) {
+	return c.count, nil
+}
