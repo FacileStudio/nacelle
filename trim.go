@@ -19,6 +19,10 @@ package nacelle
 // this package does not have one; see nacelle.go's own doc comment on why. A
 // caller wanting a summary in place of what was dropped builds it from the
 // dropped count and its own model call, using this as the mechanical half.
+//
+// The returned slice shares the underlying array with the input. A caller
+// that keeps a reference to the original conversation must copy the result
+// before mutating it; a caller that throws the original away does not.
 func Trim(conversation []Message, keep int) (kept []Message, dropped int) {
 	if keep <= 0 {
 		return nil, len(conversation)
@@ -57,4 +61,18 @@ func opensWithToolResult(message Message) bool {
 	}
 	_, ok := message.Parts[0].(ToolResult)
 	return ok
+}
+
+// TrimCopy drops the oldest messages from a conversation like Trim, but
+// returns a new slice with its own backing array. Use this when the
+// original conversation must remain usable after the call — Trim shares
+// the underlying array, so mutating the result also mutates the original.
+func TrimCopy(conversation []Message, keep int) (kept []Message, dropped int) {
+	kept, dropped = Trim(conversation, keep)
+	if len(kept) > 0 {
+		copied := make([]Message, len(kept))
+		copy(copied, kept)
+		return copied, dropped
+	}
+	return nil, dropped
 }

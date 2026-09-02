@@ -30,3 +30,5 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.48.0 // indirect
 )
+
+// Version v0.8.0 - Added tool-call planner and compaction improvements

@@ -84,6 +84,12 @@ type Capabilities struct {
 	// will produce, so a backend without an endpoint for it has nothing
 	// honest to estimate with.
 	TokenCounting bool
+
+	// ToolCallPlanner reports whether the backend supports batching
+	// independent tool calls into a single turn and sequencing read-only
+	// calls before write calls. This reduces context bloat by executing
+	// multiple tools in one round trip rather than one turn per tool.
+	ToolCallPlanner bool
 }
 
 // Request is one run, fully described. A backend receives it already

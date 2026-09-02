@@ -44,6 +44,18 @@ type Tool interface {
 	Run(ctx context.Context, input json.RawMessage) (string, error)
 }
 
+// ReadOnlyTool is an optional interface a Tool may implement to declare
+// that it never mutates state. Backends that support the ToolCallPlanner
+// capability use this to sequence read-only calls before write calls,
+// reducing context bloat by batching independent tools into fewer turns.
+//
+// If a tool does not implement this interface, it is treated as potentially
+// mutating and will be run after all read-only tools in the batch.
+type ReadOnlyTool interface {
+	// IsReadOnly reports whether this tool only reads and never writes.
+	IsReadOnly() bool
+}
+
 // Approve decides whether a tool call may run, asked once per call before
 // RunTool ever calls Run.
 //
@@ -79,6 +91,18 @@ type Approve func(ctx context.Context, name string, input json.RawMessage) bool
 // In must be a struct. A model calls a tool by naming arguments, and a bare
 // string or slice has no names to give.
 func NewTool[In any](name, description string, run func(ctx context.Context, in In) (string, error)) (Tool, error) {
+	return NewToolWithOptions[In](name, description, run, ToolOptions{})
+}
+
+// ToolOptions configures optional behavior for a tool created with NewToolWithOptions.
+type ToolOptions struct {
+	// ReadOnly declares that this tool never mutates state. Backends with
+	// the ToolCallPlanner capability use this to batch and sequence calls.
+	ReadOnly bool
+}
+
+// NewToolWithOptions builds a tool from a Go function with additional options.
+func NewToolWithOptions[In any](name, description string, run func(ctx context.Context, in In) (string, error), opts ToolOptions) (Tool, error) {
 	if name == "" {
 		return nil, fmt.Errorf("nacelle: a tool needs a name")
 	}
@@ -91,7 +115,7 @@ func NewTool[In any](name, description string, run func(ctx context.Context, in 
 		return nil, fmt.Errorf("nacelle: tool %q: %w", name, err)
 	}
 
-	return &function[In]{name: name, description: description, schema: schema, run: run}, nil
+	return &function[In]{name: name, description: description, schema: schema, run: run, readOnly: opts.ReadOnly}, nil
 }
 
 // schemaOf reflects In into a JSON Schema object.
@@ -131,11 +155,13 @@ type function[In any] struct {
 	description string
 	schema      map[string]any
 	run         func(ctx context.Context, in In) (string, error)
+	readOnly    bool
 }
 
 func (f *function[In]) Name() string           { return f.name }
 func (f *function[In]) Description() string    { return f.description }
 func (f *function[In]) Schema() map[string]any { return f.schema }
+func (f *function[In]) IsReadOnly() bool       { return f.readOnly }
 
 // Run decodes the model's arguments and calls the function.
 //

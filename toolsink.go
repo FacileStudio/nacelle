@@ -174,3 +174,30 @@ func ToolsByName(tools []Tool) map[string]Tool {
 	}
 	return index
 }
+
+// PlanCalls orders a batch of tool calls for execution, grouping read-only
+// calls separately from mutating ones. Backends with the ToolCallPlanner
+// capability can use this to batch independent calls into a single turn
+// while ensuring write calls run after all read-only calls complete.
+//
+// The returned slices contain the original Invocations in execution order:
+// read-only calls first, then mutating calls.
+func PlanCalls(calls []Invocation, byName map[string]Tool) []Invocation {
+	readOnly := make([]Invocation, 0, len(calls))
+	write := make([]Invocation, 0, len(calls))
+
+	for _, call := range calls {
+		tool, known := byName[call.ID]
+		if !known {
+			write = append(write, call)
+			continue
+		}
+		if ro, ok := tool.(ReadOnlyTool); ok && ro.IsReadOnly() {
+			readOnly = append(readOnly, call)
+		} else {
+			write = append(write, call)
+		}
+	}
+
+	return append(readOnly, write...)
+}

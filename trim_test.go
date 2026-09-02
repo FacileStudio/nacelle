@@ -158,3 +158,80 @@ func texts(messages []nacelle.Message) []string {
 	}
 	return out
 }
+
+// TrimCopy returns a new backing array so mutating the result does not
+// mutate the original conversation.
+func TestTrimCopyDoesNotShareBackingArray(t *testing.T) {
+	conversation := []nacelle.Message{
+		nacelle.UserText("first"),
+		nacelle.UserText("second"),
+		nacelle.UserText("third"),
+	}
+
+	kept, dropped := nacelle.TrimCopy(conversation, 2)
+
+	if dropped != 1 {
+		t.Fatalf("dropped = %d, want 1", dropped)
+	}
+	if len(kept) != 2 {
+		t.Fatalf("kept = %v, want 2 messages", len(kept))
+	}
+
+	// Mutate the returned slice
+	kept[0] = nacelle.UserText("mutated")
+
+	// Original must be unchanged
+	if said(conversation[0]) != "first" {
+		t.Errorf("original[0] = %q, want %q — backing array was shared", said(conversation[0]), "first")
+	}
+	if said(conversation[1]) != "second" {
+		t.Errorf("original[1] = %q, want %q", said(conversation[1]), "second")
+	}
+
+	// Result must reflect the mutation
+	if said(kept[0]) != "mutated" {
+		t.Errorf("kept[0] = %q, want %q", said(kept[0]), "mutated")
+	}
+}
+
+// TrimCopy behaves identically to Trim on size and content, only differing
+// in allocation.
+func TestTrimCopyMatchesTrim(t *testing.T) {
+	conversation := []nacelle.Message{
+		nacelle.UserText("first"),
+		nacelle.UserText("second"),
+		nacelle.UserText("third"),
+		nacelle.UserText("fourth"),
+	}
+
+	trimKept, trimDropped := nacelle.Trim(conversation, 2)
+	copyKept, copyDropped := nacelle.TrimCopy(conversation, 2)
+
+	if trimDropped != copyDropped {
+		t.Errorf("dropped: Trim=%d TrimCopy=%d", trimDropped, copyDropped)
+	}
+	if len(trimKept) != len(copyKept) {
+		t.Errorf("len: Trim=%d TrimCopy=%d", len(trimKept), len(copyKept))
+	}
+	for i := range trimKept {
+		if said(trimKept[i]) != said(copyKept[i]) {
+			t.Errorf("kept[%d]: Trim=%q TrimCopy=%q", i, said(trimKept[i]), said(copyKept[i]))
+		}
+	}
+}
+
+// TrimCopy on an empty keep returns nil with zero length, not a zero-length slice.
+func TestTrimCopyEmptyKeep(t *testing.T) {
+	conversation := []nacelle.Message{nacelle.UserText("one"), nacelle.UserText("two")}
+	kept, dropped := nacelle.TrimCopy(conversation, 0)
+
+	if kept != nil {
+		t.Errorf("kept = %v, want nil", kept)
+	}
+	if len(kept) != 0 {
+		t.Errorf("len(kept) = %d, want 0", len(kept))
+	}
+	if dropped != 2 {
+		t.Errorf("dropped = %d, want 2", dropped)
+	}
+}
