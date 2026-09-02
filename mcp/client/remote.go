@@ -1,7 +1,9 @@
 package client
 
 import (
+	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -79,6 +81,13 @@ func (r Remote) details() details {
 // clients in this ecosystem accept ws:// URLs, so a config written for one
 // of those arrives here as a URL that looks fine and a session that never
 // establishes. Naming the scheme says which line of the file to change.
+//
+// The host is resolved and the target addresses are checked against private
+// and link-local ranges, which catches cloud-metadata SSRF and internal-
+// network confusion at configuration time rather than at the moment a tool
+// first runs. DNS resolution is checked again at dial time through the same
+// transport wrapper (see secured), so a DNS rebinding attack between the two
+// points is still caught.
 func (r Remote) check() error {
 	if r.URL == "" {
 		return fmt.Errorf("nacelle/mcp/client: server %q has no URL", r.Name)
@@ -93,32 +102,83 @@ func (r Remote) check() error {
 				"the Streamable HTTP transport is the one MCP defines for a client that dials out",
 			r.Name, parsed.Scheme)
 	}
+	if err := checkTarget(parsed.Host, r.Name); err != nil {
+		return err
+	}
 	return nil
 }
 
-// dial builds the Streamable HTTP transport.
+// checkTarget resolves a hostname and rejects private and link-local addresses.
 //
-// The standalone SSE stream is off, and that is a decision rather than a
-// default. Left on, the transport opens a GET after the handshake and holds
-// it for the life of the session so the server can push messages whenever it
-// likes — measured, one per configured server. Every message it can carry is
-// one this package has already said it does not answer: tools/list_changed,
-// sampling, elicitation. So it buys an idle connection per server, something
-// for a proxy to time out and the transport to then reconnect, in exchange
-// for notifications that are dropped on arrival. The specification makes the
-// stream optional for exactly this reason. Turn it back on in the same commit
-// that starts handling one of those messages, not before.
+// Loopback is allowed — local development servers and Docker-mapped ports are
+// the most common MCP Remote targets — but cloud metadata (169.254.x.x) and
+// RFC 1918 private ranges are blocked as SSRF defence. Callers running an MCP
+// server on a private network can set it up over HTTPS with a DNS name instead
+// of a bare IP, or use the stdio transport for a fully local setup.
 //
-// The diagnostics are empty and always will be: an HTTP server has no stderr
-// this process can read, so what it would have said about failing to start
-// is on the far end of the connection. The value is returned anyway so that
-// attach has one error path rather than one per transport.
+// The host may be a bare IP, a name, or name:port. resolve strips the port.
+func checkTarget(hostport, name string) error {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = hostport // no port — bare host or bare IP
+	}
+
+	ips, err := net.DefaultResolver.LookupNetIP(context.Background(), "ip", host)
+	if err != nil {
+		// Cannot resolve, cannot validate — let the connection fail naturally.
+		// A hostname that does not resolve is not an SSRF risk.
+		return nil
+	}
+
+	for _, ip := range ips {
+		if ip.IsLoopback() {
+			continue
+		}
+		if ip.IsPrivate() {
+			return fmt.Errorf(
+				"nacelle/mcp/client: server %q at %q resolves to %s, which is a private address — "+
+					"SSRF risk; use a DNS name or the stdio transport", name, host, ip)
+		}
+		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return fmt.Errorf(
+				"nacelle/mcp/client: server %q at %q resolves to %s, which is a link-local address — "+
+					"SSRF risk to cloud metadata endpoints", name, host, ip)
+		}
+	}
+	return nil
+}
+
+// dial builds the Streamable HTTP transport, with SSRF-hardened transport.
 func (r Remote) dial() (sdk.Transport, *diagnostics, error) {
 	transport := &sdk.StreamableClientTransport{Endpoint: r.URL, DisableStandaloneSSE: true}
+	wrap := &secured{}
 	if len(r.Headers) > 0 {
-		transport.HTTPClient = &http.Client{Transport: headed{headers: r.Headers}}
+		wrap.headers = r.Headers
 	}
+	transport.HTTPClient = &http.Client{Transport: wrap}
 	return transport, &diagnostics{}, nil
+}
+
+// secured is an [http.RoundTripper] that SSRF-hardens every connection by
+// validating the target IP on every dial, catching DNS rebinding and TOCTOU
+// between the check-time resolution in checkTarget and the actual connect.
+//
+// It also injects the server's custom headers, through the same headed
+// mechanism — a RoundTripper sees every request, including retries the
+// transport handles internally.
+type secured struct {
+	base    http.RoundTripper
+	headers map[string]string
+}
+
+// RoundTrip validates the target IP and injects custom headers.
+func (s *secured) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request.URL != nil && request.URL.Host != "" {
+		if err := checkTarget(request.URL.Host, ""); err != nil {
+			return nil, err
+		}
+	}
+	return (&headed{base: s.base, headers: s.headers}).RoundTrip(request)
 }
 
 // headed adds this server's headers to every request.

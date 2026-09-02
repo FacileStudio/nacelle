@@ -107,6 +107,27 @@ func TestARemoteIsRefusedForASchemeThisClientDoesNotSpeak(t *testing.T) {
 	}
 }
 
+// A Remote whose URL resolves to a private address must be refused —
+// SSRF protection against internal-network and cloud-metadata endpoints.
+// Loopback is allowed because local MCP servers are the common case.
+func TestARemoteAtAPrivateAddressIsRefused(t *testing.T) {
+	for _, url := range []string{"http://10.0.0.1/mcp", "http://192.168.1.1/mcp", "http://169.254.169.254/mcp"} {
+		server := Remote{Name: "docs", URL: url}
+		if err := server.check(); err == nil {
+			t.Errorf("check(%q) = nil, want it refused as private/link-local", url)
+		}
+	}
+}
+
+// Loopback is allowed because local development servers and Docker-mapped
+// ports are the most common MCP Remote targets.
+func TestARemoteOnLoopbackIsAllowed(t *testing.T) {
+	server := Remote{Name: "local", URL: "http://127.0.0.1:8080/mcp"}
+	if err := server.check(); err != nil {
+		t.Errorf("check(%q) = %v, want nil (loopback is allowed)", server.URL, err)
+	}
+}
+
 // A RoundTripper must not modify the request it is handed, so the headers go
 // onto a copy. Asserting it because the bug it prevents — a request mutated
 // under a retry that is replaying it — is invisible until it is not.

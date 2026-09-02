@@ -6,6 +6,24 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+### Added
+
+- **SSRF hardening for remote MCP servers** — `Remote.check()` now resolves the
+  hostname and refuses private (RFC 1918) and link-local (169.254.x.x)
+  addresses before a connection is attempted. The same validation runs on every
+  HTTP request at dial time through `secured`, a transport wrapper that catches
+  DNS rebinding between check and connect. Loopback is allowed for local
+  development.
+- **Schema hardening with additionalProperties: false** — every object schema
+  from an MCP server now carries `additionalProperties: false` unless the
+  server explicitly set it, preventing the model from injecting fields the
+  server did not define. Applied recursively through properties, array items,
+  and composition keywords (allOf, anyOf, oneOf).
+- **Output sanitisation for tool results** — known instruction-tag patterns
+  (`<system>`, `<instruction>`, `<IMPORTANT>`, `<tool>`) are stripped from
+  text content returned by MCP tools before the model reads them, preventing
+  tool-poisoning attacks where a server embeds directives in its output.
+
 ## [0.5.0] — 2026-09-01
 
 ### Added

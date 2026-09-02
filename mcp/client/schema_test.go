@@ -7,6 +7,8 @@ import (
 )
 
 // The shape a client normally sees, and the one that has to keep working.
+// The server's own schema is hardened with additionalProperties: false, so
+// the output carries that key even when the input did not.
 func TestASchemaThatIsAlreadyAMapSurvivesTheConversion(t *testing.T) {
 	raw := map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string"}}}
 
@@ -14,8 +16,22 @@ func TestASchemaThatIsAlreadyAMapSurvivesTheConversion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schemaOf = %v, want it to succeed", err)
 	}
-	if !reflect.DeepEqual(got, raw) {
-		t.Errorf("schemaOf = %v, want %v", got, raw)
+	if got["type"] != "object" {
+		t.Errorf("schemaOf has type = %q, want object", got["type"])
+	}
+	if got["additionalProperties"] != false {
+		t.Errorf("schemaOf has additionalProperties = %v, want false", got["additionalProperties"])
+	}
+	props, ok := got["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("schemaOf.properties = %v, want a map", got["properties"])
+	}
+	query, ok := props["query"].(map[string]any)
+	if !ok {
+		t.Fatalf("schemaOf.properties.query = %v, want a map", props["query"])
+	}
+	if query["type"] != "string" {
+		t.Errorf("schemaOf.properties.query.type = %q, want string", query["type"])
 	}
 }
 

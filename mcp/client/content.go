@@ -44,7 +44,7 @@ func flatten(result *sdk.CallToolResult) string {
 func describe(item sdk.Content) string {
 	switch item := item.(type) {
 	case *sdk.TextContent:
-		return item.Text
+		return sanitise(item.Text)
 	case *sdk.ImageContent:
 		return fmt.Sprintf("[image, %s, %d bytes, not shown]", mediaType(item.MIMEType), len(item.Data))
 	case *sdk.AudioContent:
@@ -56,6 +56,56 @@ func describe(item sdk.Content) string {
 	default:
 		return fmt.Sprintf("[%T, not shown]", item)
 	}
+}
+
+// sanitise strips known instruction-tag patterns from tool output text so
+// they are not interpreted by the model as directives, preventing one of the
+// most common tool-poisoning attack vectors: a server returning output that
+// contains hidden instructions for the model.
+//
+// The specific patterns stripped are:
+//
+//   - <system>…</system> — the model's own system prompt prefix, which some
+//     servers inject to override behaviour
+//   - <instruction>…</instruction> — explicit instructions embedded in output
+//   - <IMPORTANT>…</IMPORTANT> — urgency markers that usually carry instructions
+//   - <tool>…</tool> — tool references that could redirect subsequent calls
+//
+// Tags are stripped with their content kept: <system>do X</system> becomes
+// "do X". Stripping the tag and keeping the content loses the wrapper but not
+// the instruction, which is deliberate — the model still sees the instruction
+// as plain text in its context, but without the markup that tells it to treat
+// the instruction as authoritative. A future here that wants stronger isolation
+// can strip the content as well, at the cost of losing legitimate text.
+func sanitise(text string) string {
+	if !strings.ContainsAny(text, "<>") {
+		return text
+	}
+
+	// Strip closing tags first — they are unambiguous.
+	cleaned := text
+	for _, tag := range []string{"</system>", "</instruction>", "</IMPORTANT>", "</tool>"} {
+		cleaned = strings.ReplaceAll(cleaned, tag, "")
+	}
+
+	// Strip opening tags one at a time, keeping the content between them.
+	for {
+		best, end := -1, 0
+		for _, prefix := range []string{"<system", "<instruction", "<IMPORTANT", "<tool"} {
+			idx := strings.Index(cleaned, prefix)
+			if idx >= 0 && (best < 0 || idx < best) {
+				close := strings.IndexByte(cleaned[idx:], '>')
+				if close >= 0 {
+					best, end = idx, idx+close+1
+				}
+			}
+		}
+		if best < 0 {
+			break
+		}
+		cleaned = cleaned[:best] + cleaned[end:]
+	}
+	return cleaned
 }
 
 // embedded renders a resource the server inlined.
