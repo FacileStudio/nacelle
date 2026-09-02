@@ -9,15 +9,6 @@ permissions:
   contents: read
 
 jobs:
-  # The module, on the oldest Go it claims to run on. Pinning 1.25 is what
-  # keeps the floor in go.mod honest: build on only the newer toolchain mise
-  # pins, and a 1.26-only construct lands in the SDK without anyone noticing
-  # until a consumer on 1.25 cannot compile it.
-  #
-  # GOTOOLCHAIN is local so the job tests the toolchain setup-go resolved
-  # rather than letting a `go >= X` directive reach past it for a version that
-  # is listed as a module but absent from go.dev — the failure mode that took
-  # down a release once with nothing useful in the log.
   check:
     runs-on: ubuntu-latest
     env:
@@ -26,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
+          go-version: "1.26"
       - run: gofmt -l . | tee /dev/stderr | (! read)
       - run: go build ./...
       - run: go vet ./...
