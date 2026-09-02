@@ -69,6 +69,7 @@ type Backend struct {
 
 var _ nacelle.Backend = (*Backend)(nil)
 
+
 // New builds the backend. It fails rather than degrading: a missing key or
 // model produces a 401 or a routing error on the first turn, which is a worse
 // place to learn about it.
@@ -83,7 +84,11 @@ func New(cfg Config) (*Backend, error) {
 	if key == "" {
 		return nil, fmt.Errorf("nacelle/openrouter: no API key; set OPENROUTER_API_KEY or Config.APIKey")
 	}
+
 	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = os.Getenv("OPENROUTER_BASE_URL")
+	}
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
