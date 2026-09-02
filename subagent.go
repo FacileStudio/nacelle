@@ -74,34 +74,7 @@ func NewSubAgentTool(cfg Config, opts SubAgentOptions) (Tool, error) {
 		name = SubAgentToolName
 	}
 
-	system := opts.System
-	if system == "" {
-		system = cfg.System
-	}
-	iterations := opts.MaxIterations
-	if iterations == 0 {
-		iterations = cfg.MaxIterations
-	}
-
-	thinking := cfg.Thinking
-	thinking.Show = false
-
-	approve := opts.Approve
-	if approve == nil {
-		approve = func(context.Context, string, json.RawMessage) bool { return false }
-	}
-
-	nested, err := New(Config{
-		Backend:       cfg.Backend,
-		System:        system,
-		Thinking:      thinking,
-		MaxTokens:     cfg.MaxTokens,
-		MaxIterations: iterations,
-		Tools:         withoutTool(cfg.Tools, name),
-		MCP:           cfg.MCP,
-		Approve:       approve,
-		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
+	nested, err := New(subAgentConfig(cfg, opts, name))
 	if err != nil {
 		return nil, fmt.Errorf("nacelle: building the %s agent: %w", name, err)
 	}
@@ -120,6 +93,39 @@ func NewSubAgentTool(cfg Config, opts SubAgentOptions) (Tool, error) {
 	return NewTool(name, description, func(ctx context.Context, in subAgentInput) (string, error) {
 		return delegate(ctx, nested, in.Task, opts.Usage)
 	})
+}
+
+// subAgentConfig builds the Config the nested agent runs on: the parent's
+// backend and token budget, the parent's system prompt and iteration ceiling
+// when the sub-agent options leave them zero, thinking hidden so the nested
+// transcript never reaches the parent, and the parent's tools minus the
+// sub-agent itself, which is the recursion guard.
+func subAgentConfig(cfg Config, opts SubAgentOptions, name string) Config {
+	system := opts.System
+	if system == "" {
+		system = cfg.System
+	}
+	iterations := opts.MaxIterations
+	if iterations == 0 {
+		iterations = cfg.MaxIterations
+	}
+	thinking := cfg.Thinking
+	thinking.Show = false
+	approve := opts.Approve
+	if approve == nil {
+		approve = func(context.Context, string, json.RawMessage) bool { return false }
+	}
+	return Config{
+		Backend:       cfg.Backend,
+		System:        system,
+		Thinking:      thinking,
+		MaxTokens:     cfg.MaxTokens,
+		MaxIterations: iterations,
+		Tools:         withoutTool(cfg.Tools, name),
+		MCP:           cfg.MCP,
+		Approve:       approve,
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
 }
 
 // subAgentInput is what the model hands the tool: the task, whole.
@@ -149,28 +155,37 @@ func delegate(ctx context.Context, nested *Agent, task string, report func(Usage
 		switch event.Kind {
 		case KindText:
 			answer.WriteString(event.Text)
-		case KindTurn:
-			if report != nil {
+		case KindTurn, KindDone:
+			if report != nil && event.Kind == KindTurn {
 				report(event.Usage)
 			}
-			if event.Stop != "" && event.Stop != StopTools {
-				stop = event.Stop
-			}
-		case KindDone:
-			if event.Stop != "" && event.Stop != StopTools {
-				stop = event.Stop
-			}
+			stop = trackStop(stop, event.Stop)
 		}
 	}
 
-	summary := strings.TrimSpace(answer.String())
+	return finish(answer.String(), stop), nil
+}
+
+// trackStop keeps the first non-tool stop reason seen, so a run that ended
+// early reports why rather than the last event's reason.
+func trackStop(current, stop Stop) Stop {
+	if stop != "" && stop != StopTools {
+		return stop
+	}
+	return current
+}
+
+// finish trims the accumulated text and appends a note when the run stopped
+// short of completion.
+func finish(answer string, stop Stop) string {
+	summary := strings.TrimSpace(answer)
 	if summary == "" {
 		summary = "the delegated run returned no answer"
 	}
 	if !stop.Complete() {
 		summary += fmt.Sprintf("\n\n(The delegated run ended before finishing: %s.)", stop)
 	}
-	return summary, nil
+	return summary
 }
 
 // withoutTool copies tools, dropping the one named. The copy rather than an

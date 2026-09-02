@@ -24,6 +24,19 @@ type globInput struct {
 	Pattern string `json:"pattern" jsonschema:"required,description=A glob such as **/*.go or cmd/**. ** matches any number of directories"`
 }
 
+// relativise turns a model-supplied absolute path into a relative one when it
+// sits under dir, or strips the leading slash otherwise. os.Root refuses
+// anything outside, so the fallback is authoritative rather than guesswork.
+func relativise(pattern, dir string) string {
+	if !path.IsAbs(pattern) {
+		return pattern
+	}
+	if rel, err := resolvePath(pattern, dir); err == nil {
+		return rel
+	}
+	return strings.TrimPrefix(pattern, "/")
+}
+
 // globTool builds the file finder.
 func (s *Set) globTool() (nacelle.Tool, error) {
 	return nacelle.NewTool("find_files",
@@ -33,13 +46,7 @@ func (s *Set) globTool() (nacelle.Tool, error) {
 			if pattern == "" {
 				return "", fmt.Errorf("no pattern given")
 			}
-			if path.IsAbs(pattern) {
-				if rel, err := resolvePath(pattern, s.dir); err == nil {
-					pattern = rel
-				} else {
-					pattern = strings.TrimPrefix(pattern, "/")
-				}
-			}
+			pattern = relativise(pattern, s.dir)
 
 			var found []string
 			err := s.walk(func(name string, _ fs.DirEntry) error {
@@ -73,14 +80,7 @@ func (s *Set) grepTool() (nacelle.Tool, error) {
 			if err != nil {
 				return "", fmt.Errorf("that is not a valid regular expression: %w", err)
 			}
-			glob := strings.TrimSpace(in.Glob)
-if path.IsAbs(glob) {
-	if rel, err := resolvePath(glob, s.dir); err == nil {
-		glob = rel
-	} else {
-		glob = strings.TrimPrefix(glob, "/")
-	}
-}
+			glob := relativise(strings.TrimSpace(in.Glob), s.dir)
 
 			var matches []string
 			err = s.walk(func(name string, _ fs.DirEntry) error {
@@ -164,14 +164,28 @@ func isBinary(data []byte) bool {
 // directory depth in advance, which is exactly what they were searching to
 // find out.
 func matchGlob(pattern, name string) bool {
-	return matchSegments(strings.Split(pattern, "/"), strings.Split(name, "/"))
+	var matchStar func([]string, []string) bool
+	matchStar = func(p, n []string) bool {
+		if len(p) == 0 {
+			return true
+		}
+		for i := 0; i <= len(n); i++ {
+			if matchSegments(p, n[i:], matchStar) {
+				return true
+			}
+		}
+		return false
+	}
+	return matchSegments(strings.Split(pattern, "/"), strings.Split(name, "/"), matchStar)
 }
 
-// matchSegments matches path segments against pattern segments.
-func matchSegments(pattern, name []string) bool {
+// matchSegments matches path segments against pattern segments. matchStar is
+// the closure that handles a ** segment, which recurses back into
+// matchSegments, so the two call each other rather than duplicating the loop.
+func matchSegments(pattern, name []string, matchStar func([]string, []string) bool) bool {
 	for len(pattern) > 0 {
 		if pattern[0] == "**" {
-			return matchDoubleStar(pattern[1:], name)
+			return matchStar(pattern[1:], name)
 		}
 		if len(name) == 0 {
 			return false
@@ -182,18 +196,4 @@ func matchSegments(pattern, name []string) bool {
 		pattern, name = pattern[1:], name[1:]
 	}
 	return len(name) == 0
-}
-
-// matchDoubleStar tries the rest of the pattern at every remaining position,
-// which is what lets ** stand for zero or more segments.
-func matchDoubleStar(pattern, name []string) bool {
-	if len(pattern) == 0 {
-		return true
-	}
-	for i := 0; i <= len(name); i++ {
-		if matchSegments(pattern, name[i:]) {
-			return true
-		}
-	}
-	return false
 }

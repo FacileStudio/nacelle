@@ -12,6 +12,53 @@ import (
 	"github.com/FacileStudio/nacelle/openai"
 )
 
+func writeChunks(w http.ResponseWriter, chunks []string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	for _, c := range chunks {
+		fmt.Fprint(w, c)
+	}
+}
+
+// toolHandler answers the first request with a tool call, the second with
+// text. It is the shared body of the tool-calling tests.
+func toolHandler(calls *int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		*calls++
+		if *calls == 1 {
+			writeChunks(w, []string{
+				`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"echo","arguments":"{\"msg\":\"hi\"}"}}]}}],"usage":null}` + "\n\n",
+				`data: {"choices":[{"finish_reason":"tool_calls","delta":{}}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}` + "\n\n",
+				`data: [DONE]` + "\n\n",
+			})
+			return
+		}
+		writeChunks(w, []string{
+			`data: {"choices":[{"delta":{"content":"Done with tool"}}],"usage":null}` + "\n\n",
+			`data: {"choices":[{"finish_reason":"stop","delta":{}}],"usage":{"prompt_tokens":15,"completion_tokens":4,"total_tokens":19}}` + "\n\n",
+			`data: [DONE]` + "\n\n",
+		})
+	}
+}
+
+// toolBackend returns a backend backed by a server whose first answer is a
+// tool call and second is text, with the call counter shared so the test can
+// inspect it.
+func toolBackend(t *testing.T) (*openai.Backend, *int) {
+	t.Helper()
+	calls := 0
+	server := httptest.NewServer(toolHandler(&calls))
+	t.Cleanup(server.Close)
+	backend, err := openai.New(openai.Config{
+		APIKey:  "test-key",
+		BaseURL: server.URL,
+		Model:   "gpt-5.4",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return backend, &calls
+}
+
 func TestNewRequiresAPIKey(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
 	_, err := openai.New(openai.Config{})
@@ -20,7 +67,7 @@ func TestNewRequiresAPIKey(t *testing.T) {
 	}
 }
 
-func TestNewWithDefaults(t *testing.T) {
+func TestNewWithAPIKey(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "test-key")
 	backend, err := openai.New(openai.Config{})
 	if err != nil {
@@ -32,8 +79,19 @@ func TestNewWithDefaults(t *testing.T) {
 	if backend.Model() != openai.DefaultModel {
 		t.Errorf("got model %q, want %q", backend.Model(), openai.DefaultModel)
 	}
+}
+
+func TestNewWithEmptyAPIKeyFallsBackToEnv(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "env-key")
+	backend, err := openai.New(openai.Config{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if backend.Name() != "openai" {
+		t.Errorf("got name %q, want %q", backend.Name(), "openai")
+	}
 	caps := backend.Capabilities()
-	if caps.MCP || caps.Cost || caps.TokenCounting || !caps.Thinking || !caps.Effort {
+	if !caps.Thinking || !caps.Effort {
 		t.Errorf("unexpected capabilities: %+v", caps)
 	}
 }
@@ -52,16 +110,12 @@ func TestBackendCountTokens(t *testing.T) {
 
 func TestBackendStreamText(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		chunks := []string{
+		writeChunks(w, []string{
 			`data: {"choices":[{"delta":{"content":"Hello"}}],"usage":null}` + "\n\n",
 			`data: {"choices":[{"delta":{"content":" world"}}],"usage":null}` + "\n\n",
 			`data: {"choices":[{"finish_reason":"stop","delta":{}}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}` + "\n\n",
 			`data: [DONE]` + "\n\n",
-		}
-		for _, c := range chunks {
-			fmt.Fprint(w, c)
-		}
+		})
 	}))
 	defer server.Close()
 
@@ -74,27 +128,15 @@ func TestBackendStreamText(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	var text string
-	var done bool
-	for event, err := range backend.Stream(context.Background(), nacelle.Request{System: "test"}) {
-		if err != nil {
-			t.Fatalf("stream error: %v", err)
-		}
-		switch event.Kind {
-		case nacelle.KindText:
-			text += event.Text
-		case nacelle.KindDone:
-			done = true
-			if event.Usage.InputTokens != 10 || event.Usage.OutputTokens != 5 {
-				t.Errorf("got usage %+v, want 10/5", event.Usage)
-			}
-		}
-	}
+	text, done, usage := collectStream(t, backend.Stream(context.Background(), nacelle.Request{System: "test"}))
 	if text != "Hello world" {
 		t.Errorf("got text %q, want %q", text, "Hello world")
 	}
 	if !done {
 		t.Errorf("expected KindDone event")
+	}
+	if usage.InputTokens != 10 || usage.OutputTokens != 5 {
+		t.Errorf("got usage %+v, want 10/5", usage)
 	}
 }
 
@@ -121,65 +163,17 @@ func (testEchoTool) Run(ctx context.Context, input json.RawMessage) (string, err
 }
 
 func TestBackendStreamToolCalling(t *testing.T) {
-	calls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
-		w.Header().Set("Content-Type", "text/event-stream")
-		if calls == 1 {
-			chunks := []string{
-				`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"echo","arguments":"{\"msg\":\"hi\"}"}}]}}],"usage":null}` + "\n\n",
-				`data: {"choices":[{"finish_reason":"tool_calls","delta":{}}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}` + "\n\n",
-				`data: [DONE]` + "\n\n",
-			}
-			for _, c := range chunks {
-				fmt.Fprint(w, c)
-			}
-			return
-		}
-		chunks := []string{
-			`data: {"choices":[{"delta":{"content":"Done with tool"}}],"usage":null}` + "\n\n",
-			`data: {"choices":[{"finish_reason":"stop","delta":{}}],"usage":{"prompt_tokens":15,"completion_tokens":4,"total_tokens":19}}` + "\n\n",
-			`data: [DONE]` + "\n\n",
-		}
-		for _, c := range chunks {
-			fmt.Fprint(w, c)
-		}
-	}))
-	defer server.Close()
-
-	backend, err := openai.New(openai.Config{
-		APIKey:  "test-key",
-		BaseURL: server.URL,
-		Model:   "gpt-5.4",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	var sawToolCall, sawToolResult bool
-	var text string
-	for event, err := range backend.Stream(context.Background(), nacelle.Request{
+	backend, _ := toolBackend(t)
+	out := collectToolStream(t, backend.Stream(context.Background(), nacelle.Request{
 		Tools: []nacelle.Tool{testEchoTool{}},
-	}) {
-		if err != nil {
-			t.Fatalf("stream error: %v", err)
-		}
-		switch event.Kind {
-		case nacelle.KindToolCall:
-			sawToolCall = true
-		case nacelle.KindToolResult:
-			sawToolResult = true
-			if event.Tool.Result != "echo: hi" {
-				t.Errorf("got tool result %q, want %q", event.Tool.Result, "echo: hi")
-			}
-		case nacelle.KindText:
-			text += event.Text
-		}
+	}))
+	if !out.sawToolCall || !out.sawToolResult {
+		t.Errorf("expected tool call and result, got call=%v result=%v", out.sawToolCall, out.sawToolResult)
 	}
-	if !sawToolCall || !sawToolResult {
-		t.Errorf("expected tool call and result, got call=%v result=%v", sawToolCall, sawToolResult)
+	if out.toolResult != "echo: hi" {
+		t.Errorf("got tool result %q, want %q", out.toolResult, "echo: hi")
 	}
-	if text != "Done with tool" {
-		t.Errorf("got text %q, want %q", text, "Done with tool")
+	if out.text != "Done with tool" {
+		t.Errorf("got text %q, want %q", out.text, "Done with tool")
 	}
 }

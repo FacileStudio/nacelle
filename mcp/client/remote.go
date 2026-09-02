@@ -120,13 +120,11 @@ func (r Remote) check() error {
 func checkTarget(hostport, name string) error {
 	host, _, err := net.SplitHostPort(hostport)
 	if err != nil {
-		host = hostport // no port — bare host or bare IP
+		host = hostport
 	}
 
 	ips, err := net.DefaultResolver.LookupNetIP(context.Background(), "ip", host)
 	if err != nil {
-		// Cannot resolve, cannot validate — let the connection fail naturally.
-		// A hostname that does not resolve is not an SSRF risk.
 		return nil
 	}
 
