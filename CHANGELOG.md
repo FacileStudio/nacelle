@@ -6,6 +6,10 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+## [v0.7.1] - 2026-09-02
+### Added
+- Load `OPENROUTER_BASE_URL` and `OPENAI_BASE_URL` environment variables when `Config.BaseURL` is not explicitly set.
+
 ### Added
 
 - **SSRF hardening for remote MCP servers** — `Remote.check()` now resolves the
