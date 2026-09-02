@@ -6,6 +6,13 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+## [v0.7.3] — 2026-09-02
+
+### Fixed
+
+- **gofmt** on several test and source files that had trailing formatting drift
+- **mcp/client/remote.go**: change `ips, err :=` to `ips, _ :=` in `checkTarget` — DNS resolution failure is intentionally non-fatal (passes through to allow local dev and DNS-misconfigured servers); the SSRF gate still runs on every dial via `secured`
+
 ## [v0.7.1] - 2026-09-02
 ### Added
 - Load `OPENROUTER_BASE_URL` and `OPENAI_BASE_URL` environment variables when `Config.BaseURL` is not explicitly set.
