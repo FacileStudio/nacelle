@@ -40,17 +40,15 @@ func schemaOf(raw any) (map[string]any, error) {
 
 // hardenSchema sets additionalProperties: false on every object that declares
 // properties without one, preventing the model from injecting fields the
-// server did not define M-bM-^@M-^T a vector for prompt injection and confused-deputy
+// server did not define — a vector for prompt injection and confused-deputy
 // attacks.
 //
 // It walks the full tree recursively: properties, items of arrays, and
-// values in anyOf/oneOf/allOf. A server that explicitly sets
-// additionalProperties to true is left alone M-bM-^@M-^T the author chose that.
+// composition branches (via hardenComposition). A server that explicitly sets
+// additionalProperties to true is left alone — the author chose that.
 func hardenSchema(schema map[string]any) {
 	properties, hasProps := schema["properties"]
 	if !hasProps {
-		// No declared properties means the model sends whatever keys it
-		// wants M-bM-^@M-^T nothing to harden.
 		return
 	}
 	props, ok := properties.(map[string]any)
@@ -61,23 +59,28 @@ func hardenSchema(schema map[string]any) {
 		schema["additionalProperties"] = false
 	}
 
-	// Recurse into every property that is itself an object.
 	for _, prop := range props {
 		if child, ok := prop.(map[string]any); ok {
 			hardenSchema(child)
 		}
 	}
 
-	// Recurse into array items and composition keywords.
 	if items, ok := schema["items"].(map[string]any); ok {
 		hardenSchema(items)
 	}
+	hardenComposition(schema)
+}
+
+// hardenComposition recurses into anyOf/oneOf/allOf branches.
+func hardenComposition(schema map[string]any) {
 	for _, key := range []string{"allOf", "anyOf", "oneOf"} {
-		if list, ok := schema[key].([]any); ok {
-			for _, item := range list {
-				if child, ok := item.(map[string]any); ok {
-					hardenSchema(child)
-				}
+		list, ok := schema[key].([]any)
+		if !ok {
+			continue
+		}
+		for _, item := range list {
+			if child, ok := item.(map[string]any); ok {
+				hardenSchema(child)
 			}
 		}
 	}

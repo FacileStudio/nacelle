@@ -63,13 +63,9 @@ func describe(item sdk.Content) string {
 // most common tool-poisoning attack vectors: a server returning output that
 // contains hidden instructions for the model.
 //
-// The specific patterns stripped are:
-//
-//   - <system>…</system> — the model's own system prompt prefix, which some
-//     servers inject to override behaviour
-//   - <instruction>…</instruction> — explicit instructions embedded in output
-//   - <IMPORTANT>…</IMPORTANT> — urgency markers that usually carry instructions
-//   - <tool>…</tool> — tool references that could redirect subsequent calls
+// Closing tags (</system>, </instruction>, etc.) are stripped first — they
+// are unambiguous. Opening tags are then removed one at a time by nextTag,
+// keeping the content between them so legitimate text survives.
 //
 // Tags are stripped with their content kept: <system>do X</system> becomes
 // "do X". Stripping the tag and keeping the content loses the wrapper but not
@@ -82,30 +78,35 @@ func sanitise(text string) string {
 		return text
 	}
 
-	// Strip closing tags first — they are unambiguous.
 	cleaned := text
 	for _, tag := range []string{"</system>", "</instruction>", "</IMPORTANT>", "</tool>"} {
 		cleaned = strings.ReplaceAll(cleaned, tag, "")
 	}
 
-	// Strip opening tags one at a time, keeping the content between them.
 	for {
-		best, end := -1, 0
-		for _, prefix := range []string{"<system", "<instruction", "<IMPORTANT", "<tool"} {
-			idx := strings.Index(cleaned, prefix)
-			if idx >= 0 && (best < 0 || idx < best) {
-				close := strings.IndexByte(cleaned[idx:], '>')
-				if close >= 0 {
-					best, end = idx, idx+close+1
-				}
-			}
-		}
-		if best < 0 {
+		idx, end := nextTag(cleaned)
+		if idx < 0 {
 			break
 		}
-		cleaned = cleaned[:best] + cleaned[end:]
+		cleaned = cleaned[:idx] + cleaned[end:]
 	}
 	return cleaned
+}
+
+// nextTag finds the earliest known opening tag in text and returns its
+// start index and the position just past the closing >.
+func nextTag(text string) (int, int) {
+	best, end := -1, 0
+	for _, prefix := range []string{"<system", "<instruction", "<IMPORTANT", "<tool"} {
+		idx := strings.Index(text, prefix)
+		if idx >= 0 && (best < 0 || idx < best) {
+			close := strings.IndexByte(text[idx:], '>')
+			if close >= 0 {
+				best, end = idx, idx+close+1
+			}
+		}
+	}
+	return best, end
 }
 
 // embedded renders a resource the server inlined.
