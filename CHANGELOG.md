@@ -7,17 +7,12 @@ while on `v0`, a breaking change bumps the minor.
 ## [Unreleased]
 
 ### Added
-- **stream.go**: Added CompactConversation helper for explicit compaction with BeforeCompact/AfterCompact hooks
-- **tool.go**: Added ReadOnlyTool interface and NewToolWithOptions for declaring read-only tools
-- **backend.go**: Added ToolCallPlanner capability flag for backends that support batching and sequencing tool calls
-- **toolsink.go**: Added PlanCalls function to sequence read-only calls before write calls in a batch
-- **trim.go**: Added TrimCopy function that returns a new slice with its own backing array
-- **stream.go**: Added detailed comments about mutation safety for Trim return value
+- **Session log rotation**: session files rotate at 256 KB. Old files are gzipped (`.gz`) and a new timestamped file starts. A `⚠️ could not write to session log` warning appears in the status line when `write()` fails. Track H18.
+- **Broad tool grouping by kind**: consecutive calls of the same category (read, write, network, delegate) now batch into a single line showing `⏺ 4 commands · cmd1 · cmd2 · …` instead of N identical lines. Single calls render as before. Track D1, E5.
+- **`/status` command**: prints session summary — elapsed time, tool counts, tokens, cost, log size, and write-error status.
 
 ### Fixed
-- **toolsink_test.go**: Fixed Invocation field access in PlanCalls tests (use ID instead of Name)
-- **trim.go**: Clarified that Trim returns a slice sharing the backing array with input
-- **trim.go**: Added TrimCopy for safe mutation when original must be preserved
+- **Session log write failures now surfaced**: `sessionLog.write` sets `writeError` on failure; the status line shows a warning so users know logging is broken.
 
 ## [v0.7.3] — 2026-09-02
 

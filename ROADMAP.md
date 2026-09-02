@@ -48,9 +48,7 @@ existed. Track order follows that evidence.
 
 ### Track D — legibility (`tui/` only, no core change)
 
-1. **Tool-call line summarizer** — `tui/view.go` `absorb` replaces the raw-input `say`
-   with name + primary argument (`command`, `path`, `pattern`, `query`), truncated via the
-   existing `truncate` (mind `len("…")`, 3 bytes).
+1. **Tool-call line summarizer & aggregation** — `tui/view.go` `absorb` replaces the raw‑input `say` with name + primary argument (`command`, `path`, `pattern`, `query`), truncates via the existing `truncate` (mind `len("…")`, 3 bytes) and aggregates consecutive calls of the same tool kind, showing a count (e.g. `⏺ 3 commands · mycelium sync · ls docs · …`). *Done: kind-based grouping implemented in `toolgroup.go`, `inflight.beginTool` groups by `toolKind`.*
 2. **Silent successes** — a successful tool result prints nothing; duration folds into the call
    line. Failures keep their own loud line; repeated identical failures collapse into one line
    with a count.
@@ -144,6 +142,10 @@ Exit: `echo q | nacelle -print -root .` answers with no TTY.
 
 Exit: kill mid-session, `--continue`, ask what we were doing, get a correct answer including
 prior tool calls. A conversation crossing the window compacts instead of dying.
+
+18. **Log rotation & write-failure warning** — rotate session files at 256 KB, gzip old file, start
+    new timestamped file. Surface `⚠️ could not write to session log` in UI when `write()` fails.
+    *Done: implemented in `sessions.go` with `rotate()` and `writeError` flag.*
 
 ### Standing constraints across D–H
 
