@@ -6,6 +6,12 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+### Added
+- **Read-only tool declarations**: marked `read_file`, `list_directory`, `find_files`, `search_content`, `web_fetch`, and `web_search` as `ReadOnly: true` via `nacelle.NewToolWithOptions`.
+- **Capabilities.ContextWindow**: added model context window token limit to `nacelle.Capabilities` (Track 3) across all backends (OpenAI: 128k, Google: 1M, Anthropic: 200k, OpenRouter: 0).
+- **Backend tool call planning**: enabled `ToolCallPlanner` capability on OpenAI, Google, and OpenRouter backends, ordering multi-tool batches via `nacelle.PlanCalls` to sequence read-only tools before mutating tools.
+- **Anthropic compact beta header**: supported `compact-2026-01-12` beta header option in `nacelle/anthropic` via `Config.Compact` or `WithCompact(ctx)`.
+
 ### Fixed
 - **Restored tool test suites**: recovered clobbered test coverage in `tools/file_test.go` and `toolsink_test.go`, including `ToolSink` concurrency and race tests.
 - **PlanCalls name resolution**: added `Name string` to `Invocation` and updated `PlanCalls` to check `call.Name` before falling back to `call.ID`.
