@@ -23,6 +23,10 @@ func expandHome(name string) string {
 		if err != nil {
 			return name
 		}
+		if name == "~" {
+			return home
+		}
+		// strings.HasPrefix(name, "~/")
 		return filepath.Join(home, name[2:])
 	}
 	// ~user form - not supported, return as-is
