@@ -77,13 +77,37 @@ type callContext struct {
 }
 
 func runCalls(ctx context.Context, calls []toolCall, call callContext) ([]oai.ChatCompletionMessageParamUnion, error) {
-	results := make([]oai.ChatCompletionMessageParamUnion, 0, len(calls))
+	order := calls
+	indices := make([]int, len(calls))
+	for i := range indices {
+		indices[i] = i
+	}
 
-	for index, invocation := range calls {
-		if !call.out.send(invocation.event(index)) {
+	if len(calls) > 1 {
+		invocations := make([]nacelle.Invocation, len(calls))
+		for i, c := range calls {
+			invocations[i] = nacelle.Invocation{
+				ID:    c.id,
+				Name:  c.name,
+				Index: i,
+			}
+		}
+		planned := nacelle.PlanCalls(invocations, call.byName)
+		order = make([]toolCall, len(planned))
+		indices = make([]int, len(planned))
+		for i, p := range planned {
+			order[i] = calls[p.Index]
+			indices[i] = p.Index
+		}
+	}
+
+	results := make([]oai.ChatCompletionMessageParamUnion, 0, len(order))
+	for i, invocation := range order {
+		origIndex := indices[i]
+		if !call.out.send(invocation.event(origIndex)) {
 			return nil, errStopped
 		}
-		results = append(results, runCall(ctx, invocation, index, call))
+		results = append(results, runCall(ctx, invocation, origIndex, call))
 	}
 
 	if !call.out.flushTools() {
@@ -113,7 +137,7 @@ func runCall(ctx context.Context, invocation toolCall, index int, call callConte
 		return oai.ToolMessage(fmt.Sprintf("no tool named %q is available", invocation.name), invocation.id)
 	}
 
-	result, err := nacelle.RunTool(ctx, tool, nacelle.Invocation{ID: invocation.id, Index: index}, json.RawMessage(invocation.arguments), call.sink)
+	result, err := nacelle.RunTool(ctx, tool, nacelle.Invocation{ID: invocation.id, Name: invocation.name, Index: index}, json.RawMessage(invocation.arguments), call.sink)
 	if err != nil {
 		result = "the tool failed: " + err.Error()
 	}

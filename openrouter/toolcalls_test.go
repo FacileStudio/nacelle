@@ -195,3 +195,56 @@ func TestEveryToolCallIsAnnouncedBeforeTheToolRuns(t *testing.T) {
 
 	assertCallsPrecedeResults(t, events)
 }
+
+const withWriteThenReadCalls = `data: {"id":"g","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_w","type":"function","function":{"name":"write_op","arguments":"{}"}},{"index":1,"id":"call_r","type":"function","function":{"name":"read_op","arguments":"{}"}}]},"finish_reason":null}]}
+
+data: {"id":"g","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls","native_finish_reason":"tool_use"}]}
+
+data: {"id":"g","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":5,"total_tokens":10,"cost":0.0001}}
+
+data: [DONE]
+
+`
+
+func TestPlanCallsOrdersReadOnlyBeforeWriteInStream(t *testing.T) {
+	var executionOrder []string
+	readTool, err := nacelle.NewToolWithOptions("read_op", "Read data", func(_ context.Context, _ struct{}) (string, error) {
+		executionOrder = append(executionOrder, "read_op")
+		return "read result", nil
+	}, nacelle.ToolOptions{ReadOnly: true})
+	if err != nil {
+		t.Fatalf("NewToolWithOptions: %v", err)
+	}
+
+	writeTool, err := nacelle.NewTool("write_op", "Write data", func(_ context.Context, _ struct{}) (string, error) {
+		executionOrder = append(executionOrder, "write_op")
+		return "write result", nil
+	})
+	if err != nil {
+		t.Fatalf("NewTool: %v", err)
+	}
+
+	backend, handler := serve(t, withWriteThenReadCalls, finalAnswer)
+	events := collect(t, backend, nacelle.Request{
+		System: "s",
+		Tools:  []nacelle.Tool{writeTool, readTool},
+	})
+
+	if len(executionOrder) != 2 {
+		t.Fatalf("executed %d tools, want 2", len(executionOrder))
+	}
+	if executionOrder[0] != "read_op" {
+		t.Errorf("executionOrder[0] = %q, want %q", executionOrder[0], "read_op")
+	}
+	if executionOrder[1] != "write_op" {
+		t.Errorf("executionOrder[1] = %q, want %q", executionOrder[1], "write_op")
+	}
+
+	results := kinds(events, nacelle.KindToolResult)
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+	if len(handler.requests) != 2 {
+		t.Fatalf("made %d requests, want 2", len(handler.requests))
+	}
+}
