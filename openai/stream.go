@@ -76,31 +76,30 @@ type callContext struct {
 	out    *emitter
 }
 
+func planCalls(calls []toolCall, byName map[string]nacelle.Tool) ([]toolCall, []int) {
+	if len(calls) <= 1 {
+		indices := make([]int, len(calls))
+		for i := range indices {
+			indices[i] = i
+		}
+		return calls, indices
+	}
+	invocations := make([]nacelle.Invocation, len(calls))
+	for i, c := range calls {
+		invocations[i] = nacelle.Invocation{ID: c.id, Name: c.name, Index: i}
+	}
+	planned := nacelle.PlanCalls(invocations, byName)
+	order := make([]toolCall, len(planned))
+	indices := make([]int, len(planned))
+	for i, p := range planned {
+		order[i] = calls[p.Index]
+		indices[i] = p.Index
+	}
+	return order, indices
+}
+
 func runCalls(ctx context.Context, calls []toolCall, call callContext) ([]oai.ChatCompletionMessageParamUnion, error) {
-	order := calls
-	indices := make([]int, len(calls))
-	for i := range indices {
-		indices[i] = i
-	}
-
-	if len(calls) > 1 {
-		invocations := make([]nacelle.Invocation, len(calls))
-		for i, c := range calls {
-			invocations[i] = nacelle.Invocation{
-				ID:    c.id,
-				Name:  c.name,
-				Index: i,
-			}
-		}
-		planned := nacelle.PlanCalls(invocations, call.byName)
-		order = make([]toolCall, len(planned))
-		indices = make([]int, len(planned))
-		for i, p := range planned {
-			order[i] = calls[p.Index]
-			indices[i] = p.Index
-		}
-	}
-
+	order, indices := planCalls(calls, call.byName)
 	results := make([]oai.ChatCompletionMessageParamUnion, 0, len(order))
 	for i, invocation := range order {
 		origIndex := indices[i]
