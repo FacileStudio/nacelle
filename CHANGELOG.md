@@ -4,6 +4,14 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [v0.8.2] — 2026-09-03
+
+### Fixed
+- **`CompactConversation` no longer calls `CountTokens` twice on the final slice**: the binary search now carries the last successful token count forward, avoiding one round-trip per compaction.
+
+### Changed
+- **Binary search in `CompactConversation` caches the last successful count**: the final `Trim`+`CountTokens` call is skipped when the loop already found a fitting mid.
+
 ## [Unreleased]
 
 ### Added

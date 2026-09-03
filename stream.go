@@ -52,25 +52,32 @@ func (a *Agent) CompactConversation(ctx context.Context, conversation []Message,
 		}
 	}
 
-	// Binary search for the largest prefix that fits
+	// Binary search for the largest prefix that fits.
+	// The final Trim+Count happens once: count holds the result of the last
+	// mid that fit, so we avoid calling CountTokens twice on the same slice.
 	lo, hi := 0, len(conversation)
+	var count int64
 	for lo < hi {
 		mid := (lo + hi + 1) / 2
 		kept, _ := Trim(conversation, mid)
-		count, err := a.CountTokens(ctx, kept)
+		c, err := a.CountTokens(ctx, kept)
 		if err != nil {
 			return nil, 0, err
 		}
-		if count <= maxTokens {
+		if c <= maxTokens {
 			lo = mid
+			count = c
 		} else {
 			hi = mid - 1
 		}
 	}
 	kept, _ := Trim(conversation, lo)
-	count, err := a.CountTokens(ctx, kept)
-	if err != nil {
-		return nil, 0, err
+	if count == 0 {
+		var err error
+		count, err = a.CountTokens(ctx, kept)
+		if err != nil {
+			return nil, 0, err
+		}
 	}
 
 	// Fire AfterCompact hook
