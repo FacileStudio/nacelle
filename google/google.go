@@ -74,5 +74,13 @@ func (b *Backend) Model() string { return b.model }
 
 // Capabilities reports what this backend can do.
 func (b *Backend) Capabilities() nacelle.Capabilities {
-	return nacelle.Capabilities{MCP: false, Thinking: true, Effort: true, Cost: false, TokenCounting: false}
+	return nacelle.Capabilities{
+		MCP:             false,
+		Thinking:        true,
+		Effort:          true,
+		Cost:            false,
+		TokenCounting:   false,
+		ToolCallPlanner: true,
+		ContextWindow:   1000000,
+	}
 }

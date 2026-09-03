@@ -90,6 +90,10 @@ type Capabilities struct {
 	// calls before write calls. This reduces context bloat by executing
 	// multiple tools in one round trip rather than one turn per tool.
 	ToolCallPlanner bool
+
+	// ContextWindow is the total context window token limit of the model,
+	// or zero when unconstrained or unknown.
+	ContextWindow int64
 }
 
 // Request is one run, fully described. A backend receives it already

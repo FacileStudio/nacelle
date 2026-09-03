@@ -8,9 +8,12 @@
 package anthropic
 
 import (
+	"context"
+
 	"github.com/FacileStudio/nacelle"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
 // DefaultModel is what this backend runs on when Config leaves Model empty.
@@ -29,15 +32,30 @@ type Config struct {
 
 	// Model defaults to DefaultModel.
 	Model string
+
+	// Compact requests server-side compaction via the compact-2026-01-12 beta header.
+	Compact bool
+
+	// Options are extra request options passed to the streaming tool runner.
+	Options []option.RequestOption
 }
 
 // Backend runs agents on the Anthropic API.
 type Backend struct {
-	client *sdk.Client
-	model  string
+	client  *sdk.Client
+	model   string
+	compact bool
+	options []option.RequestOption
 }
 
 var _ nacelle.Backend = (*Backend)(nil)
+
+type compactKey struct{}
+
+// WithCompact returns a context that requests server-side compaction via the compact-2026-01-12 beta header.
+func WithCompact(ctx context.Context) context.Context {
+	return context.WithValue(ctx, compactKey{}, true)
+}
 
 // New builds the backend.
 func New(cfg Config) *Backend {
@@ -50,7 +68,7 @@ func New(cfg Config) *Backend {
 	if model == "" {
 		model = DefaultModel
 	}
-	return &Backend{client: client, model: model}
+	return &Backend{client: client, model: model, compact: cfg.Compact, options: cfg.Options}
 }
 
 // Name identifies the backend.
@@ -61,7 +79,14 @@ func (b *Backend) Name() string { return "anthropic" }
 // responses — it returns tokens, and the caller multiplies. TokenCounting is
 // present because the API ships a dedicated endpoint for it — see tokens.go.
 func (b *Backend) Capabilities() nacelle.Capabilities {
-	return nacelle.Capabilities{MCP: true, Thinking: true, Effort: true, MinBudget: 1024, TokenCounting: true}
+	return nacelle.Capabilities{
+		MCP:           true,
+		Thinking:      true,
+		Effort:        true,
+		MinBudget:     1024,
+		TokenCounting: true,
+		ContextWindow: 200000,
+	}
 }
 
 // Model is the model id this backend was built for.

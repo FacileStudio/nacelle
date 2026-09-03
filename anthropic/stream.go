@@ -3,11 +3,34 @@ package anthropic
 import (
 	"context"
 	"iter"
+	"strings"
 
 	"github.com/FacileStudio/nacelle"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 )
+
+const BetaCompaction = "compact-2026-01-12"
+
+func isCompactRequested(ctx context.Context, b *Backend) bool {
+	if b.compact {
+		return true
+	}
+	if v, ok := ctx.Value(compactKey{}).(bool); ok && v {
+		return true
+	}
+	if v, ok := ctx.Value("compact").(bool); ok && v {
+		return true
+	}
+	if v, ok := ctx.Value("compact-2026-01-12").(bool); ok && v {
+		return true
+	}
+	if v, ok := ctx.Value("anthropic-beta").(string); ok && strings.Contains(v, BetaCompaction) {
+		return true
+	}
+	return false
+}
 
 // session is what every turn of one run needs and none of it changes: where
 // the calls of the turn just closed are filed, whether the consumer asked for
@@ -31,7 +54,15 @@ func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2
 			thinking: request.Thinking.Show,
 			out:      &emitter{yield: yield, sink: sink},
 		}
-		runner := b.client.Beta.Messages.NewToolRunnerStreaming(adapt(request.Tools, sink, state.pending), b.params(request))
+
+		params := b.params(request)
+		opts := make([]option.RequestOption, len(b.options))
+		copy(opts, b.options)
+		if isCompactRequested(ctx, b) {
+			params.Betas = append(params.Betas, sdk.AnthropicBeta(BetaCompaction))
+			opts = append(opts, option.WithHeaderAdd("anthropic-beta", BetaCompaction))
+		}
+		runner := b.client.Beta.Messages.NewToolRunnerStreaming(adapt(request.Tools, sink, state.pending), params, opts...)
 
 		if run, ok := runTurns(ctx, runner, state); ok {
 			state.out.send(nacelle.Event{Kind: nacelle.KindDone, Usage: run.usage, Stop: run.stop})

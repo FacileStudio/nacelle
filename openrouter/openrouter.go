@@ -133,5 +133,13 @@ func (b *Backend) Model() string { return b.model }
 // figure covers the generation, so there is no partial cost to mistake for a
 // cheap one.
 func (b *Backend) Capabilities() nacelle.Capabilities {
-	return nacelle.Capabilities{MCP: false, Thinking: true, Effort: true, Cost: true, TokenCounting: false}
+	return nacelle.Capabilities{
+		MCP:             false,
+		Thinking:        true,
+		Effort:          true,
+		Cost:            true,
+		TokenCounting:   false,
+		ToolCallPlanner: true,
+		ContextWindow:   0,
+	}
 }
