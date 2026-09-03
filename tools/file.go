@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,23 @@ import (
 
 	"github.com/FacileStudio/nacelle"
 )
+
+// expandHome expands a leading ~ or ~user to the corresponding home directory.
+// If the path doesn't start with ~, it's returned unchanged.
+func expandHome(name string) string {
+	if !strings.HasPrefix(name, "~") {
+		return name
+	}
+	if name == "~" || strings.HasPrefix(name, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return name
+		}
+		return filepath.Join(home, name[2:])
+	}
+	// ~user form - not supported, return as-is
+	return name
+}
 
 // resolvePath tries to make an absolute path relative to root, returning the
 // relative segment when the path sits under root. When it is outside, the
@@ -46,7 +64,7 @@ func resolvePath(name, root string) (string, error) {
 //
 // root is the working directory the tools are confined to.
 func clean(name, root string) (string, error) {
-	trimmed := strings.TrimSpace(name)
+	trimmed := expandHome(strings.TrimSpace(name))
 	if trimmed == "" {
 		return "", fmt.Errorf("no path given")
 	}
