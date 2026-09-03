@@ -177,3 +177,61 @@ func TestNoToolLetsTheModelChooseItsOwnRoot(t *testing.T) {
 		}
 	}
 }
+
+func TestToolsReadOnlyDeclarations(t *testing.T) {
+	set := newSet(t, nil)
+	all, err := set.Tools()
+	if err != nil {
+		t.Fatalf("Tools: %v", err)
+	}
+	toolsMap := nacelle.ToolsByName(all)
+
+	readOnlyExpected := []string{"read_file", "list_directory", "find_files", "search_content"}
+	for _, name := range readOnlyExpected {
+		tool, ok := toolsMap[name]
+		if !ok {
+			t.Fatalf("missing expected tool %q", name)
+		}
+		ro, ok := tool.(nacelle.ReadOnlyTool)
+		if !ok {
+			t.Errorf("tool %q does not implement nacelle.ReadOnlyTool", name)
+			continue
+		}
+		if !ro.IsReadOnly() {
+			t.Errorf("tool %q IsReadOnly() = false, want true", name)
+		}
+	}
+
+	mutatingExpected := []string{"write_file", "edit_file", "run_command"}
+	for _, name := range mutatingExpected {
+		tool, ok := toolsMap[name]
+		if !ok {
+			t.Fatalf("missing expected tool %q", name)
+		}
+		if ro, ok := tool.(nacelle.ReadOnlyTool); ok && ro.IsReadOnly() {
+			t.Errorf("tool %q IsReadOnly() = true, want false or not implemented", name)
+		}
+	}
+
+	fetchTools, err := WebFetch()
+	if err != nil {
+		t.Fatalf("WebFetch: %v", err)
+	}
+	if len(fetchTools) != 1 {
+		t.Fatalf("len(fetchTools) = %d, want 1", len(fetchTools))
+	}
+	if ro, ok := fetchTools[0].(nacelle.ReadOnlyTool); !ok || !ro.IsReadOnly() {
+		t.Errorf("web_fetch does not satisfy ReadOnlyTool with IsReadOnly() == true")
+	}
+
+	searchTools, err := WebSearch("https://search.example.com")
+	if err != nil {
+		t.Fatalf("WebSearch: %v", err)
+	}
+	if len(searchTools) != 1 {
+		t.Fatalf("len(searchTools) = %d, want 1", len(searchTools))
+	}
+	if ro, ok := searchTools[0].(nacelle.ReadOnlyTool); !ok || !ro.IsReadOnly() {
+		t.Errorf("web_search does not satisfy ReadOnlyTool with IsReadOnly() == true")
+	}
+}

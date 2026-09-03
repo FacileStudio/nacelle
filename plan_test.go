@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/FacileStudio/nacelle"
+	"github.com/FacileStudio/nacelle/tools"
 )
 
 func TestPlanCallsSequencesReadOnlyBeforeWrite(t *testing.T) {
@@ -97,5 +98,64 @@ func TestPlanCallsUsesNameWithFallbackToID(t *testing.T) {
 	}
 	if planned[2].ID != "run" {
 		t.Errorf("planned[2].ID = %q, want %q", planned[2].ID, "run")
+	}
+}
+
+func TestPlanCallsIntegratesWithRealTools(t *testing.T) {
+	set, err := tools.New(tools.Config{Root: t.TempDir(), AllowBash: true})
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	t.Cleanup(func() { _ = set.Close() })
+
+	allTools, err := set.Tools()
+	if err != nil {
+		t.Fatalf("set.Tools: %v", err)
+	}
+
+	fetchTools, err := tools.WebFetch()
+	if err != nil {
+		t.Fatalf("WebFetch: %v", err)
+	}
+	allTools = append(allTools, fetchTools...)
+
+	searchTools, err := tools.WebSearch("https://example.com")
+	if err != nil {
+		t.Fatalf("WebSearch: %v", err)
+	}
+	allTools = append(allTools, searchTools...)
+
+	byName := nacelle.ToolsByName(allTools)
+
+	calls := []nacelle.Invocation{
+		{ID: "c1", Name: "write_file"},
+		{ID: "c2", Name: "read_file"},
+		{ID: "c3", Name: "edit_file"},
+		{ID: "c4", Name: "list_directory"},
+		{ID: "c5", Name: "run_command"},
+		{ID: "c6", Name: "find_files"},
+		{ID: "c7", Name: "web_fetch"},
+		{ID: "c8", Name: "search_content"},
+		{ID: "c9", Name: "web_search"},
+	}
+
+	planned := nacelle.PlanCalls(calls, byName)
+	if len(planned) != len(calls) {
+		t.Fatalf("len(planned) = %d, want %d", len(planned), len(calls))
+	}
+
+	readOnlyCount := 6
+	for i := 0; i < readOnlyCount; i++ {
+		tool := byName[planned[i].Name]
+		ro, ok := tool.(nacelle.ReadOnlyTool)
+		if !ok || !ro.IsReadOnly() {
+			t.Errorf("call %d (%s) expected read-only", i, planned[i].Name)
+		}
+	}
+	for i := readOnlyCount; i < len(planned); i++ {
+		tool := byName[planned[i].Name]
+		if ro, ok := tool.(nacelle.ReadOnlyTool); ok && ro.IsReadOnly() {
+			t.Errorf("call %d (%s) expected mutating", i, planned[i].Name)
+		}
 	}
 }

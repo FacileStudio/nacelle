@@ -79,7 +79,7 @@ type webFetchInput struct {
 
 // fetchTool builds the reader.
 func (f *fetcher) fetchTool() (nacelle.Tool, error) {
-	return nacelle.NewTool("web_fetch",
+	return nacelle.NewToolWithOptions("web_fetch",
 		"Read one web page and get back its text: headings, paragraphs, lists, code blocks and links. "+
 			"Use it after web_search to read a result properly — search returns a sentence per hit, this returns the page. "+
 			"Navigation, scripts and styling are stripped; links are absolute so you can follow one by calling this again. "+
@@ -90,7 +90,8 @@ func (f *fetcher) fetchTool() (nacelle.Tool, error) {
 				return "", err
 			}
 			return f.read(ctx, target)
-		})
+		},
+		nacelle.ToolOptions{ReadOnly: true})
 }
 
 // parseFetchURL refuses anything that is not a public-web URL before a request

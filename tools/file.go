@@ -91,7 +91,7 @@ type readInput struct {
 
 // readTool builds the file reader.
 func (s *Set) readTool() (nacelle.Tool, error) {
-	return nacelle.NewTool("read_file",
+	return nacelle.NewToolWithOptions("read_file",
 		"Read a file from the working directory. Returns the contents with line numbers, so you can quote a line back exactly. Use it before editing anything.",
 		func(_ context.Context, in readInput) (string, error) {
 			name, err := clean(in.Path, s.dir)
@@ -107,7 +107,8 @@ func (s *Set) readTool() (nacelle.Tool, error) {
 			}
 			s.read.record(name)
 			return numbered(string(raw), in.Offset, in.Limit, s.maxRead), nil
-		})
+		},
+		nacelle.ToolOptions{ReadOnly: true})
 }
 
 // numbered renders a slice of a file with line numbers.

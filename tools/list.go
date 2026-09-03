@@ -24,7 +24,7 @@ type listInput struct {
 // out of the context window — and inferring the directories from the paths
 // that happened to run through them. This is that question asked cheaply.
 func (s *Set) listTool() (nacelle.Tool, error) {
-	return nacelle.NewTool("list_directory",
+	return nacelle.NewToolWithOptions("list_directory",
 		"List one directory: the files in it, and the subdirectories in it marked with a trailing slash. Use it to find your way around a tree you have not seen, before searching it. Generated directories such as .git, node_modules and vendor are left out, exactly as they are when searching.",
 		func(_ context.Context, in listInput) (string, error) {
 			name := cleanDir(in.Path, s.dir)
@@ -37,7 +37,8 @@ func (s *Set) listTool() (nacelle.Tool, error) {
 				return fmt.Sprintf("nothing to list in %s", name), nil
 			}
 			return truncate(strings.Join(listed, "\n"), s.maxOutput), nil
-		})
+		},
+		nacelle.ToolOptions{ReadOnly: true})
 }
 
 // cleanDir normalises a directory path where clean refuses to.

@@ -134,7 +134,7 @@ type webSearchInput struct {
 
 // searchTool builds the search.
 func (s *searxng) searchTool() (nacelle.Tool, error) {
-	return nacelle.NewTool("web_search",
+	return nacelle.NewToolWithOptions("web_search",
 		"Search the web and get back the top results as title, URL and a short snippet. "+
 			"Use it for anything current or outside the working directory: documentation, releases, "+
 			"error messages, upstream issues, whether a library still exists. "+
@@ -150,7 +150,8 @@ func (s *searxng) searchTool() (nacelle.Tool, error) {
 				return "", err
 			}
 			return render(found, query), nil
-		})
+		},
+		nacelle.ToolOptions{ReadOnly: true})
 }
 
 // search asks the instance one question.

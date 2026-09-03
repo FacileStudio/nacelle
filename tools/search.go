@@ -39,7 +39,7 @@ func relativise(pattern, dir string) string {
 
 // globTool builds the file finder.
 func (s *Set) globTool() (nacelle.Tool, error) {
-	return nacelle.NewTool("find_files",
+	return nacelle.NewToolWithOptions("find_files",
 		"List files matching a glob, relative to the working directory. Use it to learn what exists before reading anything. Generated directories such as .git, node_modules and vendor are skipped.",
 		func(_ context.Context, in globInput) (string, error) {
 			pattern := strings.TrimSpace(in.Pattern)
@@ -63,7 +63,8 @@ func (s *Set) globTool() (nacelle.Tool, error) {
 			}
 			sort.Strings(found)
 			return truncate(strings.Join(found, "\n"), s.maxOutput), nil
-		})
+		},
+		nacelle.ToolOptions{ReadOnly: true})
 }
 
 type grepInput struct {
@@ -73,7 +74,7 @@ type grepInput struct {
 
 // grepTool builds the content search.
 func (s *Set) grepTool() (nacelle.Tool, error) {
-	return nacelle.NewTool("search_content",
+	return nacelle.NewToolWithOptions("search_content",
 		"Search file contents with a regular expression, returning matching lines with their file and line number. Narrow it with a glob when you know the file type. Use this to find where something is defined or used, rather than reading files one at a time.",
 		func(_ context.Context, in grepInput) (string, error) {
 			expression, err := regexp.Compile(in.Pattern)
@@ -96,7 +97,8 @@ func (s *Set) grepTool() (nacelle.Tool, error) {
 				return fmt.Sprintf("no matches for %s", in.Pattern), nil
 			}
 			return truncate(strings.Join(matches, "\n"), s.maxOutput), nil
-		})
+		},
+		nacelle.ToolOptions{ReadOnly: true})
 }
 
 // grepFile appends the matching lines of one file.
