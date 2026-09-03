@@ -206,23 +206,27 @@ data: [DONE]
 
 `
 
-func TestPlanCallsOrdersReadOnlyBeforeWriteInStream(t *testing.T) {
-	var executionOrder []string
+func testOrderTools(t *testing.T, order *[]string) (nacelle.Tool, nacelle.Tool) {
 	readTool, err := nacelle.NewToolWithOptions("read_op", "Read data", func(_ context.Context, _ struct{}) (string, error) {
-		executionOrder = append(executionOrder, "read_op")
+		*order = append(*order, "read_op")
 		return "read result", nil
 	}, nacelle.ToolOptions{ReadOnly: true})
 	if err != nil {
 		t.Fatalf("NewToolWithOptions: %v", err)
 	}
-
 	writeTool, err := nacelle.NewTool("write_op", "Write data", func(_ context.Context, _ struct{}) (string, error) {
-		executionOrder = append(executionOrder, "write_op")
+		*order = append(*order, "write_op")
 		return "write result", nil
 	})
 	if err != nil {
 		t.Fatalf("NewTool: %v", err)
 	}
+	return readTool, writeTool
+}
+
+func TestPlanCallsOrdersReadOnlyBeforeWriteInStream(t *testing.T) {
+	var executionOrder []string
+	readTool, writeTool := testOrderTools(t, &executionOrder)
 
 	backend, handler := serve(t, withWriteThenReadCalls, finalAnswer)
 	events := collect(t, backend, nacelle.Request{
@@ -230,18 +234,10 @@ func TestPlanCallsOrdersReadOnlyBeforeWriteInStream(t *testing.T) {
 		Tools:  []nacelle.Tool{writeTool, readTool},
 	})
 
-	if len(executionOrder) != 2 {
-		t.Fatalf("executed %d tools, want 2", len(executionOrder))
+	if len(executionOrder) != 2 || executionOrder[0] != "read_op" || executionOrder[1] != "write_op" {
+		t.Errorf("executionOrder = %v, want [read_op write_op]", executionOrder)
 	}
-	if executionOrder[0] != "read_op" {
-		t.Errorf("executionOrder[0] = %q, want %q", executionOrder[0], "read_op")
-	}
-	if executionOrder[1] != "write_op" {
-		t.Errorf("executionOrder[1] = %q, want %q", executionOrder[1], "write_op")
-	}
-
-	results := kinds(events, nacelle.KindToolResult)
-	if len(results) != 2 {
+	if results := kinds(events, nacelle.KindToolResult); len(results) != 2 {
 		t.Fatalf("len(results) = %d, want 2", len(results))
 	}
 	if len(handler.requests) != 2 {

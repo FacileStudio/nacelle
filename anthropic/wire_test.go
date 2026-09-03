@@ -143,6 +143,33 @@ func TestTheEffortOnTheWireIsOneOfTheFiveOrAbsent(t *testing.T) {
 	}
 }
 
+func runCompactionHeaderTest(t *testing.T, cfg Config, ctxFunc func(context.Context) context.Context) string {
+	var betaHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		betaHeader = r.Header.Get("Anthropic-Beta")
+		if _, err := w.Write([]byte(answeringTurn(t))); err != nil {
+			t.Errorf("write: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	client := sdk.NewClient(option.WithBaseURL(server.URL+"/"), option.WithAPIKey("test"))
+	cfg.Client = &client
+	backend := New(cfg)
+
+	ctx := context.Background()
+	if ctxFunc != nil {
+		ctx = ctxFunc(ctx)
+	}
+
+	for _, err := range backend.Stream(ctx, nacelle.Request{MaxTokens: 4096}) {
+		if err != nil {
+			t.Fatalf("stream: %v", err)
+		}
+	}
+	return betaHeader
+}
+
 func TestCompactionBetaHeaderSentWhenRequested(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -150,51 +177,15 @@ func TestCompactionBetaHeaderSentWhenRequested(t *testing.T) {
 		ctxFunc  func(context.Context) context.Context
 		wantBeta bool
 	}{
-		{
-			name:     "compact requested via config",
-			cfg:      Config{Compact: true},
-			wantBeta: true,
-		},
-		{
-			name:     "compact requested via context WithCompact",
-			ctxFunc:  WithCompact,
-			wantBeta: true,
-		},
-		{
-			name:     "not requested",
-			wantBeta: false,
-		},
+		{name: "compact requested via config", cfg: Config{Compact: true}, wantBeta: true},
+		{name: "compact requested via context WithCompact", ctxFunc: WithCompact, wantBeta: true},
+		{name: "not requested", wantBeta: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var betaHeader string
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				betaHeader = r.Header.Get("Anthropic-Beta")
-				w.Header().Set("Content-Type", "text/event-stream")
-				if _, err := w.Write([]byte(answeringTurn(t))); err != nil {
-					t.Errorf("serving the turn: %v", err)
-				}
-			}))
-			t.Cleanup(server.Close)
-
-			client := sdk.NewClient(option.WithBaseURL(server.URL+"/"), option.WithAPIKey("test"))
-			cfg := tc.cfg
-			cfg.Client = &client
-			backend := New(cfg)
-
-			ctx := context.Background()
-			if tc.ctxFunc != nil {
-				ctx = tc.ctxFunc(ctx)
-			}
-
-			for _, err := range backend.Stream(ctx, nacelle.Request{MaxTokens: 4096}) {
-				if err != nil {
-					t.Fatalf("stream: %v", err)
-				}
-			}
-
-			hasCompact := strings.Contains(betaHeader, BetaCompaction)
+			header := runCompactionHeaderTest(t, tc.cfg, tc.ctxFunc)
+			hasCompact := strings.Contains(header, BetaCompaction)
 			if hasCompact != tc.wantBeta {
-				t.Errorf("header %q contains %q = %v, want %v", betaHeader, BetaCompaction, hasCompact, tc.wantBeta)
+				t.Errorf("header %q contains %q = %v, want %v", header, BetaCompaction, hasCompact, tc.wantBeta)
 			}
 		})
 	}

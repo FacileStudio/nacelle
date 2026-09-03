@@ -101,32 +101,34 @@ func TestPlanCallsUsesNameWithFallbackToID(t *testing.T) {
 	}
 }
 
-func TestPlanCallsIntegratesWithRealTools(t *testing.T) {
+func loadAllTestTools(t *testing.T) map[string]nacelle.Tool {
 	set, err := tools.New(tools.Config{Root: t.TempDir(), AllowBash: true})
 	if err != nil {
 		t.Fatalf("tools.New: %v", err)
 	}
-	t.Cleanup(func() { _ = set.Close() })
-
+	t.Cleanup(func() {
+		if err := set.Close(); err != nil {
+			t.Errorf("set.Close: %v", err)
+		}
+	})
 	allTools, err := set.Tools()
 	if err != nil {
 		t.Fatalf("set.Tools: %v", err)
 	}
-
 	fetchTools, err := tools.WebFetch()
 	if err != nil {
 		t.Fatalf("WebFetch: %v", err)
 	}
-	allTools = append(allTools, fetchTools...)
-
 	searchTools, err := tools.WebSearch("https://example.com")
 	if err != nil {
 		t.Fatalf("WebSearch: %v", err)
 	}
-	allTools = append(allTools, searchTools...)
+	allTools = append(append(allTools, fetchTools...), searchTools...)
+	return nacelle.ToolsByName(allTools)
+}
 
-	byName := nacelle.ToolsByName(allTools)
-
+func TestPlanCallsIntegratesWithRealTools(t *testing.T) {
+	byName := loadAllTestTools(t)
 	calls := []nacelle.Invocation{
 		{ID: "c1", Name: "write_file"},
 		{ID: "c2", Name: "read_file"},
@@ -144,15 +146,13 @@ func TestPlanCallsIntegratesWithRealTools(t *testing.T) {
 		t.Fatalf("len(planned) = %d, want %d", len(planned), len(calls))
 	}
 
-	readOnlyCount := 6
-	for i := 0; i < readOnlyCount; i++ {
+	for i := 0; i < 6; i++ {
 		tool := byName[planned[i].Name]
-		ro, ok := tool.(nacelle.ReadOnlyTool)
-		if !ok || !ro.IsReadOnly() {
+		if ro, ok := tool.(nacelle.ReadOnlyTool); !ok || !ro.IsReadOnly() {
 			t.Errorf("call %d (%s) expected read-only", i, planned[i].Name)
 		}
 	}
-	for i := readOnlyCount; i < len(planned); i++ {
+	for i := 6; i < len(planned); i++ {
 		tool := byName[planned[i].Name]
 		if ro, ok := tool.(nacelle.ReadOnlyTool); ok && ro.IsReadOnly() {
 			t.Errorf("call %d (%s) expected mutating", i, planned[i].Name)

@@ -28,9 +28,9 @@ func (t testPlannedTool) Run(_ context.Context, _ json.RawMessage) (string, erro
 	return t.name + " ok", nil
 }
 
-func TestBackendStreamToolPlanning(t *testing.T) {
+func newPlanningServer() *httptest.Server {
 	calls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		if calls == 1 {
 			writeChunks(w, []string{
@@ -46,42 +46,26 @@ func TestBackendStreamToolPlanning(t *testing.T) {
 			`data: [DONE]` + "\n\n",
 		})
 	}))
+}
+
+func TestBackendStreamToolPlanning(t *testing.T) {
+	server := newPlanningServer()
 	t.Cleanup(server.Close)
 
-	backend, err := openai.New(openai.Config{
-		APIKey:  "test-key",
-		BaseURL: server.URL,
-		Model:   "gpt-5.4",
-	})
+	backend, err := openai.New(openai.Config{APIKey: "test-key", BaseURL: server.URL, Model: "gpt-5.4"})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
 	var executionOrder []string
-	readTool := testPlannedTool{
-		name:     "read_op",
-		readOnly: true,
-		onRun:    func() { executionOrder = append(executionOrder, "read_op") },
-	}
-	writeTool := testPlannedTool{
-		name:     "write_op",
-		readOnly: false,
-		onRun:    func() { executionOrder = append(executionOrder, "write_op") },
-	}
+	readTool := testPlannedTool{name: "read_op", readOnly: true, onRun: func() { executionOrder = append(executionOrder, "read_op") }}
+	writeTool := testPlannedTool{name: "write_op", readOnly: false, onRun: func() { executionOrder = append(executionOrder, "write_op") }}
 
-	out := collectToolStream(t, backend.Stream(context.Background(), nacelle.Request{
-		Tools: []nacelle.Tool{writeTool, readTool},
-	}))
+	out := collectToolStream(t, backend.Stream(context.Background(), nacelle.Request{Tools: []nacelle.Tool{writeTool, readTool}}))
 	if out.text != "All done" {
 		t.Errorf("got text %q, want %q", out.text, "All done")
 	}
-	if len(executionOrder) != 2 {
-		t.Fatalf("executed %d tools, want 2", len(executionOrder))
-	}
-	if executionOrder[0] != "read_op" {
-		t.Errorf("executionOrder[0] = %q, want %q", executionOrder[0], "read_op")
-	}
-	if executionOrder[1] != "write_op" {
-		t.Errorf("executionOrder[1] = %q, want %q", executionOrder[1], "write_op")
+	if len(executionOrder) != 2 || executionOrder[0] != "read_op" || executionOrder[1] != "write_op" {
+		t.Errorf("executionOrder = %v, want [read_op write_op]", executionOrder)
 	}
 }
