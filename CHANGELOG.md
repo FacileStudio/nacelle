@@ -6,13 +6,11 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
-### Added
-- **Session log rotation**: session files rotate at 256 KB. Old files are gzipped (`.gz`) and a new timestamped file starts. A `⚠️ could not write to session log` warning appears in the status line when `write()` fails. Track H18.
-- **Broad tool grouping by kind**: consecutive calls of the same category (read, write, network, delegate) now batch into a single line showing `⏺ 4 commands · cmd1 · cmd2 · …` instead of N identical lines. Single calls render as before. Track D1, E5.
-- **`/status` command**: prints session summary — elapsed time, tool counts, tokens, cost, log size, and write-error status.
-
 ### Fixed
-- **Session log write failures now surfaced**: `sessionLog.write` sets `writeError` on failure; the status line shows a warning so users know logging is broken.
+- **Restored tool test suites**: recovered clobbered test coverage in `tools/file_test.go` and `toolsink_test.go`, including `ToolSink` concurrency and race tests.
+- **PlanCalls name resolution**: added `Name string` to `Invocation` and updated `PlanCalls` to check `call.Name` before falling back to `call.ID`.
+- **Compaction token count caching**: `CompactConversation` reuses the last probe count to avoid redundant `CountTokens` calls.
+- **Path expansion**: fixed `expandHome` handling for `~` and formatted `tools/file_test.go`.
 
 ## [v0.7.3] — 2026-09-02
 
