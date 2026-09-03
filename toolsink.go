@@ -102,6 +102,9 @@ type Invocation struct {
 	// ID is the provider's identifier for the call.
 	ID string
 
+	// Name is the tool name being invoked.
+	Name string
+
 	// Index is the call's position in the turn, from zero.
 	Index int
 }
@@ -187,16 +190,18 @@ func PlanCalls(calls []Invocation, byName map[string]Tool) []Invocation {
 	write := make([]Invocation, 0, len(calls))
 
 	for _, call := range calls {
-		tool, known := byName[call.ID]
-		if !known {
-			write = append(write, call)
-			continue
+		var tool Tool
+		if call.Name != "" {
+			tool = byName[call.Name]
+		}
+		if tool == nil {
+			tool = byName[call.ID]
 		}
 		if ro, ok := tool.(ReadOnlyTool); ok && ro.IsReadOnly() {
 			readOnly = append(readOnly, call)
-		} else {
-			write = append(write, call)
+			continue
 		}
+		write = append(write, call)
 	}
 
 	return append(readOnly, write...)

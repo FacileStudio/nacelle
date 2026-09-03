@@ -41,7 +41,6 @@ func (a *Agent) Stream(ctx context.Context, conversation []Message) iter.Seq2[Ev
 // receive the pre- and post-compaction token counts via HookEvent.Input and
 // HookEvent.Result as stringified numbers.
 func (a *Agent) CompactConversation(ctx context.Context, conversation []Message, maxTokens int64) ([]Message, int64, error) {
-	// Fire BeforeCompact hook
 	if hooks := a.request.Hooks[BeforeCompact]; len(hooks) > 0 {
 		ev := HookEvent{
 			Point: BeforeCompact,
@@ -52,28 +51,11 @@ func (a *Agent) CompactConversation(ctx context.Context, conversation []Message,
 		}
 	}
 
-	// Binary search for the largest prefix that fits
-	lo, hi := 0, len(conversation)
-	for lo < hi {
-		mid := (lo + hi + 1) / 2
-		kept, _ := Trim(conversation, mid)
-		count, err := a.CountTokens(ctx, kept)
-		if err != nil {
-			return nil, 0, err
-		}
-		if count <= maxTokens {
-			lo = mid
-		} else {
-			hi = mid - 1
-		}
-	}
-	kept, _ := Trim(conversation, lo)
-	count, err := a.CountTokens(ctx, kept)
+	kept, count, err := a.binarySearchCompact(ctx, conversation, maxTokens)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// Fire AfterCompact hook
 	if hooks := a.request.Hooks[AfterCompact]; len(hooks) > 0 {
 		ev := HookEvent{
 			Point:  AfterCompact,
@@ -83,6 +65,38 @@ func (a *Agent) CompactConversation(ctx context.Context, conversation []Message,
 		for _, hook := range hooks {
 			hook(ctx, ev)
 		}
+	}
+	return kept, count, nil
+}
+
+func (a *Agent) binarySearchCompact(ctx context.Context, conversation []Message, maxTokens int64) ([]Message, int64, error) {
+	lo, hi := 0, len(conversation)
+	lastProbe := -1
+	var lastCount int64
+
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		kept, _ := Trim(conversation, mid)
+		count, err := a.CountTokens(ctx, kept)
+		if err != nil {
+			return nil, 0, err
+		}
+		if count <= maxTokens {
+			lo = mid
+			lastCount = count
+			lastProbe = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+
+	kept, _ := Trim(conversation, lo)
+	if lo == lastProbe {
+		return kept, lastCount, nil
+	}
+	count, err := a.CountTokens(ctx, kept)
+	if err != nil {
+		return nil, 0, err
 	}
 	return kept, count, nil
 }

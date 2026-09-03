@@ -177,10 +177,8 @@ func TestTrimCopyDoesNotShareBackingArray(t *testing.T) {
 		t.Fatalf("kept = %v, want 2 messages", len(kept))
 	}
 
-	// Mutate the returned slice
 	kept[0] = nacelle.UserText("mutated")
 
-	// Original must be unchanged
 	if said(conversation[0]) != "first" {
 		t.Errorf("original[0] = %q, want %q — backing array was shared", said(conversation[0]), "first")
 	}
@@ -188,7 +186,6 @@ func TestTrimCopyDoesNotShareBackingArray(t *testing.T) {
 		t.Errorf("original[1] = %q, want %q", said(conversation[1]), "second")
 	}
 
-	// Result must reflect the mutation
 	if said(kept[0]) != "mutated" {
 		t.Errorf("kept[0] = %q, want %q", said(kept[0]), "mutated")
 	}
