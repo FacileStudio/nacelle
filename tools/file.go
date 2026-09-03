@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -34,6 +35,25 @@ func resolvePath(name, root string) (string, error) {
 	return rel, nil
 }
 
+// expandHome expands a leading ~ or ~user to the corresponding home directory.
+// If the path doesn't start with ~, it's returned unchanged.
+func expandHome(name string) string {
+	if !strings.HasPrefix(name, "~") {
+		return name
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return name
+	}
+	if name == "~" {
+		return home
+	}
+	if strings.HasPrefix(name, "~/") {
+		return filepath.Join(home, name[2:])
+	}
+	return name
+}
+
 // clean normalises a model-supplied path into one os.Root will accept.
 //
 // When the model passes an absolute path that sits inside the working
@@ -50,6 +70,7 @@ func clean(name, root string) (string, error) {
 	if trimmed == "" {
 		return "", fmt.Errorf("no path given")
 	}
+	trimmed = expandHome(trimmed)
 	if path.IsAbs(trimmed) {
 		if rel, err := resolvePath(trimmed, root); err == nil {
 			return rel, nil
