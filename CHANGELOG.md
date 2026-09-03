@@ -6,6 +6,8 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+## [v0.8.7] — 2026-09-03
+
 ### Added
 - **Read-only tool declarations**: marked `read_file`, `list_directory`, `find_files`, `search_content`, `web_fetch`, and `web_search` as `ReadOnly: true` via `nacelle.NewToolWithOptions`.
 - **Capabilities.ContextWindow**: added model context window token limit to `nacelle.Capabilities` (Track 3) across all backends (OpenAI: 128k, Google: 1M, Anthropic: 200k, OpenRouter: 0).
