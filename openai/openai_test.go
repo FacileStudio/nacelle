@@ -6,11 +6,78 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/FacileStudio/nacelle"
 	"github.com/FacileStudio/nacelle/openai"
+	"iter"
 )
+
+func collectStream(t *testing.T, stream iter.Seq2[nacelle.Event, error]) (string, bool, nacelle.Usage) {
+	t.Helper()
+	var (
+		text  strings.Builder
+		done  bool
+		usage nacelle.Usage
+	)
+	for ev, err := range stream {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		switch ev.Kind {
+		case nacelle.KindText:
+			text.WriteString(ev.Text)
+		case nacelle.KindTurn:
+			done = true
+			usage = ev.Usage
+		case nacelle.KindDone:
+			done = true
+			usage = ev.Usage
+		}
+	}
+	return text.String(), done, usage
+}
+
+// collectToolStream collects text, tool calls/results, and final usage from a stream.
+func collectToolStream(t *testing.T, stream iter.Seq2[nacelle.Event, error]) struct {
+	text          string
+	sawToolCall   bool
+	sawToolResult bool
+	toolResult    string
+	usage         nacelle.Usage
+} {
+	t.Helper()
+	var out struct {
+		text          string
+		sawToolCall   bool
+		sawToolResult bool
+		toolResult    string
+		usage         nacelle.Usage
+	}
+	for ev, err := range stream {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		switch ev.Kind {
+		case nacelle.KindText:
+			out.text += ev.Text
+		case nacelle.KindToolCall:
+			out.sawToolCall = true
+		case nacelle.KindToolResult:
+			out.sawToolResult = true
+			if ev.Tool != nil {
+				out.toolResult = ev.Tool.Result
+			}
+		case nacelle.KindTurn:
+			out.usage = ev.Usage
+		case nacelle.KindDone:
+			out.usage = ev.Usage
+		}
+	}
+	return out
+}
+
 
 func writeChunks(w http.ResponseWriter, chunks []string) {
 	w.Header().Set("Content-Type", "text/event-stream")

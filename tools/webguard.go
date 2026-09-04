@@ -85,7 +85,7 @@ func blockInternal(_, address string, _ syscall.RawConn) error {
 // or a range that has no business answering a web fetch.
 func internal(addr netip.Addr) bool {
 	if !addr.IsValid() {
-		return true
+		return true // invalid addresses are treated as unsafe
 	}
 	if addr.IsLoopback() || addr.IsPrivate() || addr.IsUnspecified() ||
 		addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() ||

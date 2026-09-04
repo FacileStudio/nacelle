@@ -14,13 +14,16 @@
 package openrouter
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/FacileStudio/nacelle"
+	"github.com/FacileStudio/nacelle/internal/oairunner"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"iter"
 )
 
 // DefaultBaseURL is OpenRouter's API root.
@@ -142,4 +145,56 @@ func (b *Backend) Capabilities() nacelle.Capabilities {
 		ToolCallPlanner: true,
 		ContextWindow:   0,
 	}
+}
+
+// Stream delegates to the shared OpenAI runner.
+func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error] {
+	return (&oairunner.Backend{
+		Client:       b.client,
+		Model:        b.model,
+		Provider:     b.provider,
+		RequestOptions: b.requestOptions,
+	}).Stream(ctx, request)
+}
+
+// CountTokens delegates to the shared OpenAI runner.
+func (b *Backend) CountTokens(ctx context.Context, request nacelle.Request) (int64, error) {
+	return (&oairunner.Backend{
+		Client:       b.client,
+		Model:        b.model,
+		Provider:     b.provider,
+		RequestOptions: b.requestOptions,
+	}).CountTokens(ctx, request)
+}
+
+func (b *Backend) requestOptions(request nacelle.Request) []option.RequestOption {
+	var options []option.RequestOption
+	if len(b.provider) > 0 {
+		options = append(options, option.WithJSONSet("provider", b.provider))
+	}
+	if reasoning := reasoningParam(request.Thinking); reasoning != nil {
+		options = append(options, option.WithJSONSet("reasoning", reasoning))
+	}
+	return options
+}
+
+func reasoningParam(thinking nacelle.Thinking) map[string]any {
+	if thinking.Effort == nacelle.EffortNone {
+		return map[string]any{"enabled": false}
+	}
+
+	reasoning := map[string]any{}
+	switch {
+	case thinking.Budget > 0:
+		reasoning["max_tokens"] = thinking.Budget
+	case thinking.Effort != "":
+		reasoning["effort"] = string(thinking.Effort)
+	}
+	if len(reasoning) == 0 {
+		if !thinking.Show {
+			return nil
+		}
+		reasoning["enabled"] = true
+	}
+	return reasoning
 }

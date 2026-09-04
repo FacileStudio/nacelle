@@ -166,9 +166,6 @@ func toolResultEvent(tool Tool, call Invocation, input json.RawMessage, result s
 	}
 }
 
-// runBeforeHooks asks every BeforeToolCall hook, in registration order, and
-// reports the first denial.
-
 // ToolsByName indexes tools for a backend dispatching a call by name.
 func ToolsByName(tools []Tool) map[string]Tool {
 	index := make(map[string]Tool, len(tools))

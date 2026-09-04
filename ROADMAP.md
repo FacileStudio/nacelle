@@ -131,7 +131,7 @@ Exit: `echo q | nacelle -print -root .` answers with no TTY.
     output containing credentials. Core stays print-free.
 16. **Resume** — `--continue` picks the newest session under `~/.nacelle/sessions/<project>/`;
     `/resume` picker in the TUI. Supersedes the exit-time transcript dump's role as the only
-    session memory.
+    session memory. *Done: implemented in nacelle-tui with `--continue` flag and `/resume` command.*
 17. **Compaction in `tui/`, not the core** — strategy stays consumer-side per `trim.go`'s own
     doc. **Mechanical half shipped 2026-08-23** (see "Shipped outside any track"): old large
     tool results drop past a measured 100k input threshold, no model call. What remains:
