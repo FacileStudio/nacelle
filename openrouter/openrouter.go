@@ -149,20 +149,30 @@ func (b *Backend) Capabilities() nacelle.Capabilities {
 
 // Stream delegates to the shared OpenAI runner.
 func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error] {
-	return (&oairunner.Backend{
-		Client:       b.client,
-		Model:        b.model,
-		Provider:     b.provider,
+	var reasoning details
+	opts := oairunner.Options{
 		RequestOptions: b.requestOptions,
+		ClassifyError:  classify,
+		ResetTurn:      func() { reasoning = details{} },
+		ObserveChunk:   reasoning.observe,
+		FinishExtra: func(_ openai.ChatCompletionMessage, a openai.ChatCompletionMessageParamUnion) openai.ChatCompletionMessageParamUnion {
+			return reasoning.attach(a)
+		},
+	}
+	return (&oairunner.Backend{
+		Client:   b.client,
+		Model:    b.model,
+		Provider: b.provider,
+		Options:  opts,
 	}).Stream(ctx, request)
 }
 
 // CountTokens delegates to the shared OpenAI runner.
 func (b *Backend) CountTokens(ctx context.Context, request nacelle.Request) (int64, error) {
 	return (&oairunner.Backend{
-		Client:       b.client,
-		Model:        b.model,
-		Provider:     b.provider,
+		Client:         b.client,
+		Model:          b.model,
+		Provider:       b.provider,
 		RequestOptions: b.requestOptions,
 	}).CountTokens(ctx, request)
 }

@@ -1,3 +1,4 @@
+// Package oairunner runs agents on OpenAI-compatible APIs.
 package oairunner
 
 import "github.com/FacileStudio/nacelle"

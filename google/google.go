@@ -91,8 +91,8 @@ func (b *Backend) Capabilities() nacelle.Capabilities {
 // Stream delegates to the shared OpenAI runner.
 func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error] {
 	return (&oairunner.Backend{
-		Client:       b.client,
-		Model:        b.model,
+		Client:         b.client,
+		Model:          b.model,
 		RequestOptions: b.requestOptions,
 	}).Stream(ctx, request)
 }
@@ -100,8 +100,8 @@ func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2
 // CountTokens delegates to the shared OpenAI runner.
 func (b *Backend) CountTokens(ctx context.Context, request nacelle.Request) (int64, error) {
 	return (&oairunner.Backend{
-		Client:       b.client,
-		Model:        b.model,
+		Client:         b.client,
+		Model:          b.model,
 		RequestOptions: b.requestOptions,
 	}).CountTokens(ctx, request)
 }

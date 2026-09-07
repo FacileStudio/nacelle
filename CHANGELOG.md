@@ -6,6 +6,24 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+### Added
+- **Parallel sub-agent support**: Added `NewParallelSubAgentTool` and `ParallelSubAgentOptions` for concurrent task execution. Multiple sub-agents can now run simultaneously, each with its own context window and independent task handling.
+- **Concurrent task execution**: `ParallelSubAgentTool` implements parallel execution of independent tasks with configurable concurrency limits (default 4, max 8)
+- **Result collection**: Structured JSON output with separate `tasks` and `errors` fields for comprehensive result reporting
+- **Error isolation**: Failed tasks don't stop other tasks from completing; errors are collected separately
+- **Concurrency control**: Configurable `MaxConcurrency` option to control parallel execution limits
+- **Recursion guard**: Parallel sub-agent is automatically removed from nested agent tool sets, preventing unbounded recursion
+- **Documentation**: Added comprehensive documentation for parallel sub-agent features
+
+### Fixed
+- **Test consistency**: Fixed subagent_test.go to remove duplicate parallel sub-agent tests and maintain clean test structure
+- **Code generation**: Fixed imports in generated test files
+- **Filet lint issues**: Fixed line length and function complexity warnings in subagent_test.go
+
+### Changed
+- **API consistency**: Parallel sub-agent API now matches single sub-agent API pattern
+- **Code organization**: Extracted parallel sub-agent implementation to separate files for better organization
+
 ## [v0.8.7] — 2026-09-03
 
 ### Added

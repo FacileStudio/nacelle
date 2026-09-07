@@ -78,7 +78,6 @@ func collectToolStream(t *testing.T, stream iter.Seq2[nacelle.Event, error]) str
 	return out
 }
 
-
 func writeChunks(w http.ResponseWriter, chunks []string) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	for _, c := range chunks {

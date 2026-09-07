@@ -149,6 +149,3 @@ func TestTheDeprecatedUsageParametersAreNotSent(t *testing.T) {
 		t.Error("a usage parameter was sent; usage is always included now")
 	}
 }
-
-// Arguments arrive as fragments keyed by index, and two parallel calls
-// interleave in one stream separated only by that index.
