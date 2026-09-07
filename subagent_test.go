@@ -187,7 +187,7 @@ func TestDelegationRetriesThroughASharedRetryWrapper(t *testing.T) {
 	if answer != "seven" {
 		t.Errorf("answer = %q, want the retried delegation's own text", answer)
 	}
-	if backend.calls != 2 {
-		t.Errorf("calls = %d, want the failed attempt retried once", backend.calls)
+	if backend.calls.Load() != 2 {
+		t.Errorf("calls = %d, want the failed attempt retried once", backend.calls.Load())
 	}
 }

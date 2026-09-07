@@ -62,8 +62,8 @@ func TestTheErrorRetryGivesUpWithStopsClaimingToBeRetryable(t *testing.T) {
 	if nacelle.Retryable(err) {
 		t.Error("the exhausted error still says retryable, so the layer above starts the same doomed run over")
 	}
-	if backend.calls != 3 {
-		t.Errorf("calls = %d, want 3 rather than the attempt limit squared", backend.calls)
+	if backend.calls.Load() != 3 {
+		t.Errorf("calls = %d, want 3 rather than the attempt limit squared", backend.calls.Load())
 	}
 	if attempt := nacelle.Attempt(err); attempt != 3 {
 		t.Errorf("attempt = %d, want the count to survive giving up", attempt)

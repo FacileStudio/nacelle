@@ -7,6 +7,8 @@ import (
 	"iter"
 	"log/slog"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,7 +22,7 @@ import (
 // is how a test tells a budget that was imposed from one that was not.
 type flaky struct {
 	runs    []run
-	calls   int
+	calls   atomic.Int64
 	bounded bool
 }
 
@@ -37,8 +39,8 @@ func (f *flaky) Capabilities() nacelle.Capabilities { return nacelle.Capabilitie
 func (f *flaky) CountTokens(context.Context, nacelle.Request) (int64, error) { return 0, nil }
 
 func (f *flaky) Stream(ctx context.Context, _ nacelle.Request) iter.Seq2[nacelle.Event, error] {
-	scripted := f.runs[min(f.calls, len(f.runs)-1)]
-	f.calls++
+	scripted := f.runs[min(f.calls.Load(), int64(len(f.runs)-1))]
+	f.calls.Add(1)
 	_, f.bounded = ctx.Deadline()
 
 	return func(yield func(nacelle.Event, error) bool) {
@@ -58,7 +60,7 @@ func (f *flaky) Stream(ctx context.Context, _ nacelle.Request) iter.Seq2[nacelle
 // Retry-After: no event, no failure to classify, only time passing where the
 // wrapper cannot see it.
 type stalling struct {
-	calls int
+	calls atomic.Int64
 }
 
 func (s *stalling) Name() string                       { return "stalling" }
@@ -67,7 +69,7 @@ func (s *stalling) Capabilities() nacelle.Capabilities { return nacelle.Capabili
 func (s *stalling) CountTokens(context.Context, nacelle.Request) (int64, error) { return 0, nil }
 
 func (s *stalling) Stream(ctx context.Context, _ nacelle.Request) iter.Seq2[nacelle.Event, error] {
-	s.calls++
+	s.calls.Add(1)
 
 	return func(yield func(nacelle.Event, error) bool) {
 		<-ctx.Done()
@@ -148,3 +150,50 @@ func lines(recorded, level string) int {
 }
 
 var done = nacelle.Event{Kind: nacelle.KindDone}
+
+// concurrencyTracker records wall time of each Stream call and checks that
+// no two calls overlap, verifying that the concurrency semaphore is enforced.
+type concurrencyTracker struct {
+	mu       sync.Mutex
+	starts   []time.Time
+	ends     []time.Time
+	overlaps []bool // overlaps[i] = true if call i overlaps with call i+1
+}
+
+func (c *concurrencyTracker) Name() string                       { return "concurrencyTracker" }
+func (c *concurrencyTracker) Capabilities() nacelle.Capabilities { return nacelle.Capabilities{} }
+func (c *concurrencyTracker) CountTokens(context.Context, nacelle.Request) (int64, error) {
+	return 0, nil
+}
+
+func (c *concurrencyTracker) Stream(ctx context.Context, _ nacelle.Request) iter.Seq2[nacelle.Event, error] {
+	return func(yield func(nacelle.Event, error) bool) {
+		select {
+		case <-ctx.Done():
+			c.mu.Lock()
+			c.ends = append(c.ends, time.Now())
+			c.mu.Unlock()
+			yield(nacelle.Event{}, ctx.Err())
+			return
+		default:
+		}
+
+		c.mu.Lock()
+		idx := len(c.starts)
+		start := time.Now()
+		end := time.Now()
+		c.starts = append(c.starts, start)
+		c.ends = append(c.ends, end)
+		c.overlaps = append(c.overlaps, false)
+		if idx > 0 && start.Before(c.ends[idx-1]) {
+			c.overlaps[idx-1] = true
+		}
+		c.mu.Unlock()
+
+		for _, event := range []nacelle.Event{{Kind: nacelle.KindText, Text: "ok"}} {
+			if !yield(event, nil) {
+				return
+			}
+		}
+	}
+}

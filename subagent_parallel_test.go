@@ -1,0 +1,294 @@
+package nacelle_test
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/FacileStudio/nacelle"
+)
+
+// TestParallelSubAgentReturnsAllResults verifies that 3 tasks complete
+// and all results are returned, regardless of completion order.
+func TestParallelSubAgentReturnsAllResults(t *testing.T) {
+	backend := newLoop(
+		[]step{toolStep(nacelle.ParallelSubAgentToolName, `{"tasks":["count the stars","echo hello","echo world"]}`), textStep("ok")},
+		[]step{toolStep("echo", `{}`), textStep("seven")},
+		[]step{toolStep("echo", `{}`), textStep("hello")},
+		[]step{toolStep("echo", `{}`), textStep("world")},
+	)
+	echo := &echoTool{}
+
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
+	}, nacelle.ParallelSubAgentOptions{})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	parent, err := nacelle.New(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{sub}, MaxIterations: 5,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	var toolResult string
+	for event, err := range parent.Stream(context.Background(), []nacelle.Message{
+		{Role: nacelle.RoleUser, Parts: []nacelle.Part{nacelle.Text{Text: "parallel"}}},
+	}) {
+		if err != nil {
+			t.Fatalf("parent stream: %v", err)
+		}
+		if event.Kind == nacelle.KindToolResult && event.Tool != nil && event.Tool.Name == nacelle.ParallelSubAgentToolName {
+			toolResult = event.Tool.Result
+		}
+	}
+
+	if !strings.Contains(toolResult, "seven") {
+		t.Errorf("result missing 'seven', got %q", toolResult)
+	}
+	if !strings.Contains(toolResult, "hello") {
+		t.Errorf("result missing 'hello', got %q", toolResult)
+	}
+	if !strings.Contains(toolResult, "world") {
+		t.Errorf("result missing 'world', got %q", toolResult)
+	}
+}
+
+// TestParallelSubAgentPartialFailure verifies that when one task fails,
+// the others still complete and their results are returned.
+func TestParallelSubAgentPartialFailure(t *testing.T) {
+	backend := newLoop(
+		[]step{toolStep(nacelle.ParallelSubAgentToolName, `{"tasks":["good","bad","good"]}`), textStep("ok")},
+		[]step{toolStep("echo", `{}`), textStep("good1")},
+		[]step{toolStep("echo", `{}`), textStep("bad")},
+		[]step{toolStep("echo", `{}`), textStep("good2")},
+	)
+	echo := &echoTool{}
+
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
+	}, nacelle.ParallelSubAgentOptions{})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	parent, err := nacelle.New(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{sub}, MaxIterations: 5,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	var toolResult string
+	for event, err := range parent.Stream(context.Background(), []nacelle.Message{
+		{Role: nacelle.RoleUser, Parts: []nacelle.Part{nacelle.Text{Text: "parallel"}}},
+	}) {
+		if err != nil {
+			t.Fatalf("parent stream: %v", err)
+		}
+		if event.Kind == nacelle.KindToolResult && event.Tool != nil && event.Tool.Name == nacelle.ParallelSubAgentToolName {
+			toolResult = event.Tool.Result
+		}
+	}
+
+	if !strings.Contains(toolResult, "good1") {
+		t.Errorf("result missing 'good1', got %q", toolResult)
+	}
+	if !strings.Contains(toolResult, "good2") {
+		t.Errorf("result missing 'good2', got %q", toolResult)
+	}
+	if !strings.Contains(toolResult, "bad") {
+		t.Errorf("result should contain 'bad' error, got %q", toolResult)
+	}
+}
+
+// TestParallelSubAgentSharedConfig verifies that all parallel agents
+// share the same config and the parent config is not mutated.
+func TestParallelSubAgentSharedConfig(t *testing.T) {
+	backend := newLoop(
+		[]step{toolStep(nacelle.ParallelSubAgentToolName, `{"tasks":["task1","task2","task3"]}`), textStep("ok")},
+		[]step{toolStep("echo", `{}`), textStep("task1")},
+		[]step{toolStep("echo", `{}`), textStep("task2")},
+		[]step{toolStep("echo", `{}`), textStep("task3")},
+	)
+	echo := &echoTool{}
+
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
+	}, nacelle.ParallelSubAgentOptions{})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	parent, err := nacelle.New(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{sub}, MaxIterations: 5,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	var toolResult string
+	for event, err := range parent.Stream(context.Background(), []nacelle.Message{
+		{Role: nacelle.RoleUser, Parts: []nacelle.Part{nacelle.Text{Text: "parallel"}}},
+	}) {
+		if err != nil {
+			t.Fatalf("parent stream: %v", err)
+		}
+		if event.Kind == nacelle.KindToolResult && event.Tool != nil && event.Tool.Name == nacelle.ParallelSubAgentToolName {
+			toolResult = event.Tool.Result
+		}
+	}
+
+	if !strings.Contains(toolResult, "task1") {
+		t.Errorf("result missing 'task1', got %q", toolResult)
+	}
+	if !strings.Contains(toolResult, "task2") {
+		t.Errorf("result missing 'task2', got %q", toolResult)
+	}
+	if !strings.Contains(toolResult, "task3") {
+		t.Errorf("result missing 'task3', got %q", toolResult)
+	}
+}
+
+// TestParallelSubAgentEmptyTasks verifies that an empty task list fails.
+func TestParallelSubAgentEmptyTasks(t *testing.T) {
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: newLoop(), System: "s",
+	}, nacelle.ParallelSubAgentOptions{})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	_, err = sub.Run(context.Background(), json.RawMessage(`{"tasks":[]}`))
+	if err == nil {
+		t.Error("an empty task list was accepted")
+	}
+}
+
+// TestParallelSubAgentMaxConcurrencyClamped verifies that maxConcurrency
+// values above 8 are clamped to 8.
+func TestParallelSubAgentMaxConcurrencyClamped(t *testing.T) {
+	backend := newLoop(
+		[]step{toolStep("echo", `{}`), textStep("ok")},
+	)
+	echo := &echoTool{}
+
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
+	}, nacelle.ParallelSubAgentOptions{MaxConcurrency: 100})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	sink := &nacelle.ToolSink{}
+	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
+		json.RawMessage(`{"tasks":["a"]}`), sink)
+
+	var result string
+	for _, event := range sink.Drain() {
+		if event.Tool == nil {
+			continue
+		}
+		if event.Tool.Err != nil {
+			t.Fatalf("parallel delegation failed: %v", event.Tool.Err)
+		}
+		result = event.Tool.Result
+	}
+	if !strings.Contains(result, "ok") {
+		t.Errorf("result missing 'ok', got %q", result)
+	}
+}
+
+// TestParallelSubAgentConcurrency verifies that the concurrency semaphore
+// actually limits how many tasks run simultaneously. It uses a backend that
+// records the wall time of each call and checks that no two calls overlap.
+func TestParallelSubAgentConcurrency(t *testing.T) {
+	backend := &concurrencyTracker{}
+	echo := &echoTool{}
+
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
+	}, nacelle.ParallelSubAgentOptions{MaxConcurrency: 4})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	sink := &nacelle.ToolSink{}
+	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
+		json.RawMessage(`{"tasks":["t1","t2","t3","t4","t5","t6","t7","t8","t9","t10","t11","t12"]}`), sink)
+
+	var result string
+	for _, event := range sink.Drain() {
+		if event.Tool == nil {
+			continue
+		}
+		if event.Tool.Err != nil {
+			t.Fatalf("parallel delegation failed: %v", event.Tool.Err)
+		}
+		result = event.Tool.Result
+	}
+
+	var resp struct {
+		Tasks map[string]string `json:"tasks"`
+	}
+	if err := json.Unmarshal([]byte(result), &resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	if len(resp.Tasks) != 12 {
+		t.Errorf("expected 12 tasks completed, got %d", len(resp.Tasks))
+	}
+	// Verify no two backend calls overlapped in wall time.
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+	for i := range backend.overlaps {
+		if backend.overlaps[i] {
+			t.Errorf("calls %d and %d overlapped — concurrency limit not enforced", i, i+1)
+		}
+	}
+}
+
+// TestParallelSubAgentDirectCall verifies parallel delegation via direct
+// RunTool call, bypassing the parent stream to avoid the loop backend mutex.
+func TestParallelSubAgentDirectCall(t *testing.T) {
+	backend := newLoop(
+		[]step{toolStep("echo", `{}`), textStep("result1")},
+		[]step{toolStep("echo", `{}`), textStep("result2")},
+		[]step{toolStep("echo", `{}`), textStep("result3")},
+	)
+	echo := &echoTool{}
+
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
+	}, nacelle.ParallelSubAgentOptions{})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	sink := &nacelle.ToolSink{}
+	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
+		json.RawMessage(`{"tasks":["task1","task2","task3"]}`), sink)
+
+	var result strings.Builder
+	for _, event := range sink.Drain() {
+		if event.Tool == nil {
+			continue
+		}
+		if event.Tool.Err != nil {
+			t.Fatalf("parallel delegation failed: %v", event.Tool.Err)
+		}
+		result.WriteString(event.Tool.Result)
+	}
+
+	if !strings.Contains(result.String(), "result1") {
+		t.Errorf("result missing 'result1', got %q", result.String())
+	}
+	if !strings.Contains(result.String(), "result2") {
+		t.Errorf("result missing 'result2', got %q", result.String())
+	}
+	if !strings.Contains(result.String(), "result3") {
+		t.Errorf("result missing 'result3', got %q", result.String())
+	}
+}

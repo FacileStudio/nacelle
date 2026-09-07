@@ -21,8 +21,8 @@ func TestATransientFailureBeforeAnyEventIsTriedAgain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %v, want nil", err)
 	}
-	if backend.calls != 2 {
-		t.Errorf("calls = %d, want 2", backend.calls)
+	if backend.calls.Load() != 2 {
+		t.Errorf("calls = %d, want 2", backend.calls.Load())
 	}
 	if len(seen) != 1 || seen[0].Kind != nacelle.KindDone {
 		t.Errorf("events = %v, want one KindDone", seen)
@@ -42,8 +42,8 @@ func TestAFailureAfterAnEventEndsTheRun(t *testing.T) {
 	if err == nil {
 		t.Fatal("err = nil, want the failure to surface")
 	}
-	if backend.calls != 1 {
-		t.Errorf("calls = %d, want 1", backend.calls)
+	if backend.calls.Load() != 1 {
+		t.Errorf("calls = %d, want 1", backend.calls.Load())
 	}
 	if len(seen) != 1 || seen[0].Text != "half an answer" {
 		t.Errorf("events = %v, want the one text delta", seen)
@@ -60,8 +60,8 @@ func TestAPermanentFailureIsNotRetried(t *testing.T) {
 	if !errors.Is(err, refused) {
 		t.Errorf("err = %v, want the original", err)
 	}
-	if backend.calls != 1 {
-		t.Errorf("calls = %d, want 1", backend.calls)
+	if backend.calls.Load() != 1 {
+		t.Errorf("calls = %d, want 1", backend.calls.Load())
 	}
 	if nacelle.Attempt(err) != 0 || nacelle.Retryable(err) {
 		t.Errorf("err = %v, want no attempt stamped on a failure nothing retried", err)
@@ -79,8 +79,8 @@ func TestRetryingGivesUpAtTheAttemptLimit(t *testing.T) {
 	if !errors.Is(err, overloaded) {
 		t.Errorf("err = %v, want the original to survive wrapping", err)
 	}
-	if backend.calls != 3 {
-		t.Errorf("calls = %d, want 3", backend.calls)
+	if backend.calls.Load() != 3 {
+		t.Errorf("calls = %d, want 3", backend.calls.Load())
 	}
 	if attempt := nacelle.Attempt(err); attempt != 3 {
 		t.Errorf("attempt = %d, want the last one tried", attempt)
@@ -96,8 +96,8 @@ func TestOneAttemptDisablesRetrying(t *testing.T) {
 	if _, err := collect(t, nacelle.Retry(backend, options)); err == nil {
 		t.Fatal("err = nil, want the failure to surface")
 	}
-	if backend.calls != 1 {
-		t.Errorf("calls = %d, want 1", backend.calls)
+	if backend.calls.Load() != 1 {
+		t.Errorf("calls = %d, want 1", backend.calls.Load())
 	}
 }
 

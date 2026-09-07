@@ -33,8 +33,8 @@ func TestABudgetSpentDuringABackoffEndsTheRun(t *testing.T) {
 	if attempt := nacelle.Attempt(err); attempt != 1 {
 		t.Errorf("attempt = %d, want the one it died on", attempt)
 	}
-	if backend.calls != 1 {
-		t.Errorf("calls = %d, want the budget to have stopped the second", backend.calls)
+	if backend.calls.Load() != 1 {
+		t.Errorf("calls = %d, want the budget to have stopped the second", backend.calls.Load())
 	}
 }
 
@@ -54,8 +54,8 @@ func TestABudgetSpentMidAttemptIsNotReportedAsCancellation(t *testing.T) {
 	if nacelle.Retryable(err) || nacelle.Attempt(err) != 1 {
 		t.Errorf("err = %v, want a given-up run stamped with the attempt it died on", err)
 	}
-	if backend.calls != 1 {
-		t.Errorf("calls = %d, want the budget to have stopped the second", backend.calls)
+	if backend.calls.Load() != 1 {
+		t.Errorf("calls = %d, want the budget to have stopped the second", backend.calls.Load())
 	}
 }
 
@@ -116,8 +116,8 @@ func TestAZeroBudgetImposesNoDeadline(t *testing.T) {
 	if backend.bounded {
 		t.Error("the backend was handed a deadline, want the caller's context untouched")
 	}
-	if backend.calls != 2 || len(seen) != 1 {
-		t.Errorf("calls = %d, events = %v, want the retry to have happened", backend.calls, seen)
+	if backend.calls.Load() != 2 || len(seen) != 1 {
+		t.Errorf("calls = %d, events = %v, want the retry to have happened", backend.calls.Load(), seen)
 	}
 }
 
