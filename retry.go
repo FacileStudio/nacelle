@@ -111,15 +111,6 @@ func (o RetryOptions) withDefaults() RetryOptions {
 	return o
 }
 
-// bounded derives a context deadline from the budget and returns it with
-// its cancel function. If the budget is zero, it returns the original context
-// and a no-op cancel function.
-func (o RetryOptions) bounded(ctx context.Context) (context.Context, context.CancelFunc) {
-	if o.Budget <= 0 {
-		return ctx, func() {}
-	}
-	return context.WithTimeout(ctx, o.Budget)
-}
 
 // Stream runs the backend, starting it again while it fails transiently
 // without having produced anything.
