@@ -111,7 +111,6 @@ func (o RetryOptions) withDefaults() RetryOptions {
 	return o
 }
 
-
 // Stream runs the backend, starting it again while it fails transiently
 // without having produced anything.
 //

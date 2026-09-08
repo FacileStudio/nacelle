@@ -20,41 +20,16 @@ func TestParallelSubAgentReturnsAllResults(t *testing.T) {
 	)
 	echo := &echoTool{}
 
-	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
-		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
-	}, nacelle.ParallelSubAgentOptions{})
-	if err != nil {
-		t.Fatalf("NewParallelSubAgentTool: %v", err)
-	}
-
-	parent, err := nacelle.New(nacelle.Config{
-		Backend: backend, System: "s", Tools: []nacelle.Tool{sub}, MaxIterations: 5,
-	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	_, parent := newSubAgent(t, backend, echo)
 
 	var toolResult string
-	for event, err := range parent.Stream(context.Background(), []nacelle.Message{
-		{Role: nacelle.RoleUser, Parts: []nacelle.Part{nacelle.Text{Text: "parallel"}}},
-	}) {
-		if err != nil {
-			t.Fatalf("parent stream: %v", err)
-		}
+	runParent(t, parent, "parallel", func(event nacelle.Event) {
 		if event.Kind == nacelle.KindToolResult && event.Tool != nil && event.Tool.Name == nacelle.ParallelSubAgentToolName {
 			toolResult = event.Tool.Result
 		}
-	}
+	})
 
-	if !strings.Contains(toolResult, "seven") {
-		t.Errorf("result missing 'seven', got %q", toolResult)
-	}
-	if !strings.Contains(toolResult, "hello") {
-		t.Errorf("result missing 'hello', got %q", toolResult)
-	}
-	if !strings.Contains(toolResult, "world") {
-		t.Errorf("result missing 'world', got %q", toolResult)
-	}
+	assertContains(t, toolResult, "seven", "hello", "world")
 }
 
 // TestParallelSubAgentPartialFailure verifies that when one task fails,
@@ -68,41 +43,16 @@ func TestParallelSubAgentPartialFailure(t *testing.T) {
 	)
 	echo := &echoTool{}
 
-	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
-		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
-	}, nacelle.ParallelSubAgentOptions{})
-	if err != nil {
-		t.Fatalf("NewParallelSubAgentTool: %v", err)
-	}
-
-	parent, err := nacelle.New(nacelle.Config{
-		Backend: backend, System: "s", Tools: []nacelle.Tool{sub}, MaxIterations: 5,
-	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	_, parent := newSubAgent(t, backend, echo)
 
 	var toolResult string
-	for event, err := range parent.Stream(context.Background(), []nacelle.Message{
-		{Role: nacelle.RoleUser, Parts: []nacelle.Part{nacelle.Text{Text: "parallel"}}},
-	}) {
-		if err != nil {
-			t.Fatalf("parent stream: %v", err)
-		}
+	runParent(t, parent, "parallel", func(event nacelle.Event) {
 		if event.Kind == nacelle.KindToolResult && event.Tool != nil && event.Tool.Name == nacelle.ParallelSubAgentToolName {
 			toolResult = event.Tool.Result
 		}
-	}
+	})
 
-	if !strings.Contains(toolResult, "good1") {
-		t.Errorf("result missing 'good1', got %q", toolResult)
-	}
-	if !strings.Contains(toolResult, "good2") {
-		t.Errorf("result missing 'good2', got %q", toolResult)
-	}
-	if !strings.Contains(toolResult, "bad") {
-		t.Errorf("result should contain 'bad' error, got %q", toolResult)
-	}
+	assertContains(t, toolResult, "good1", "good2", "bad")
 }
 
 // TestParallelSubAgentSharedConfig verifies that all parallel agents
@@ -116,41 +66,16 @@ func TestParallelSubAgentSharedConfig(t *testing.T) {
 	)
 	echo := &echoTool{}
 
-	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
-		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
-	}, nacelle.ParallelSubAgentOptions{})
-	if err != nil {
-		t.Fatalf("NewParallelSubAgentTool: %v", err)
-	}
-
-	parent, err := nacelle.New(nacelle.Config{
-		Backend: backend, System: "s", Tools: []nacelle.Tool{sub}, MaxIterations: 5,
-	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	_, parent := newSubAgent(t, backend, echo)
 
 	var toolResult string
-	for event, err := range parent.Stream(context.Background(), []nacelle.Message{
-		{Role: nacelle.RoleUser, Parts: []nacelle.Part{nacelle.Text{Text: "parallel"}}},
-	}) {
-		if err != nil {
-			t.Fatalf("parent stream: %v", err)
-		}
+	runParent(t, parent, "parallel", func(event nacelle.Event) {
 		if event.Kind == nacelle.KindToolResult && event.Tool != nil && event.Tool.Name == nacelle.ParallelSubAgentToolName {
 			toolResult = event.Tool.Result
 		}
-	}
+	})
 
-	if !strings.Contains(toolResult, "task1") {
-		t.Errorf("result missing 'task1', got %q", toolResult)
-	}
-	if !strings.Contains(toolResult, "task2") {
-		t.Errorf("result missing 'task2', got %q", toolResult)
-	}
-	if !strings.Contains(toolResult, "task3") {
-		t.Errorf("result missing 'task3', got %q", toolResult)
-	}
+	assertContains(t, toolResult, "task1", "task2", "task3")
 }
 
 // TestParallelSubAgentEmptyTasks verifies that an empty task list fails.
@@ -187,16 +112,7 @@ func TestParallelSubAgentMaxConcurrencyClamped(t *testing.T) {
 	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
 		json.RawMessage(`{"tasks":["a"]}`), sink)
 
-	var result string
-	for _, event := range sink.Drain() {
-		if event.Tool == nil {
-			continue
-		}
-		if event.Tool.Err != nil {
-			t.Fatalf("parallel delegation failed: %v", event.Tool.Err)
-		}
-		result = event.Tool.Result
-	}
+	result := drainToolResult(t, sink)
 	if !strings.Contains(result, "ok") {
 		t.Errorf("result missing 'ok', got %q", result)
 	}
@@ -220,16 +136,7 @@ func TestParallelSubAgentConcurrency(t *testing.T) {
 	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
 		json.RawMessage(`{"tasks":["t1","t2","t3","t4","t5","t6","t7","t8","t9","t10","t11","t12"]}`), sink)
 
-	var result string
-	for _, event := range sink.Drain() {
-		if event.Tool == nil {
-			continue
-		}
-		if event.Tool.Err != nil {
-			t.Fatalf("parallel delegation failed: %v", event.Tool.Err)
-		}
-		result = event.Tool.Result
-	}
+	result := drainToolResult(t, sink)
 
 	var resp struct {
 		Tasks map[string]string `json:"tasks"`
@@ -240,7 +147,7 @@ func TestParallelSubAgentConcurrency(t *testing.T) {
 	if len(resp.Tasks) != 12 {
 		t.Errorf("expected 12 tasks completed, got %d", len(resp.Tasks))
 	}
-	// Verify no two backend calls overlapped in wall time.
+
 	backend.mu.Lock()
 	defer backend.mu.Unlock()
 	for i := range backend.overlaps {
@@ -271,7 +178,48 @@ func TestParallelSubAgentDirectCall(t *testing.T) {
 	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
 		json.RawMessage(`{"tasks":["task1","task2","task3"]}`), sink)
 
-	var result strings.Builder
+	result := drainToolResult(t, sink)
+
+	assertContains(t, result, "result1", "result2", "result3")
+}
+
+func newSubAgent(t *testing.T, backend nacelle.Backend, echo *echoTool) (nacelle.Tool, *nacelle.Agent) {
+	t.Helper()
+
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
+	}, nacelle.ParallelSubAgentOptions{})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	parent, err := nacelle.New(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{sub}, MaxIterations: 5,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	return sub, parent
+}
+
+func runParent(t *testing.T, parent *nacelle.Agent, prompt string, onEvent func(nacelle.Event)) {
+	t.Helper()
+
+	for event, err := range parent.Stream(context.Background(), []nacelle.Message{
+		{Role: nacelle.RoleUser, Parts: []nacelle.Part{nacelle.Text{Text: prompt}}},
+	}) {
+		if err != nil {
+			t.Fatalf("parent stream: %v", err)
+		}
+		onEvent(event)
+	}
+}
+
+func drainToolResult(t *testing.T, sink *nacelle.ToolSink) string {
+	t.Helper()
+
+	var result string
 	for _, event := range sink.Drain() {
 		if event.Tool == nil {
 			continue
@@ -279,16 +227,17 @@ func TestParallelSubAgentDirectCall(t *testing.T) {
 		if event.Tool.Err != nil {
 			t.Fatalf("parallel delegation failed: %v", event.Tool.Err)
 		}
-		result.WriteString(event.Tool.Result)
+		result = event.Tool.Result
 	}
+	return result
+}
 
-	if !strings.Contains(result.String(), "result1") {
-		t.Errorf("result missing 'result1', got %q", result.String())
-	}
-	if !strings.Contains(result.String(), "result2") {
-		t.Errorf("result missing 'result2', got %q", result.String())
-	}
-	if !strings.Contains(result.String(), "result3") {
-		t.Errorf("result missing 'result3', got %q", result.String())
+func assertContains(t *testing.T, s string, substrs ...string) {
+	t.Helper()
+
+	for _, sub := range substrs {
+		if !strings.Contains(s, sub) {
+			t.Errorf("result missing %q, got %q", sub, s)
+		}
 	}
 }

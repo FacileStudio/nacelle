@@ -127,11 +127,13 @@ func (s *Set) grepFile(name string, expression *regexp.Regexp, matches *[]string
 // walk visits every file under the root, skipping generated directories.
 //
 // It walks root.FS() rather than the real filesystem, so the traversal itself
-// cannot follow a symlink out of the tree.
+// cannot follow a symlink out of the tree. ErrSkipEntry is returned by
+// visit to skip a single file without aborting the walk; other errors from
+// visit stop the walk.
 func (s *Set) walk(visit func(name string, entry fs.DirEntry) error) error {
 	return fs.WalkDir(s.root.FS(), ".", func(name string, entry fs.DirEntry, err error) error {
 		if err != nil {
-			return nil //nolint:nilerr // an entry the walk cannot open is skipped, not fatal
+			return ErrSkipEntry
 		}
 		if entry.IsDir() {
 			if name != "." && (skipped[entry.Name()] || strings.HasPrefix(entry.Name(), ".")) {
@@ -142,6 +144,9 @@ func (s *Set) walk(visit func(name string, entry fs.DirEntry) error) error {
 		return visit(name, entry)
 	})
 }
+
+// ErrSkipEntry stops the walk at the current entry without failing.
+var ErrSkipEntry = fmt.Errorf("skip entry")
 
 // isBinary reports whether data looks like something a model should not read.
 // A NUL byte in the first few hundred bytes is the same heuristic grep uses.

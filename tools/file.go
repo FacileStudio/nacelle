@@ -66,13 +66,29 @@ func resolvePath(name, root string) (string, error) {
 //
 // root is the working directory the tools are confined to.
 func clean(name, root string) (string, error) {
-	trimmed := expandHome(strings.TrimSpace(name))
+	original := strings.TrimSpace(name)
+	// Track if the original input looked like a home directory reference.
+	// We preserve absolute paths that came from ~ expansion, because stripping
+	// the leading slash would break them (e.g., ~/.boite.yml -> home/yann/.boite.yml
+	// which doesn't exist relative to the working directory).
+	looksLikeHome := strings.HasPrefix(original, "~")
+	trimmed := expandHome(original)
 	if trimmed == "" {
 		return "", fmt.Errorf("no path given")
 	}
 	if path.IsAbs(trimmed) {
 		if rel, err := resolvePath(trimmed, root); err == nil {
 			return rel, nil
+		}
+		// Path is outside the working directory. Check if it's the root directory.
+		if trimmed == "/" || trimmed == "." {
+			return "", fmt.Errorf("%q is the root directory, not a file", name)
+		}
+		// If the original input came from ~ expansion, keep it absolute and let os.Root
+		// decide. Otherwise, strip the leading slash for model convenience
+		// (a model may send /in.txt meaning the file at the working directory root).
+		if looksLikeHome {
+			return trimmed, nil
 		}
 		trimmed = strings.TrimPrefix(trimmed, "/")
 	}

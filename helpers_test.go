@@ -154,10 +154,11 @@ var done = nacelle.Event{Kind: nacelle.KindDone}
 // concurrencyTracker records wall time of each Stream call and checks that
 // no two calls overlap, verifying that the concurrency semaphore is enforced.
 type concurrencyTracker struct {
-	mu       sync.Mutex
-	starts   []time.Time
-	ends     []time.Time
-	overlaps []bool // overlaps[i] = true if call i overlaps with call i+1
+	mu     sync.Mutex
+	starts []time.Time
+	ends   []time.Time
+	// overlaps[i] = true if call i overlaps with call i+1
+	overlaps []bool
 }
 
 func (c *concurrencyTracker) Name() string                       { return "concurrencyTracker" }
