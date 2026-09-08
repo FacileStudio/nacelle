@@ -11,6 +11,12 @@ while on `v0`, a breaking change bumps the minor.
 - **`ToolSourceMCP` constant**: `"mcp"` is set on `ToolEvent.Source` for tool calls and results that came through MCP.
 - **MCP source propagation**: the Anthropic MCP bridge tags `mcp_tool_use` starts, remote results, and unanswered closes with `ToolSourceMCP`, preserving the source through the full call lifecycle.
 
+## [v0.11.1] — 2026-09-09
+
+### Added
+- **`ToolSourceLocal` constant**: empty source for local tool calls, completing the `ToolEvent.Source` split from v0.11.0.
+- **`source_test.go`**: regression test for the zero-value `ToolSourceLocal` contract.
+
 ## [Unreleased]
 
 

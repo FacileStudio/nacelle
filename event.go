@@ -80,6 +80,9 @@ func (s Stop) Complete() bool { return s == StopEnd }
 type Source string
 
 const (
+	// ToolSourceLocal is a tool defined in this process.
+	ToolSourceLocal Source = ""
+
 	// ToolSourceMCP is a tool call or result that the model reached over
 	// MCP rather than from the agent's local registry.
 	ToolSourceMCP Source = "mcp"
