@@ -1,0 +1,129 @@
+#!/usr/bin/env sh
+#
+# Release nacelle: gate, bump, tag, push, and publish.
+#
+#   sh scripts/release            # patch bump (v0.10.0 -> v0.10.1)
+#   sh scripts/release --minor    # minor bump (v0.10.0 -> v0.11.0)
+#   sh scripts/release --major    # major bump (v0.10.0 -> v1.0.0)
+#
+# The script is opinionated about what it will and will not do:
+#   * it refuses to run on a dirty tree or on a branch that is not main
+#   * it refuses to release if the quality gate fails
+#   * it refuses to release if the working tree is not in step with origin
+#     (so a release cannot diverge from what CI has seen)
+#   * it requires gh to be authenticated, because the release is a GitHub
+#     release, not just a tag
+#
+# Nothing is committed or pushed until the gate passes and the version is
+# confirmed, so a failure leaves the tree untouched.
+
+set -eu
+
+# -- flags ------------------------------------------------------------------
+
+bump="patch"
+case "${1:-}" in
+  --minor) bump="minor" ;;
+  --major) bump="major" ;;
+  "")      ;;
+  *)
+    echo "usage: $0 [--minor|--major]" >&2
+    exit 2
+    ;;
+esac
+
+# -- helpers ----------------------------------------------------------------
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+# Resolve the toolchain from GOROOT when it is set. mise exports GOROOT for the
+# version this repo pins while leaving an unrelated `go` earlier on PATH, and a
+# go binary driving a different GOROOT fails with
+# `compile: version "X" does not match go tool version "Y"`.
+if [ -n "${GOROOT:-}" ] && [ -x "$GOROOT/bin/go" ]; then GO="$GOROOT/bin/go"; else GO=go; fi
+if ! command -v "$GO" >/dev/null 2>&1; then
+  echo "release: no usable go ('$GO')" >&2
+  exit 1
+fi
+
+# -- preflight --------------------------------------------------------------
+
+echo "==> branch"
+branch="$(git branch --show-current)"
+if [ "$branch" != "main" ]; then
+  echo "release: not on main (on '$branch'); checkout main first" >&2
+  exit 1
+fi
+
+echo "==> tree"
+if ! git diff --quiet; then
+  echo "release: working tree is dirty; commit or stash first" >&2
+  exit 1
+fi
+if ! git diff --cached --quiet; then
+  echo "release: staged changes present; commit or reset first" >&2
+  exit 1
+fi
+
+echo "==> origin parity"
+git fetch --quiet origin
+if ! git diff --quiet origin/main; then
+  echo "release: local main is not in step with origin/main; pull first" >&2
+  exit 1
+fi
+
+echo "==> quality gate"
+sh scripts/check.sh
+
+# -- version ----------------------------------------------------------------
+
+latest="$(git tag --sort=-version:refname --merged HEAD | head -n 1)"
+if [ -z "$latest" ]; then
+  echo "release: no previous tag found" >&2
+  exit 1
+fi
+
+# Strip the leading v and split into major.minor.patch. Anything beyond the
+# three numeric components is ignored, so pre-release suffixes like
+# v0.10.0-rc1 bump cleanly to v0.10.1.
+case "$latest" in
+  v*) rest="${latest#v}" ;;
+  *)  rest="$latest" ;;
+esac
+major="$(printf '%s' "$rest" | cut -d. -f1)"
+minor="$(printf '%s' "$rest" | cut -d. -f2)"
+patch="$(printf '%s' "$rest" | cut -d. -f3 | cut -d- -f1)"
+
+case "$bump" in
+  patch) patch=$((patch + 1)) ;;
+  minor) minor=$((minor + 1)); patch=0 ;;
+  major) major=$((major + 1)); minor=0; patch=0 ;;
+esac
+
+version="v${major}.${minor}.${patch}"
+echo "==> version: $latest -> $version"
+
+# -- commit -----------------------------------------------------------------
+
+echo "==> commit"
+git commit -m "chore: release $version" --allow-empty
+
+# -- tag --------------------------------------------------------------------
+
+echo "==> tag"
+git tag "$version"
+
+# -- push -------------------------------------------------------------------
+
+echo "==> push"
+git push origin main "$version"
+
+# -- release ----------------------------------------------------------------
+
+echo "==> release"
+gh release create "$version" \
+  --generate-notes \
+  --title "$version"
+
+echo "==> done: $version"
