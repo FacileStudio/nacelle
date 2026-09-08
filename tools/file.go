@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -11,25 +10,6 @@ import (
 
 	"github.com/FacileStudio/nacelle"
 )
-
-// expandHome expands a leading ~ or ~user to the corresponding home directory.
-// If the path doesn't start with ~, it's returned unchanged.
-func expandHome(name string) string {
-	if !strings.HasPrefix(name, "~") {
-		return name
-	}
-	if name == "~" || strings.HasPrefix(name, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return name
-		}
-		if name == "~" {
-			return home
-		}
-		return filepath.Join(home, name[2:])
-	}
-	return name
-}
 
 // resolvePath tries to make an absolute path relative to root, returning the
 // relative segment when the path sits under root. When it is outside, the
@@ -67,24 +47,38 @@ func resolvePath(name, root string) (string, error) {
 // root is the working directory the tools are confined to.
 func clean(name, root string) (string, error) {
 	original := strings.TrimSpace(name)
-	looksLikeHome := strings.HasPrefix(original, "~")
 	trimmed := expandHome(original)
 	if trimmed == "" {
 		return "", fmt.Errorf("no path given")
 	}
-	if path.IsAbs(trimmed) {
-		if rel, err := resolvePath(trimmed, root); err == nil {
-			return rel, nil
-		}
-		if trimmed == "/" || trimmed == "." {
-			return "", fmt.Errorf("%q is the root directory, not a file", name)
-		}
-		if looksLikeHome {
-			return trimmed, nil
-		}
-		trimmed = strings.TrimPrefix(trimmed, "/")
+	if !path.IsAbs(trimmed) {
+		return cleanRelative(trimmed, name)
 	}
+	if rel, err := resolvePath(trimmed, root); err == nil {
+		return rel, nil
+	}
+	return cleanAbsolute(trimmed, original, name)
+}
+
+// cleanRelative normalises a path that is not absolute.
+func cleanRelative(trimmed, name string) (string, error) {
 	cleaned := path.Clean(strings.TrimPrefix(trimmed, "/"))
+	if cleaned == "." || cleaned == "" {
+		return "", fmt.Errorf("%q is the root directory, not a file", name)
+	}
+	return cleaned, nil
+}
+
+// cleanAbsolute handles an absolute path that does not resolve under root.
+func cleanAbsolute(trimmed, original, name string) (string, error) {
+	if trimmed == "/" || trimmed == "." {
+		return "", fmt.Errorf("%q is the root directory, not a file", name)
+	}
+	if strings.HasPrefix(original, "~") {
+		return trimmed, nil
+	}
+	trimmed = strings.TrimPrefix(trimmed, "/")
+	cleaned := path.Clean(trimmed)
 	if cleaned == "." || cleaned == "" {
 		return "", fmt.Errorf("%q is the root directory, not a file", name)
 	}

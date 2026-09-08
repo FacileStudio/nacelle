@@ -3,6 +3,7 @@ package tools
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // minimalEnv is what a command inherits when the caller names nothing.
@@ -59,4 +60,23 @@ func userBins() []string {
 		return nil
 	}
 	return []string{filepath.Join(home, ".local", "bin"), filepath.Join(home, "bin")}
+}
+
+// expandHome expands a leading ~ or ~user to the corresponding home directory.
+// If the path doesn't start with ~, it's returned unchanged.
+func expandHome(name string) string {
+	if !strings.HasPrefix(name, "~") {
+		return name
+	}
+	if name == "~" || strings.HasPrefix(name, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return name
+		}
+		if name == "~" {
+			return home
+		}
+		return filepath.Join(home, name[2:])
+	}
+	return name
 }
