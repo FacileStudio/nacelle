@@ -73,6 +73,18 @@ const (
 // stopped short, and only StopEnd is safe to present as a finished answer.
 func (s Stop) Complete() bool { return s == StopEnd }
 
+// Source is where a tool call came from.
+//
+// It is zero for local tools and ToolSourceMCP for tools reached through
+// MCP, which is the only distinction consumers currently need.
+type Source string
+
+const (
+	// ToolSourceMCP is a tool call or result that the model reached over
+	// MCP rather than from the agent's local registry.
+	ToolSourceMCP Source = "mcp"
+)
+
 // Event is one thing that happened during a run.
 //
 // The stream is the only output of an agent: SSE, a terminal, a log and a test
@@ -145,6 +157,10 @@ type ToolEvent struct {
 	// what the model is told either way — this is only the distinction a
 	// consumer wants to render differently: a policy decision, not a bug.
 	Refused bool
+
+	// Source is where this tool call came from. Empty for local tools and
+	// ToolSourceMCP for MCP tools.
+	Source Source
 }
 
 // Usage is what a turn or a run cost.

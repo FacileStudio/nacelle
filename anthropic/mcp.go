@@ -55,7 +55,7 @@ func (c *callTracker) remoteResult(block sdk.BetaRawContentBlockStartEventConten
 
 	answer := &nacelle.ToolEvent{
 		ID: call.ID, Index: call.Index, Name: call.Name, Input: call.Input,
-		Result: resultText(block.Content),
+		Result: resultText(block.Content), Source: nacelle.ToolSourceMCP,
 	}
 	if block.IsError {
 		answer.Err = fmt.Errorf("nacelle/anthropic: the MCP server failed %q: %s", call.Name, answer.Result)

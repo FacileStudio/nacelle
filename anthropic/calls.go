@@ -79,10 +79,11 @@ func (c *callTracker) start(event sdk.BetaRawMessageStreamEventUnion) []nacelle.
 	case block.Type == "mcp_tool_result":
 		return c.remoteResult(block)
 	case isToolUse(block.Type):
-		c.open[event.Index] = &openCall{
-			event:  &nacelle.ToolEvent{ID: block.ID, Index: c.next, Name: block.Name},
-			remote: block.Type == "mcp_tool_use",
+		call := &nacelle.ToolEvent{ID: block.ID, Index: c.next, Name: block.Name}
+		if block.Type == "mcp_tool_use" {
+			call.Source = nacelle.ToolSourceMCP
 		}
+		c.open[event.Index] = &openCall{event: call, remote: block.Type == "mcp_tool_use"}
 		c.next++
 	}
 	return nil

@@ -4,25 +4,15 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
-## [Unreleased]
+## [v0.11.0] — 2026-09-08
 
 ### Added
-- **Parallel sub-agent support**: Added `NewParallelSubAgentTool` and `ParallelSubAgentOptions` for concurrent task execution. Multiple sub-agents can now run simultaneously, each with its own context window and independent task handling.
-- **Concurrent task execution**: `ParallelSubAgentTool` implements parallel execution of independent tasks with configurable concurrency limits (default 4, max 8)
-- **Result collection**: Structured JSON output with separate `tasks` and `errors` fields for comprehensive result reporting
-- **Error isolation**: Failed tasks don't stop other tasks from completing; errors are collected separately
-- **Concurrency control**: Configurable `MaxConcurrency` option to control parallel execution limits
-- **Recursion guard**: Parallel sub-agent is automatically removed from nested agent tool sets, preventing unbounded recursion
-- **Documentation**: Added comprehensive documentation for parallel sub-agent features
+- **`ToolEvent.Source`**: added a `Source` field to `nacelle.ToolEvent` so consumers can distinguish local tool calls from MCP tool calls without guessing.
+- **`ToolSourceMCP` constant**: `"mcp"` is set on `ToolEvent.Source` for tool calls and results that came through MCP.
+- **MCP source propagation**: the Anthropic MCP bridge tags `mcp_tool_use` starts, remote results, and unanswered closes with `ToolSourceMCP`, preserving the source through the full call lifecycle.
 
-### Fixed
-- **Test consistency**: Fixed subagent_test.go to remove duplicate parallel sub-agent tests and maintain clean test structure
-- **Code generation**: Fixed imports in generated test files
-- **Filet lint issues**: Fixed line length and function complexity warnings in subagent_test.go
+## [Unreleased]
 
-### Changed
-- **API consistency**: Parallel sub-agent API now matches single sub-agent API pattern
-- **Code organization**: Extracted parallel sub-agent implementation to separate files for better organization
 
 ## [v0.8.7] — 2026-09-03
 

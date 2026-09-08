@@ -23,7 +23,7 @@ import (
 func closed(call *nacelle.ToolEvent, err error, discarded bool) nacelle.Event {
 	return nacelle.Event{Kind: nacelle.KindToolResult, Tool: &nacelle.ToolEvent{
 		ID: call.ID, Index: call.Index, Name: call.Name, Input: call.Input,
-		Result: err.Error(), Err: err, Discarded: discarded,
+		Result: err.Error(), Err: err, Discarded: discarded, Source: call.Source,
 	}}
 }
 
