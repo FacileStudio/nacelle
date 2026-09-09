@@ -29,17 +29,17 @@ func (t *turns) Stream(context.Context, nacelle.Request) iter.Seq2[nacelle.Event
 }
 
 // The Usage hook sees every nested turn's cost as it is spent.
-func TestDelegateReportsTurnUsage(t *testing.T) {
+func TestParallelSubAgentReportsTurnUsage(t *testing.T) {
 	var seen []nacelle.Usage
-	tool, err := nacelle.NewSubAgentTool(
+	tool, err := nacelle.NewParallelSubAgentTool(
 		nacelle.Config{Backend: &turns{spent: nacelle.Usage{InputTokens: 10, OutputTokens: 5}}, System: "outer"},
-		nacelle.SubAgentOptions{Usage: func(u nacelle.Usage) { seen = append(seen, u) }},
+		nacelle.ParallelSubAgentOptions{Usage: func(u nacelle.Usage) { seen = append(seen, u) }},
 	)
 	if err != nil {
-		t.Fatalf("NewSubAgentTool: %v", err)
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
 	sink := &nacelle.ToolSink{}
-	nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "x"}, json.RawMessage(`{"task":"work"}`), sink)
+	nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "x"}, json.RawMessage(`{"tasks":["work"]}`), sink)
 	for _, event := range sink.Drain() {
 		if event.Tool != nil && event.Tool.Err != nil {
 			t.Fatalf("delegation failed: %v", event.Tool.Err)

@@ -27,9 +27,3 @@ func (e *echoTool) Run(_ context.Context, input json.RawMessage) (string, error)
 	e.ran = append(e.ran, string(input))
 	return "echo ran", nil
 }
-
-func (e *echoTool) calls() int {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return len(e.ran)
-}

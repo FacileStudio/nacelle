@@ -4,7 +4,7 @@
 Enable multiple sub-agents to run in parallel, collecting results concurrently. First cut: agents compute independently (no shared file editing). Later: add file ownership boundaries if concurrent edits are needed.
 
 ## Why
-The current `NewSubAgentTool` blocks the parent until one nested agent finishes. Parallel agents are the natural extension of the existing concurrency contract (tool calls already run in parallel, MCP calls already run in parallel).
+The single `subagent` tool blocked the parent until one nested agent finished. Parallel agents are the natural extension of the existing concurrency contract (tool calls already run in parallel, MCP calls already run in parallel).
 
 ## Approach
 Each parallel agent runs in its own goroutine on the same backend, with its own conversation tree and result. Results are collected via a JSON map. If tasks involve file editing, each agent owns a non-overlapping subset of files (see "Conflict Prevention" below).
@@ -63,7 +63,7 @@ If using a shared task list:
 1. **Semaphores** cap concurrency at `MaxConcurrency` (default 4, clamped to 8)
 2. **`sync.Mutex`** safely gathers results from concurrent goroutines
 3. **Partial failure isolation** — if one task fails, others continue; errors returned in separate `errors` JSON field
-4. **Recursion guard** — the parallel tool is stripped from each nested agent's tool set (same pattern as `subagent`)
+4. **Recursion guard** — the parallel tool is stripped from each nested agent's tool set (the same guard the single `subagent` tool used before it was removed)
 5. **Result format**: `{"tasks":{"0":"result0",...},"errors":{"1":"error1",...}}`
 
 ## Files to Modify (nacelle-tui — pending your agent's work)
@@ -96,7 +96,7 @@ If using a shared task list:
 
 - Do NOT change the Backend interface or Agent struct
 - Do NOT make the model itself run in parallel
-- Do NOT remove the existing single-subagent tool
+- Do NOT resurrect a single-subagent tool; `parallel_subagent` with a one-task list is the delegation primitive (the single `subagent` tool was removed for it)
 - Do NOT add generic orchestration framework
 - Do NOT add split-pane UI (tabbed first)
 - Do NOT add rate-limiting

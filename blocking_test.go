@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"iter"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,19 +31,19 @@ func (b *blocking) Stream(ctx context.Context, _ nacelle.Request) iter.Seq2[nace
 // running behind a tool result nobody will read — esc in the parent's UI has
 // to reach the delegate, because a delegation is minutes of billed work.
 func TestDelegateHonoursACancelledContext(t *testing.T) {
-	tool, err := nacelle.NewSubAgentTool(
+	tool, err := nacelle.NewParallelSubAgentTool(
 		nacelle.Config{Backend: &blocking{}, System: "outer"},
-		nacelle.SubAgentOptions{},
+		nacelle.ParallelSubAgentOptions{},
 	)
 	if err != nil {
-		t.Fatalf("NewSubAgentTool: %v", err)
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	sink := &nacelle.ToolSink{}
 	done := make(chan struct{})
 	go func() {
-		nacelle.RunTool(ctx, tool, nacelle.Invocation{ID: "x"}, json.RawMessage(`{"task":"work"}`), sink)
+		nacelle.RunTool(ctx, tool, nacelle.Invocation{ID: "x"}, json.RawMessage(`{"tasks":["work"]}`), sink)
 		close(done)
 	}()
 	select {
@@ -51,7 +52,10 @@ func TestDelegateHonoursACancelledContext(t *testing.T) {
 		t.Fatal("the delegation ignored the cancelled context")
 	}
 	events := sink.Drain()
-	if len(events) == 0 || events[len(events)-1].Tool == nil || events[len(events)-1].Tool.Err == nil {
+	if len(events) == 0 || events[len(events)-1].Tool == nil {
 		t.Fatalf("events = %v, want a tool result carrying the cancellation", events)
+	}
+	if !strings.Contains(events[len(events)-1].Tool.Result, "context canceled") {
+		t.Fatalf("result = %q, want the cancellation surfaced as the task error", events[len(events)-1].Tool.Result)
 	}
 }

@@ -9,19 +9,13 @@ import (
 	"strings"
 )
 
-// SubAgentToolName is the name the sub-agent tool registers under, and the
-// name stripped from the tools a nested run inherits. Stripping by this name
-// is the recursion guard: a sub-agent cannot ask for another sub-agent, so
-// delegation is exactly one level deep unless a caller builds that on purpose.
-const SubAgentToolName = "subagent"
-
 // SubAgentOptions overrides what the nested agent inherits from its parent's
 // Config. The zero value is a working sub-agent: it runs on the parent's
 // backend and system prompt, under the parent's iteration ceiling, with the
 // parent's tools minus the sub-agent itself.
 type SubAgentOptions struct {
-	// Name is the tool name the model calls, defaulting to SubAgentToolName.
-	// Renaming it renames what the recursion guard strips too.
+	// Name is the tool name the model calls, and the name the recursion guard
+	// strips from the tools the nested run inherits.
 	Name string
 
 	// Description is what the model reads when choosing the tool. Empty
@@ -52,47 +46,6 @@ type SubAgentOptions struct {
 	// moved. A caller that shows totals anywhere wires this into them.
 	// It runs on the stream's goroutine; keep it cheap and non-blocking.
 	Usage func(Usage)
-}
-
-// NewSubAgentTool builds a `task`-style delegation tool: a fresh Agent run,
-// on the same backend as cfg but with its own message list and its own
-// context, that works a task to completion and returns only its final answer.
-//
-// The parent's event stream sees one tool call and one tool result — whatever
-// RunTool already reports — and nothing else. Text, thinking and usage from
-// the nested run are consumed here: a transcript showing two agents talking
-// over each other is a transcript nobody can read.
-//
-// Everything the nested run does is bounded: its tools are cfg.Tools with the
-// sub-agent removed, its iterations come from opts or cfg.MaxIterations, and
-// its approvals come from opts.Approve, defaulting to deny-all. The tool is
-// built eagerly, so a backend that cannot honour the inherited config fails
-// here rather than the first time the model delegates.
-func NewSubAgentTool(cfg Config, opts SubAgentOptions) (Tool, error) {
-	name := opts.Name
-	if name == "" {
-		name = SubAgentToolName
-	}
-
-	nested, err := New(subAgentConfig(cfg, opts, name))
-	if err != nil {
-		return nil, fmt.Errorf("nacelle: building the %s agent: %w", name, err)
-	}
-
-	description := opts.Description
-	if description == "" {
-		description = "Delegate a self-contained task to a fresh assistant run with its own " +
-			"context window, which returns only its final answer. Use it when a side task would " +
-			"flood this conversation with material you will not need again: wide file searches, " +
-			"log or output dumps, exploration you only want the conclusion of. The task must " +
-			"carry everything needed to do the work — no part of this conversation carries over, " +
-			"and nothing the delegate does is visible here except what it returns, so ask for " +
-			"the shape of answer you want: findings, files changed, a verdict with its evidence."
-	}
-
-	return NewTool(name, description, func(ctx context.Context, in subAgentInput) (string, error) {
-		return delegate(ctx, nested, in.Task, opts.Usage)
-	})
 }
 
 // subAgentConfig builds the Config the nested agent runs on: the parent's
@@ -126,11 +79,6 @@ func subAgentConfig(cfg Config, opts SubAgentOptions, name string) Config {
 		Approve:       approve,
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
-}
-
-// subAgentInput is what the model hands the tool: the task, whole.
-type subAgentInput struct {
-	Task string `json:"task" jsonschema:"required,description=The complete task for the delegate, with every fact and file path it needs"`
 }
 
 // delegate runs the nested agent to completion and returns its final text.
