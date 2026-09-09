@@ -241,24 +241,16 @@ Commands run with a scrubbed environment (`PATH` and `HOME`, nothing else), in t
 process group so a timeout kills the children too, with every output capped and truncation
 announced rather than silent.
 
-Two tools sit outside the confined set because they answer questions the working directory
-cannot. `tools.WebSearch(url)` searches the web through a
-[SearXNG](https://docs.searxng.org) instance you host, and `tools.WebFetch()` reads one of the
-pages it finds:
+One tool sits outside the confined set because it answers a question the working directory
+cannot. `tools.WebFetch()` reads one web page by URL:
 
 ```go
-searching, err := tools.WebSearch(os.Getenv("SEARCH_URL"))  // "" builds nothing, and no error
 reading, err := tools.WebFetch()
-local = append(append(local, searching...), reading...)
+local = append(local, reading...)
 ```
 
-Both backends can search server-side and neither does it for free — $10 per 1,000 searches on
-Anthropic, no free tier on OpenRouter — while an instance you already run costs nothing per
-query, keeps the queries on your own machine, and works the same on either backend because it
-is an ordinary local tool rather than a request parameter. There is no default endpoint and
-there will not be one: this repository is public, and any instance shipped as a default would
-be somebody else's machine. As with the root, the endpoint comes from the host and never from
-a tool argument — the model supplies a query and nothing else.
+It is an ordinary local tool rather than a request parameter, so it works the same on either
+backend.
 
 `web_fetch` is the one tool here whose destination the model chooses, which is the whole of
 SSRF, so the address check lives in the dialer's `Control` hook rather than on the URL: a
@@ -269,9 +261,9 @@ on every redirect hop. Pages come back as text with headings, lists, code and ab
 it asks for `text/markdown` first, which Cloudflare and Vercel answer by converting at the edge
 for roughly 80% fewer tokens.
 
-Both are read-only and neither can be made safe against what it reads. A fetched page is text
-written by a stranger arriving where the model reads instructions, and it can ask for another
-URL with something from the conversation in the query string. Mount them knowing that.
+It is read-only and cannot be made safe against what it reads. A fetched page is text written
+by a stranger arriving where the model reads instructions, and it can ask for another URL with
+something from the conversation in the query string. Mount it knowing that.
 
 [`os.Root`]: https://pkg.go.dev/os#Root
 

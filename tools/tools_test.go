@@ -220,12 +220,4 @@ func TestWebToolsReadOnlyDeclarations(t *testing.T) {
 	if ro, ok := fetchTools[0].(nacelle.ReadOnlyTool); !ok || !ro.IsReadOnly() {
 		t.Errorf("web_fetch does not satisfy ReadOnlyTool")
 	}
-
-	searchTools, err := WebSearch("https://search.example.com")
-	if err != nil || len(searchTools) != 1 {
-		t.Fatalf("WebSearch: %v, len %d", err, len(searchTools))
-	}
-	if ro, ok := searchTools[0].(nacelle.ReadOnlyTool); !ok || !ro.IsReadOnly() {
-		t.Errorf("web_search does not satisfy ReadOnlyTool")
-	}
 }

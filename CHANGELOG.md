@@ -24,6 +24,22 @@ while on `v0`, a breaking change bumps the minor.
 - **`checkOutsideRoot` / `resolveCleanPath` / `resolveDirPath` / `checkNotRoot`**: path resolution helpers extracted from `clean` and `cleanDir`, so the strict check is one call site rather than duplicated logic in each tool.
 - **`clean` / `cleanDir` now take `strict bool`**: the confinement check is a parameter, not a constant, so hosts can opt in per set.
 
+### Removed
+
+- **`NewSubAgentTool` and the `subagent` tool are gone**: the single-delegate tool, its
+  `SubAgentToolName` constant and its input shape are removed, leaving `NewParallelSubAgentTool`
+  as the only delegation tool. Callers that built a single delegate hand
+  `NewParallelSubAgentTool` a one-task list instead; the change is mechanical apart from the
+  result shape, which is a JSON map rather than a bare string. The shared delegation machinery
+  (`delegate`, `subAgentConfig`, `SubAgentOptions`) is unchanged and keeps its coverage through
+  the parallel tool's tests.
+- **`tools.WebSearch` and the `web_search` tool are gone**: the SearXNG-backed search tool and
+  its `webSearchInput` shape are removed, leaving `tools.WebFetch` as the only web tool. Hosts
+  that mounted search drop the `WebSearch(...)` call and keep `WebFetch`; nothing else changes.
+
+BREAKING CHANGE: `NewSubAgentTool` and the `subagent` tool are removed; `NewParallelSubAgentTool` is the only delegation tool.
+BREAKING CHANGE: `tools.WebSearch` and the `web_search` tool are removed; `tools.WebFetch` is the only web tool.
+
 ## [v0.8.7] — 2026-09-03
 
 ### Added

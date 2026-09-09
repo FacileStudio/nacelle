@@ -117,11 +117,7 @@ func loadAllTestTools(t *testing.T) map[string]nacelle.Tool {
 	if err != nil {
 		t.Fatalf("WebFetch: %v", err)
 	}
-	searchTools, err := tools.WebSearch("https://example.com")
-	if err != nil {
-		t.Fatalf("WebSearch: %v", err)
-	}
-	allTools = append(append(allTools, fetchTools...), searchTools...)
+	allTools = append(allTools, fetchTools...)
 	return nacelle.ToolsByName(allTools)
 }
 
@@ -136,7 +132,7 @@ func TestPlanCallsIntegratesWithRealTools(t *testing.T) {
 		{ID: "c6", Name: "find_files"},
 		{ID: "c7", Name: "web_fetch"},
 		{ID: "c8", Name: "search_content"},
-		{ID: "c9", Name: "web_search"},
+		{ID: "c9", Name: "web_fetch"},
 	}
 
 	planned := nacelle.PlanCalls(calls, byName)

@@ -74,14 +74,13 @@ func WebFetch() ([]nacelle.Tool, error) {
 type fetcher struct{ client *http.Client }
 
 type webFetchInput struct {
-	URL string `json:"url" jsonschema:"required,description=The full http or https URL of the page to read. Use a URL you already have — from web_search results or from a link on a page you fetched — rather than guessing one"`
+	URL string `json:"url" jsonschema:"required,description=The full http or https URL of the page to read. Use a URL you already have — from a link on a page you fetched — rather than guessing one"`
 }
 
 // fetchTool builds the reader.
 func (f *fetcher) fetchTool() (nacelle.Tool, error) {
 	return nacelle.NewToolWithOptions("web_fetch",
 		"Read one web page and get back its text: headings, paragraphs, lists, code blocks and links. "+
-			"Use it after web_search to read a result properly — search returns a sentence per hit, this returns the page. "+
 			"Navigation, scripts and styling are stripped; links are absolute so you can follow one by calling this again. "+
 			"Only http and https, and only the public internet.",
 		func(ctx context.Context, in webFetchInput) (string, error) {

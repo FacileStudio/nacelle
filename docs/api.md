@@ -573,7 +573,6 @@ func (s *Set) Dir() string
 func (s *Set) Tools() ([]nacelle.Tool, error)    // everything, honouring Config.AllowBash
 func (s *Set) ReadOnly() ([]nacelle.Tool, error) // read, find, search — nothing that can write
 
-func WebSearch(endpoint string) ([]nacelle.Tool, error)
 func WebFetch() ([]nacelle.Tool, error)
 ```
 
@@ -582,20 +581,6 @@ ambiguous or absent match), `list_directory` (one directory, subdirectories mark
 (glob, files only), `search_content` (grep), and — only when `AllowBash` — `run_command`. No tool takes a `path`, `cwd` or `root` argument the model could
 nominate itself; see [architecture.md](architecture.md#the-tool-call-loop) for why that
 specific restriction is load-bearing (CVE-2025-59532).
-
-`WebSearch(endpoint)` is independent of `Set` — no root, no config — and returns one tool,
-`web_search`, against a [SearXNG](https://docs.searxng.org) instance. An empty endpoint returns
-`nil, nil`, this package's convention for "not configured here", while an endpoint that could
-never work (no scheme, no host) is an error at construction rather than a tool that fails on
-first use. There is deliberately no default: this module is public, so a default would send a
-stranger's queries to one operator's host.
-
-The endpoint is a constructor argument and never a tool argument, for the reason `Root` is:
-a model able to name the host a request goes to has been handed the boundary along with the
-thing inside it. The instance needs `json` in `search.formats` in its `settings.yml`, which is
-off by default — the error says so by name, as does the one for the limiter's 403. Results are
-capped at `DefaultSearchResults` and are untrusted text from strangers, which is worth weighing
-when deciding what else to mount beside it.
 
 `WebFetch()` returns one tool, `web_fetch`, which reads a single page by URL: `text/markdown`
 first in the `Accept` header (Cloudflare and Vercel convert at the edge when asked, for roughly

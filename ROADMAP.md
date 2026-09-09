@@ -279,9 +279,9 @@ the argument against redoing them differently.
   project-local `.mcp.json`. It stays out because a config file naming executables to run is
   strictly worse than the project-local `SKILL.md` already gated behind `~/.nacelle/trust.json`,
   so doing it means designing that trust gate rather than reusing it by accident.
-- **Server-side web search, as a paid alternative to `tools.WebSearch`.** Not ordered, and not a
-  gap — `tools.WebSearch` already covers this need for free against an instance you run. This is
-  the option for someone who would rather pay than host a service. Both backends have it
+- **Server-side web search.** Not ordered, and no longer a choice against a free local tool —
+  `tools.WebSearch` was removed, so this is the only web-search option left and the one for
+  someone who would rather pay than host a service. Both backends have it
   natively: Anthropic's `web_search_20260209` is a request parameter and `anthropic-sdk-go`
   already ships `BetaWebSearchTool20260209Param`, and OpenRouter takes `plugins: [{id: "web"}]`
   through the `option.WithJSONSet` escape hatch `requestOptions` already uses. It would fit
