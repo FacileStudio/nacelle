@@ -78,3 +78,80 @@ func TestUserBinsWithoutHome(t *testing.T) {
 		t.Errorf("userBins with no HOME = %v, want nil rather than a relative path", bins)
 	}
 }
+
+func TestCleanStrictAllowsUnderRoot(t *testing.T) {
+	root := t.TempDir()
+	got, err := clean("foo.txt", root, true)
+	if err != nil {
+		t.Fatalf("clean strict allowed path: %v", err)
+	}
+	if !strings.HasPrefix(got, root) {
+		t.Errorf("clean strict got %q, want path under %q", got, root)
+	}
+}
+
+func TestCleanStrictRejectsAbsoluteOutsideRoot(t *testing.T) {
+	root := t.TempDir()
+	_, err := clean("/etc/passwd", root, true)
+	if err == nil {
+		t.Error("clean strict accepted absolute path outside root, want error")
+	}
+}
+
+func TestCleanStrictRejectsDotDotTraversal(t *testing.T) {
+	root := t.TempDir()
+	_, err := clean("../../etc/passwd", root, true)
+	if err == nil {
+		t.Error("clean strict accepted ../ traversal, want error")
+	}
+}
+
+func TestCleanNonStrictPreservesCurrentBehavior(t *testing.T) {
+	root := t.TempDir()
+	got, err := clean("../../etc/passwd", root, false)
+	if err != nil {
+		t.Fatalf("clean non-strict rejected ../ traversal: %v", err)
+	}
+	if got == "" {
+		t.Error("clean non-strict returned empty path")
+	}
+}
+
+func TestCleanDirStrictAllowsUnderRoot(t *testing.T) {
+	root := t.TempDir()
+	got, err := cleanDir("subdir", root, true)
+	if err != nil {
+		t.Fatalf("cleanDir strict allowed path: %v", err)
+	}
+	if !strings.HasPrefix(got, root) {
+		t.Errorf("cleanDir strict got %q, want path under %q", got, root)
+	}
+}
+
+func TestCleanDirStrictRejectsAbsoluteOutsideRoot(t *testing.T) {
+	root := t.TempDir()
+	_, err := cleanDir("/tmp", root, true)
+	if err == nil {
+		t.Error("cleanDir strict accepted absolute path outside root, want error")
+	}
+}
+
+func TestCleanDirStrictRejectsDotDotTraversal(t *testing.T) {
+	root := t.TempDir()
+	_, err := cleanDir("../../etc", root, true)
+	if err == nil {
+		t.Error("cleanDir strict accepted ../ traversal, want error")
+	}
+}
+
+func TestCleanDirStrictAllowsEmptyString(t *testing.T) {
+	root := t.TempDir()
+	got, err := cleanDir("", root, true)
+	if err != nil {
+		t.Fatalf("cleanDir strict rejected empty path: %v", err)
+	}
+	absRoot, _ := filepath.Abs(root)
+	if got != absRoot {
+		t.Errorf("cleanDir strict empty got %q, want %q", got, absRoot)
+	}
+}

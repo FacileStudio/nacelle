@@ -134,7 +134,7 @@ func TestCleanWithHomeExpansion(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			result, err := clean(tc.input, root)
+			result, err := clean(tc.input, root, false)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("clean(%q) error = %v, wantErr = %v", tc.input, err, tc.wantErr)
 				return

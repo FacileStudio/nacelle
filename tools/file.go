@@ -22,7 +22,7 @@ func (s *Set) readTool() (nacelle.Tool, error) {
 	return nacelle.NewToolWithOptions("read_file",
 		"Read a file from the working directory. Returns the contents with line numbers, so you can quote a line back exactly. Use it before editing anything.",
 		func(_ context.Context, in readInput) (string, error) {
-			name, err := clean(in.Path, s.dir)
+			name, err := clean(in.Path, s.dir, s.strictConfinement)
 			if err != nil {
 				return "", err
 			}
@@ -74,7 +74,7 @@ func (s *Set) writeTool() (nacelle.Tool, error) {
 	return nacelle.NewTool("write_file",
 		"Create a file, or replace one entirely. The content you give is the whole file, not a fragment. To change part of an existing file use edit_file instead, which cannot silently discard the rest.",
 		func(_ context.Context, in writeInput) (string, error) {
-			name, err := clean(in.Path, s.dir)
+			name, err := clean(in.Path, s.dir, s.strictConfinement)
 			if err != nil {
 				return "", err
 			}
@@ -102,7 +102,7 @@ func (s *Set) editTool() (nacelle.Tool, error) {
 	return nacelle.NewTool("edit_file",
 		"Replace an exact piece of text in a file. The old text must appear exactly once: include the lines around it until it does. Read the file first.",
 		func(_ context.Context, in editInput) (string, error) {
-			name, err := clean(in.Path, s.dir)
+			name, err := clean(in.Path, s.dir, s.strictConfinement)
 			if err != nil {
 				return "", err
 			}

@@ -70,7 +70,7 @@ func TestListDefaultsToTheWorkingDirectory(t *testing.T) {
 		{"./src", filepath.Clean(root) + "/src/"},
 	}
 	for _, tc := range cases {
-		got, err := cleanDir(tc.in, root)
+		got, err := cleanDir(tc.in, root, false)
 		if err != nil {
 			t.Fatalf("cleanDir(%q): %v", tc.in, err)
 		}

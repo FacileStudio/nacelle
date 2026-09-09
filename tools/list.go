@@ -27,7 +27,7 @@ func (s *Set) listTool() (nacelle.Tool, error) {
 	return nacelle.NewToolWithOptions("list_directory",
 		"List one directory: the files in it, and the subdirectories in it marked with a trailing slash. Use it to find your way around a tree you have not seen, before searching it. Generated directories such as .git, node_modules and vendor are left out, exactly as they are when searching.",
 		func(_ context.Context, in listInput) (string, error) {
-			name, err := cleanDir(in.Path, s.dir)
+			name, err := cleanDir(in.Path, s.dir, s.strictConfinement)
 			if err != nil {
 				return "", err
 			}

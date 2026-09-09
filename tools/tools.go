@@ -72,6 +72,13 @@ type Config struct {
 	// not mean.
 	AllowBash bool
 
+	// StrictConfinement rejects paths that resolve outside Root.
+	//
+	// Off by default. When true, every path check in clean and cleanDir
+	// enforces that the resolved absolute path sits under Root, which
+	// blocks both absolute escapes and ../ traversal.
+	StrictConfinement bool
+
 	// CommandEnv is the environment commands run with.
 	//
 	// Nil means a minimal environment — PATH, HOME, and nothing else. The
@@ -107,12 +114,13 @@ type Config struct {
 // Close belongs to the end of the run. It waits for any background goroutines
 // started by the set and releases any resources held by it.
 type Set struct {
-	dir            string
-	allowBash      bool
-	commandEnv     []string
-	commandTimeout time.Duration
-	maxOutput      int
-	maxRead        int
+	dir               string
+	allowBash         bool
+	strictConfinement bool
+	commandEnv        []string
+	commandTimeout    time.Duration
+	maxOutput         int
+	maxRead           int
 
 	// read records which files have been read this session, because Edit
 	// refuses to touch a file the model has not looked at.
@@ -130,13 +138,14 @@ func New(cfg Config) (*Set, error) {
 	}
 
 	set := &Set{
-		dir:            cfg.Root,
-		allowBash:      cfg.AllowBash,
-		commandEnv:     cfg.CommandEnv,
-		commandTimeout: cfg.CommandTimeout,
-		maxOutput:      cfg.MaxOutputBytes,
-		maxRead:        cfg.MaxReadBytes,
-		read:           newReadLog(),
+		dir:               cfg.Root,
+		allowBash:         cfg.AllowBash,
+		strictConfinement: cfg.StrictConfinement,
+		commandEnv:        cfg.CommandEnv,
+		commandTimeout:    cfg.CommandTimeout,
+		maxOutput:         cfg.MaxOutputBytes,
+		maxRead:           cfg.MaxReadBytes,
+		read:              newReadLog(),
 	}
 	if set.commandEnv == nil {
 		set.commandEnv = minimalEnv()
