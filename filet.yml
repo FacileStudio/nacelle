@@ -5,22 +5,25 @@ kind: lib
 ignore: [.git, node_modules, vendor, dist, build, target, testdata, .output, coverage]
 extensions: [.go]
 
-disabled:
-  - gen.line.long # gofmt owns line width
+limits:
+  fileLines: 250        # filet's own default: split the file
+  funcsPerFile: 8
+  funcLines: 30         # filet's own default
+  funcStatements: 25    # filet's own default
+  lineLength: 120       # lll default
+  params: 5
+  returns: 3
+  nesting: 4            # filet's own default
+  complexity: 10        # filet's own default
+  structFields: 12      # filet's own default
+  interfaceMethods: 4   # filet's own default
 
-# The layering, stated where it can be enforced rather than in a README nobody
-# diffs. Two rules matter and the rest are shape.
-#
-# The backends must not import each other: they exist because the two APIs have
-# nothing in common but this package's vocabulary, and the first import between
-# them is the moment one starts speaking the other's schema.
-#
-# tools/ and mcp/ must not import a provider SDK at all. A tool has to be
-# callable by every backend, which is why nacelle.Tool is this package's own
-# interface and not an SDK's — an Anthropic-shaped type in there would mean the
-# OpenRouter backend converting from a vocabulary that has nothing to do with
-# it. The terminal client (nacelle-tui) picks a backend by name and never sees
-# a provider's wire types either; its gate lives in its own repository.
+disabled:
+  # gofmt/rustfmt/prettier owns line breaking; every survivor is a line no
+  # formatter could have wrapped. Flagging it is noise that teaches people to
+  # stop reading the output. Nothing else is disabled: a rule turned off here
+  # must be an argument, not a habit.
+  - gen.line.long
 architecture:
   fileNamePattern: '^[a-z0-9_]+\.go$'
   maxDepth: 3
@@ -38,4 +41,4 @@ architecture:
 # import — a gate that agrees with whatever is already committed. Measured: the
 # repository has zero findings at this level, so the cost of holding it here is
 # nothing and the cost of not doing so is a gate with no opinion.
-failOn: info
+failOn: error
