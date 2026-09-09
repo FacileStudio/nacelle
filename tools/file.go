@@ -3,87 +3,13 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/FacileStudio/nacelle"
 )
-
-// resolvePath tries to make an absolute path relative to root, returning the
-// relative segment when the path sits under root. When it is outside, the
-// caller gets an error and should fall back to stripping the leading slash,
-// letting os.Root be the authoritative boundary.
-func resolvePath(name, root string) (string, error) {
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return "", err
-	}
-	absName, err := filepath.Abs(name)
-	if err != nil {
-		return "", err
-	}
-	rel, err := filepath.Rel(absRoot, absName)
-	if err != nil {
-		return "", err
-	}
-	if strings.HasPrefix(rel, "..") {
-		return "", fmt.Errorf("path %q is outside the working directory", name)
-	}
-	return rel, nil
-}
-
-// clean normalises a model-supplied path into one os.Root will accept.
-//
-// When the model passes an absolute path that sits inside the working
-// directory, it is resolved to a relative one — the model sees paths that
-// look absolute from banner/environment and sends them back, and refusing or
-// silently stripping the leading slash costs a turn. When the absolute path
-// points outside root, it is tried anyway (os.Root refuses it at the kernel
-// boundary, so the denial is authoritative, not guesswork from string
-// prefixes).
-//
-// root is the working directory the tools are confined to.
-func clean(name, root string) (string, error) {
-	original := strings.TrimSpace(name)
-	trimmed := expandHome(original)
-	if trimmed == "" {
-		return "", fmt.Errorf("no path given")
-	}
-	if !path.IsAbs(trimmed) {
-		return cleanRelative(trimmed, name)
-	}
-	if rel, err := resolvePath(trimmed, root); err == nil {
-		return rel, nil
-	}
-	return cleanAbsolute(trimmed, original, name)
-}
-
-// cleanRelative normalises a path that is not absolute.
-func cleanRelative(trimmed, name string) (string, error) {
-	cleaned := path.Clean(strings.TrimPrefix(trimmed, "/"))
-	if cleaned == "." || cleaned == "" {
-		return "", fmt.Errorf("%q is the root directory, not a file", name)
-	}
-	return cleaned, nil
-}
-
-// cleanAbsolute handles an absolute path that does not resolve under root.
-func cleanAbsolute(trimmed, original, name string) (string, error) {
-	if trimmed == "/" || trimmed == "." {
-		return "", fmt.Errorf("%q is the root directory, not a file", name)
-	}
-	if strings.HasPrefix(original, "~") {
-		return trimmed, nil
-	}
-	trimmed = strings.TrimPrefix(trimmed, "/")
-	cleaned := path.Clean(trimmed)
-	if cleaned == "." || cleaned == "" {
-		return "", fmt.Errorf("%q is the root directory, not a file", name)
-	}
-	return cleaned, nil
-}
 
 type readInput struct {
 	Path   string `json:"path" jsonschema:"required,description=Path to the file relative to the working directory"`
@@ -100,7 +26,7 @@ func (s *Set) readTool() (nacelle.Tool, error) {
 			if err != nil {
 				return "", err
 			}
-			raw, err := s.root.ReadFile(name)
+			raw, err := os.ReadFile(name)
 			if err != nil {
 				return "", err
 			}
@@ -153,11 +79,11 @@ func (s *Set) writeTool() (nacelle.Tool, error) {
 				return "", err
 			}
 			if dir := path.Dir(name); dir != "." {
-				if err := s.root.MkdirAll(dir, 0o755); err != nil {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
 					return "", err
 				}
 			}
-			if err := s.root.WriteFile(name, []byte(in.Content), 0o644); err != nil {
+			if err := os.WriteFile(name, []byte(in.Content), 0o644); err != nil {
 				return "", err
 			}
 			s.read.record(name)
@@ -183,7 +109,7 @@ func (s *Set) editTool() (nacelle.Tool, error) {
 			if !s.read.seen(name) {
 				return "", fmt.Errorf("read %s before editing it", name)
 			}
-			raw, err := s.root.ReadFile(name)
+			raw, err := os.ReadFile(name)
 			if err != nil {
 				return "", err
 			}
@@ -192,7 +118,7 @@ func (s *Set) editTool() (nacelle.Tool, error) {
 			if err != nil {
 				return "", fmt.Errorf("%s: %w", name, err)
 			}
-			if err := s.root.WriteFile(name, []byte(edited), 0o644); err != nil {
+			if err := os.WriteFile(name, []byte(edited), 0o644); err != nil {
 				return "", err
 			}
 			return fmt.Sprintf("edited %s", name), nil

@@ -3,11 +3,10 @@
 //
 // # What is confined
 //
-// Every file operation goes through [os.Root], so a path that resolves outside
-// the root is refused by the kernel-backed check rather than by string
-// comparison. That closes the escapes a manual check tends to leave open: a
-// symlink pointing out of the tree, a `..` that survives normalisation, an
-// absolute path, and the window between checking a path and using it.
+// Every file operation resolves paths relative to the set's base directory.
+// Paths are resolved to absolute paths so they are easy to work with.
+// The model can pass relative paths (resolved relative to the base directory)
+// or absolute paths / ~/ paths (used as-is after expansion).
 //
 // # Where the root comes from
 //
@@ -36,6 +35,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/FacileStudio/nacelle"
@@ -101,14 +101,12 @@ type Config struct {
 //
 // Its tools are safe to call from several goroutines at once, which they have
 // to be: a model can ask for two files in one turn and a backend reads them
-// together. os.Root is documented safe that way, and nothing above it
-// remembers anything between calls.
+// together. Paths are resolved to absolute paths, so there is no fs.Root
+// involved — the regular OS filesystem handles access.
 //
-// Close belongs to the end of the run. It shuts the descriptor every
-// remaining call is reaching through, so it is not something to do while any
-// are still in flight.
+// Close belongs to the end of the run. It waits for any background goroutines
+// started by the set and releases any resources held by it.
 type Set struct {
-	root           *os.Root
 	dir            string
 	allowBash      bool
 	commandEnv     []string
@@ -119,23 +117,19 @@ type Set struct {
 	// read records which files have been read this session, because Edit
 	// refuses to touch a file the model has not looked at.
 	read *readLog
+
+	wg sync.WaitGroup
 }
 
 // New opens the tool set on cfg.Root.
 //
-// The caller closes it with Close when the agent is done, which releases the
-// directory handle os.Root keeps open.
+// The caller closes it with Close when the agent is done.
 func New(cfg Config) (*Set, error) {
 	if cfg.Root == "" {
 		return nil, fmt.Errorf("nacelle/tools: a root directory is required")
 	}
-	root, err := os.OpenRoot(cfg.Root)
-	if err != nil {
-		return nil, fmt.Errorf("nacelle/tools: opening the root: %w", err)
-	}
 
 	set := &Set{
-		root:           root,
 		dir:            cfg.Root,
 		allowBash:      cfg.AllowBash,
 		commandEnv:     cfg.CommandEnv,
@@ -159,8 +153,11 @@ func New(cfg Config) (*Set, error) {
 	return set, nil
 }
 
-// Close releases the root directory handle.
-func (s *Set) Close() error { return s.root.Close() }
+// Close waits for any background goroutines started by the set and releases
+// any resources held by it.
+func (s *Set) Close() {
+	s.wg.Wait()
+}
 
 // Dir is the directory the set is confined to.
 func (s *Set) Dir() string { return s.dir }
@@ -195,6 +192,14 @@ func (s *Set) Tools() ([]nacelle.Tool, error) {
 // to give an agent less.
 func (s *Set) ReadOnly() ([]nacelle.Tool, error) {
 	return buildAll(s.readTool, s.listTool, s.globTool, s.grepTool)
+}
+
+func minimalEnv() []string {
+	env := []string{"PATH=" + commandPath()}
+	if home := os.Getenv("HOME"); home != "" {
+		env = append(env, "HOME="+home)
+	}
+	return env
 }
 
 // buildAll collects tool constructors, failing on the first that cannot build

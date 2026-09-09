@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"path"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -25,16 +26,24 @@ type globInput struct {
 }
 
 // relativise turns a model-supplied absolute path into a relative one when it
-// sits under dir, or strips the leading slash otherwise. os.Root refuses
-// anything outside, so the fallback is authoritative rather than guesswork.
+// sits under dir, or returns the absolute path expanded. The path resolver
+// always returns absolute paths.
 func relativise(pattern, dir string) string {
-	if !path.IsAbs(pattern) {
-		return pattern
+	expanded := ExpandHome(strings.TrimSpace(pattern))
+	if expanded == "" {
+		return ""
 	}
-	if rel, err := resolvePath(pattern, dir); err == nil {
+	if !filepath.IsAbs(expanded) {
+		return expanded
+	}
+	absDir, _ := filepath.Abs(dir)
+	absPattern, _ := filepath.Abs(expanded)
+	rel, err := filepath.Rel(absDir, absPattern)
+	if err == nil && !strings.HasPrefix(rel, "..") {
 		return rel
 	}
-	return strings.TrimPrefix(pattern, "/")
+
+	return absPattern
 }
 
 // globTool builds the file finder.
@@ -113,7 +122,7 @@ func (s *Set) grepTool() (nacelle.Tool, error) {
 // an error, and a search that cannot fail should not oblige every caller to
 // check whether it did.
 func (s *Set) grepFile(name string, expression *regexp.Regexp, matches *[]string) {
-	raw, err := s.root.ReadFile(name)
+	raw, err := os.ReadFile(name)
 	if err != nil || isBinary(raw) {
 		return
 	}
@@ -131,17 +140,21 @@ func (s *Set) grepFile(name string, expression *regexp.Regexp, matches *[]string
 // visit to skip a single file without aborting the walk; other errors from
 // visit stop the walk.
 func (s *Set) walk(visit func(name string, entry fs.DirEntry) error) error {
-	return fs.WalkDir(s.root.FS(), ".", func(name string, entry fs.DirEntry, err error) error {
+	root, err := filepath.Abs(s.dir)
+	if err != nil {
+		return err
+	}
+	return filepath.WalkDir(root, func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return ErrSkipEntry
 		}
-		if entry.IsDir() {
-			if name != "." && (skipped[entry.Name()] || strings.HasPrefix(entry.Name(), ".")) {
-				return fs.SkipDir
+		if d.IsDir() {
+			if name != root && (skipped[d.Name()] || strings.HasPrefix(d.Name(), ".")) {
+				return filepath.SkipDir
 			}
 			return nil
 		}
-		return visit(name, entry)
+		return visit(name, d)
 	})
 }
 
@@ -197,7 +210,7 @@ func matchSegments(pattern, name []string, matchStar func([]string, []string) bo
 		if len(name) == 0 {
 			return false
 		}
-		if ok, err := path.Match(pattern[0], name[0]); err != nil || !ok {
+		if ok, err := filepath.Match(pattern[0], name[0]); err != nil || !ok {
 			return false
 		}
 		pattern, name = pattern[1:], name[1:]

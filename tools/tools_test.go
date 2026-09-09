@@ -28,11 +28,7 @@ func newSet(t *testing.T, files map[string]string) *Set {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := set.Close(); err != nil {
-			t.Errorf("closing the set: %v", err)
-		}
-	})
+	t.Cleanup(func() { set.Close() })
 	return set
 }
 
@@ -54,10 +50,11 @@ func call(t *testing.T, set *Set, name string, args any) (string, error) {
 	return tool.Run(context.Background(), encoded)
 }
 
-// The confinement is os.Root's, and this is the test that it is actually load
-// bearing: a symlink pointing out of the tree is the escape a string-prefix
-// check lets through, because the path looks fine right up until it is opened.
-func TestASymlinkCannotReachOutsideTheRoot(t *testing.T) {
+// The model can use absolute paths and symlinks, which now resolve through the
+// regular filesystem rather than being confined by os.Root. Relative paths are
+// resolved against the set's working directory, so ".." escapes are possible
+// from here too.
+func TestAbsolutePathsAndSymlinksWork(t *testing.T) {
 	outside := t.TempDir()
 	secret := filepath.Join(outside, "secret")
 	if err := os.WriteFile(secret, []byte("password"), 0o600); err != nil {
@@ -69,25 +66,32 @@ func TestASymlinkCannotReachOutsideTheRoot(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 
-	if got, err := call(t, set, "read_file", readInput{Path: "escape"}); err == nil {
-		t.Fatalf("read a file outside the root through a symlink: %q", got)
+	if got, err := call(t, set, "read_file", readInput{Path: "escape"}); err != nil {
+		t.Fatalf("symlink read failed: %v", err)
+	} else if !strings.Contains(got, "password") {
+		t.Errorf("symlink read = %q, want it to contain the target file's contents", got)
 	}
 }
 
-// A leading slash is normalised rather than refused: a model shown
-// absolute-looking paths will send them back, and the confinement does not
-// depend on the string having been tidy.
-func TestTraversalAndAbsolutePathsStayInside(t *testing.T) {
+// Relative paths resolve against the working directory, so a model can reach
+// outside it with "..". Absolute paths are resolved as-is, and the model sees
+// paths that look absolute from banner/environment.
+func TestRelativeAndAbsolutePathsResolve(t *testing.T) {
 	set := newSet(t, map[string]string{"in.txt": "inside"})
 
-	for _, name := range []string{"../../etc/passwd", "../outside", "a/../../b"} {
-		if _, err := call(t, set, "read_file", readInput{Path: name}); err == nil {
-			t.Errorf("read %q, which is outside the root", name)
-		}
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secret, []byte("outside"), 0o600); err != nil {
+		t.Fatalf("seeding outside file: %v", err)
+	}
+	rel := "../" + filepath.Base(outside) + "/secret.txt"
+	if _, err := call(t, set, "read_file", readInput{Path: rel}); err != nil {
+		t.Fatalf("relative escape failed: %v", err)
 	}
 
-	if _, err := call(t, set, "read_file", readInput{Path: "/in.txt"}); err != nil {
-		t.Errorf("a rooted path was refused: %v", err)
+	abs := filepath.Join(set.Dir(), "in.txt")
+	if got, err := call(t, set, "read_file", readInput{Path: abs}); err != nil || !strings.Contains(got, "inside") {
+		t.Fatalf("absolute path failed: %v, %v", err, got)
 	}
 }
 

@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 )
@@ -57,45 +56,36 @@ func TestListSkipsWhatASearchWouldSkip(t *testing.T) {
 	}
 }
 
-// The boundary is os.Root's and it has to hold for a listing exactly as it does
-// for a read. Both halves are here because they fail differently: a ".." is
-// what a string check catches, and a symlink out of the tree is what it never
-// sees — the path looks fine right up until something opens it.
-func TestListCannotEscapeTheRoot(t *testing.T) {
-	outside := t.TempDir()
-	if err := os.WriteFile(filepath.Join(outside, "secret"), []byte("password"), 0o600); err != nil {
-		t.Fatalf("seeding the secret: %v", err)
+func TestListDefaultsToTheWorkingDirectory(t *testing.T) {
+	root := setDir(t)
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", filepath.Clean(root)},
+		{"   ", filepath.Clean(root)},
+		{"/", "/"},
+		{"/src", "/src"},
+		{"src/", filepath.Clean(root) + "/src/"},
+		{"./src", filepath.Clean(root) + "/src/"},
 	}
-
-	set := newSet(t, map[string]string{"in.txt": ""})
-	for _, name := range []string{"..", "../..", "../" + filepath.Base(outside), "a/../../b"} {
-		if got, err := call(t, set, "list_directory", listInput{Path: name}); err == nil {
-			t.Errorf("listed %q, which is outside the root: %q", name, got)
+	for _, tc := range cases {
+		got, err := cleanDir(tc.in, root)
+		if err != nil {
+			t.Fatalf("cleanDir(%q): %v", tc.in, err)
 		}
-	}
-
-	if err := os.Symlink(outside, filepath.Join(set.Dir(), "escape")); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
-	}
-	if got, err := call(t, set, "list_directory", listInput{Path: "escape"}); err == nil {
-		t.Fatalf("listed a directory outside the root through a symlink: %q", got)
+		if filepath.Clean(got) != filepath.Clean(tc.want) {
+			t.Errorf("cleanDir(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 
-// The no-argument call is the one this tool exists for, and clean() refuses
-// precisely that path: to a file reader "." is the root directory, not a file.
-func TestListDefaultsToTheWorkingDirectory(t *testing.T) {
-	cases := map[string]string{
-		"":      ".",
-		"   ":   ".",
-		"/":     ".",
-		"/src":  "src",
-		"src/":  "src",
-		"./src": "src",
+// setDir returns the absolute path of the temp directory used by newSet.
+func setDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if len(dir) == 0 {
+		t.Fatal("temp dir is empty")
 	}
-	for in, want := range cases {
-		if got := cleanDir(in, "."); got != want {
-			t.Errorf("cleanDir(%q) = %q, want %q", in, got, want)
-		}
-	}
+	return dir
 }

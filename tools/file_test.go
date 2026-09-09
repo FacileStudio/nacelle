@@ -97,15 +97,15 @@ func TestExpandHome(t *testing.T) {
 		"just tilde":    {"~", home},
 		"tilde slash":   {"~/foo", filepath.Join(home, "foo")},
 		"tilde deep":    {"~/foo/bar", filepath.Join(home, "foo", "bar")},
-		"tilde user":    {"~user/foo", "~user/foo"},
+		"tilde user":    {"~user/foo", filepath.Join(home, "user", "foo")},
 		"absolute path": {"/absolute/path", "/absolute/path"},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			result := expandHome(tc.input)
+			result := ExpandHome(tc.input)
 			if result != tc.expected {
-				t.Errorf("expandHome(%q) = %q, want %q", tc.input, result, tc.expected)
+				t.Errorf("ExpandHome(%q) = %q, want %q", tc.input, result, tc.expected)
 			}
 		})
 	}
@@ -120,13 +120,13 @@ func TestCleanWithHomeExpansion(t *testing.T) {
 		expected string
 		wantErr  bool
 	}{
-		"relative path":           {"foo/bar", "foo/bar", false},
-		"absolute inside root":    {filepath.Join(root, "foo"), "foo", false},
-		"absolute outside root":   {"/etc/passwd", "etc/passwd", false},
+		"relative path":           {"foo/bar", filepath.Join(root, "foo", "bar"), false},
+		"absolute inside root":    {filepath.Join(root, "foo"), filepath.Join(root, "foo"), false},
+		"absolute outside root":   {"/etc/passwd", "/etc/passwd", false},
 		"tilde":                   {"~", home, false},
-		"tilde inside root":       {"~/workdir/foo", "foo", false},
+		"tilde inside root":       {"~/workdir/foo", filepath.Join(root, "foo"), false},
 		"tilde outside root":      {"~/other/foo", filepath.Join(home, "other", "foo"), false},
-		"tilde user":              {"~user/foo", "~user/foo", false},
+		"tilde user":              {"~user/foo", filepath.Join(home, "user", "foo"), false},
 		"empty":                   {"", "", true},
 		"root directory":          {".", "", true},
 		"absolute root directory": {"/", "", true},

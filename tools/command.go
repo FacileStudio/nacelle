@@ -98,16 +98,19 @@ func (s *Set) run(ctx context.Context, command string, timeout time.Duration) (s
 	cmd.WaitDelay = grace
 	cmd.Cancel = func() error { return signalGroup(cmd, syscall.SIGTERM) }
 
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
+	out := &bytes.Buffer{}
+	cmd.Stdout, cmd.Stderr = out, out
 
 	if err := cmd.Start(); err != nil {
 		return "", err
 	}
 
 	reaped := make(chan struct{})
-	go escalate(cmd, ctx.Done(), reaped)
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		escalate(cmd, ctx.Done(), reaped)
+	}()
 	waitErr := cmd.Wait()
 	close(reaped)
 

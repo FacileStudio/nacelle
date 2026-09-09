@@ -28,7 +28,7 @@ func TestOneToolSetServesManyCallersWithoutCrossingThem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New = %v", err)
 	}
-	defer func() { _ = set.Close() }()
+	defer set.Close()
 
 	built, err := set.ReadOnly()
 	if err != nil {

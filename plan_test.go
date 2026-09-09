@@ -107,9 +107,7 @@ func loadAllTestTools(t *testing.T) map[string]nacelle.Tool {
 		t.Fatalf("tools.New: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := set.Close(); err != nil {
-			t.Errorf("set.Close: %v", err)
-		}
+		set.Close()
 	})
 	allTools, err := set.Tools()
 	if err != nil {
