@@ -178,3 +178,57 @@ func TestBashIsNotMountedUnlessAskedFor(t *testing.T) {
 		t.Error("run_command is mounted without AllowBash")
 	}
 }
+
+func TestStrictConfinementBlocksDirectoryChangingCommands(t *testing.T) {
+	set, err := New(Config{Root: t.TempDir(), AllowBash: true, StrictConfinement: true})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer set.Close()
+
+	cases := []string{
+		"cd /etc",
+		"cd ..",
+		"cd .. && pwd",
+		"bash -c 'cd /etc && pwd'",
+		"pwd && cd /etc",
+	}
+	for _, command := range cases {
+		_, err := set.run(context.Background(), command, DefaultCommandTimeout)
+		if err == nil {
+			t.Errorf("strict confinement allowed directory change: %q", command)
+		}
+	}
+}
+
+func TestStrictConfinementAllowsSafeCommands(t *testing.T) {
+	set, err := New(Config{Root: t.TempDir(), AllowBash: true, StrictConfinement: true})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer set.Close()
+
+	out, err := set.run(context.Background(), "pwd", DefaultCommandTimeout)
+	if err != nil {
+		t.Fatalf("strict confinement blocked safe command: %v", err)
+	}
+	if !strings.Contains(out, set.Dir()) {
+		t.Errorf("safe command ran outside root: got %q, want path under %q", out, set.Dir())
+	}
+}
+
+func TestNonStrictConfinementAllowsDirectoryChangingCommands(t *testing.T) {
+	set, err := New(Config{Root: t.TempDir(), AllowBash: true, StrictConfinement: false})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer set.Close()
+
+	out, err := set.run(context.Background(), "cd /etc && pwd", DefaultCommandTimeout)
+	if err != nil {
+		t.Fatalf("non-strict run failed: %v", err)
+	}
+	if !strings.Contains(out, "/etc") {
+		t.Errorf("non-strict did not allow directory change: got %q, want /etc", out)
+	}
+}

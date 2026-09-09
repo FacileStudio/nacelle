@@ -76,7 +76,10 @@ type Config struct {
 	//
 	// Off by default. When true, every path check in clean and cleanDir
 	// enforces that the resolved absolute path sits under Root, which
-	// blocks both absolute escapes and ../ traversal.
+	// blocks both absolute escapes and ../ traversal. It also blocks
+	// shell commands that change directories or source shell state, so
+	// the command runner cannot escape its working directory through
+	// `cd`, `pushd`, `eval`, and similar primitives.
 	StrictConfinement bool
 
 	// CommandEnv is the environment commands run with.

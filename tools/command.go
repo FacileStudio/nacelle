@@ -53,7 +53,7 @@ func (s *Set) commandTool() (nacelle.Tool, error) {
 //
 // The comparison is made in seconds on purpose. Converting first overflows:
 // time.Duration(1<<40) * time.Second wraps int64 into a negative duration,
-// which expires the moment it is set and turns a silly number into an
+// which expires the moment it is set and turns a silly number into a
 // unrunnable tool.
 func bounded(seconds int, ceiling time.Duration) time.Duration {
 	if seconds <= 0 || time.Duration(seconds) > ceiling/time.Second {
@@ -91,9 +91,34 @@ func (s *Set) run(ctx context.Context, command string, timeout time.Duration) (s
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	if s.strictConfinement {
+		if err := checkCommandEscapes(command); err != nil {
+			return "", err
+		}
+	}
+
+	out, waitErr := executeCommand(ctx, command, s.dir, s.commandEnv)
+
+	var reportErr error
+	switch {
+	case errors.Is(ctx.Err(), context.Canceled):
+		reportErr = ctx.Err()
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		reportErr = errTimedOut{}
+	default:
+		reportErr = waitErr
+	}
+	outStr := report(out.String(), reportErr, s.maxOutput)
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return outStr, ctx.Err()
+	}
+	return outStr, nil
+}
+
+func executeCommand(ctx context.Context, command string, dir string, env []string) (*bytes.Buffer, error) {
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
-	cmd.Dir = s.dir
-	cmd.Env = s.commandEnv
+	cmd.Dir = dir
+	cmd.Env = env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.WaitDelay = grace
 	cmd.Cancel = func() error { return signalGroup(cmd, syscall.SIGTERM) }
@@ -102,26 +127,17 @@ func (s *Set) run(ctx context.Context, command string, timeout time.Duration) (s
 	cmd.Stdout, cmd.Stderr = out, out
 
 	if err := cmd.Start(); err != nil {
-		return "", err
+		return out, err
 	}
 
 	reaped := make(chan struct{})
-	s.wg.Add(1)
 	go func() {
-		defer s.wg.Done()
 		escalate(cmd, ctx.Done(), reaped)
 	}()
 	waitErr := cmd.Wait()
 	close(reaped)
 
-	switch {
-	case errors.Is(ctx.Err(), context.Canceled):
-		return "", ctx.Err()
-	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return report(out.String(), errTimedOut{after: timeout}, s.maxOutput), nil
-	default:
-		return report(out.String(), waitErr, s.maxOutput), nil
-	}
+	return out, waitErr
 }
 
 // killGroup sends one signal to the command and everything it started,
@@ -180,32 +196,6 @@ func escalate(cmd *exec.Cmd, expired <-chan struct{}, reaped <-chan struct{}) {
 }
 
 // errTimedOut is a command killed for running too long.
-type errTimedOut struct{ after time.Duration }
+type errTimedOut struct{}
 
-func (e errTimedOut) Error() string { return fmt.Sprintf("timed out after %s", e.after) }
-
-// report renders the outcome for the model.
-//
-// A failed command returns its output and its status rather than an error,
-// because a non-zero exit is usually the answer: a failing test suite is
-// information, not a broken tool. The distinction the model needs is what
-// happened, and that is in the text.
-func report(output string, err error, limit int) string {
-	body := truncate(strings.TrimRight(output, "\n"), limit)
-	if body == "" {
-		body = "(no output)"
-	}
-
-	switch {
-	case err == nil:
-		return body
-	case errors.As(err, &errTimedOut{}):
-		return body + "\n\n[" + err.Error() + "; the command and its children were killed]"
-	default:
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return fmt.Sprintf("%s\n\n[exit status %d]", body, exit.ExitCode())
-		}
-		return fmt.Sprintf("%s\n\n[%s]", body, err)
-	}
-}
+func (e errTimedOut) Error() string { return fmt.Sprintf("timed out after %s", grace) }

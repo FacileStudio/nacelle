@@ -20,7 +20,7 @@ while on `v0`, a breaking change bumps the minor.
 ## [Unreleased]
 
 ### Added
-- **`StrictConfinement`**: `tools.Config` and `tools.Set` gained an opt-in `StrictConfinement bool` flag. When true, `clean` and `cleanDir` reject paths that resolve outside the working directory, catching both absolute escapes and `../` traversal on relative inputs. Default false — no behaviour change for hosts that do not set it.
+- **`StrictConfinement`**: `tools.Config` and `tools.Set` gained an opt-in `StrictConfinement bool` flag. When true, `clean` and `cleanDir` reject paths that resolve outside the working directory, catching both absolute escapes and `../` traversal on relative inputs. The command runner also blocks shell escapes such as `cd`, `pushd`, and `eval`, so strict confinement closes the shell-based directory-change path as well. Default false — no behaviour change for hosts that do not set it.
 - **`checkOutsideRoot` / `resolveCleanPath` / `resolveDirPath` / `checkNotRoot`**: path resolution helpers extracted from `clean` and `cleanDir`, so the strict check is one call site rather than duplicated logic in each tool.
 - **`clean` / `cleanDir` now take `strict bool`**: the confinement check is a parameter, not a constant, so hosts can opt in per set.
 
