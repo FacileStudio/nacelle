@@ -4,6 +4,17 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [v0.15.0] — 2026-09-10
+
+### Added
+- **`DelegateParallel`**: the detached counterpart to the `parallel_subagent` tool. It fans
+  tasks out to concurrent nested agents on a caller's `Config` and returns a `<-chan ParallelTaskResult`
+  the caller drains as each task finishes — instead of blocking the caller until every task returns
+  one merged JSON. Each `ParallelTaskResult` carries the task index, its result text or error, and
+  its own spend (the same per-index accounting the tool reports). The channel closes when the last
+  task finishes; an empty task list is an error, matching the tool. This is what lets a TUI or CLI
+  keep its main thread responsive while a fan-out grinds.
+
 ## [v0.11.0] — 2026-09-08
 
 ### Added
