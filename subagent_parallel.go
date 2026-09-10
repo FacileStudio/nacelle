@@ -56,6 +56,19 @@ type ParallelSubAgentOptions struct {
 	// Results receives each task's outcome when Detach is set, one call per task
 	// as it finishes, on a background goroutine — keep it cheap and non-blocking.
 	Results func(ParallelTaskResult)
+
+	// Batch is the fan-out's opaque key, forwarded to Tool so a host can route a
+	// detached fan-out's live tool calls alongside the streamed results it
+	// already tags. A raw DelegateParallel caller that names its own batches may
+	// leave it empty and tag inside the Tool callback instead.
+	Batch string
+
+	// Tool receives each nested task's tool call as it begins. batch is the
+	// fan-out's key (opts.Batch), idx is the task's index in the caller's list,
+	// and name is the tool the subagent is about to run. It fires on the task's
+	// stream goroutine; keep it cheap and non-blocking. A host draws "what is
+	// this subagent doing right now" from it.
+	Tool func(batch string, idx int, name string)
 }
 
 // parallelBatch hands out the batch key that ties a Detach'd fan-out's streamed
@@ -99,12 +112,13 @@ func NewParallelSubAgentTool(cfg Config, opts ParallelSubAgentOptions) (Tool, er
 
 	return NewTool(name, description, func(ctx context.Context, in parallelSubAgentInput) (string, error) {
 		config := parallelContext{
-			cfg:  cfg,
-			opts: opts,
-			name: name,
+			cfg:   cfg,
+			opts:  opts,
+			name:  name,
+			batch: opts.Batch,
 		}
 		if opts.Detach {
-			return detachToolResult(ctx, cfg, opts, name, in.Tasks)
+			return detachToolResult(cfg, opts, in.Tasks)
 		}
 		return parallelDelegate(ctx, config, in.Tasks, maxConcurrency)
 	})
@@ -122,9 +136,16 @@ type detachParallelResult struct {
 // immediately returns a stub, forwarding each task's result to opts.Results as
 // the background work finishes. The model keeps its turn; a host that showed
 // the stub to the reader can surface the real outcomes from Results.
-func detachToolResult(ctx context.Context, cfg Config, opts ParallelSubAgentOptions, name string, tasks []string) (string, error) {
+//
+// The fan-out runs on its own background context rather than the caller's, so
+// it outlives the turn that launched it: a parent that finishes (or is
+// cancelled) while its subagents grind does not take them down with it. Detach
+// is the "keep going in the background" contract, and a background that dies
+// with the turn that spawned it would violate that name.
+func detachToolResult(cfg Config, opts ParallelSubAgentOptions, tasks []string) (string, error) {
 	batch := fmt.Sprintf("psa-%d", parallelBatch.Add(1))
-	results, err := DelegateParallel(ctx, cfg, tasks, opts)
+	opts.Batch = batch
+	results, err := DelegateParallel(context.Background(), cfg, tasks, opts)
 	if err != nil {
 		return "", err
 	}
@@ -164,9 +185,10 @@ type parallelTask struct {
 
 // parallelContext carries everything parallelDelegate needs to spawn a worker.
 type parallelContext struct {
-	cfg  Config
-	opts ParallelSubAgentOptions
-	name string
+	cfg   Config
+	opts  ParallelSubAgentOptions
+	name  string
+	batch string
 }
 
 // parallelDelegate runs each task in its own goroutine up to maxConcurrency at
@@ -204,7 +226,7 @@ func fanOut(ctx context.Context, config parallelContext, tasks []string, maxConc
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			done(idx, runParallelTask(ctx, config, task))
+			done(idx, runParallelTask(ctx, config, idx, task))
 		}(i, task)
 	}
 
@@ -214,8 +236,9 @@ func fanOut(ctx context.Context, config parallelContext, tasks []string, maxConc
 // runParallelTask executes one task inside a nested agent and returns the result.
 // The task's spend is accumulated per-index so the response can report what
 // each subagent cost, while the caller's own Usage hook still receives every
-// nested turn as before.
-func runParallelTask(ctx context.Context, config parallelContext, task string) parallelTask {
+// nested turn as before. idx is the task's place in the caller's list, forwarded
+// with each tool call so a host can show which subagent is running what.
+func runParallelTask(ctx context.Context, config parallelContext, idx int, task string) parallelTask {
 	nested, err := New(parallelSubAgentConfig(config.cfg, config.opts, config.name))
 	if err != nil {
 		return parallelTask{err: fmt.Sprintf("building agent: %v", err)}
@@ -230,7 +253,11 @@ func runParallelTask(ctx context.Context, config parallelContext, task string) p
 		}
 	}
 
-	result, err := delegate(ctx, nested, task, accumulate)
+	result, err := delegate(ctx, nested, task, accumulate, func(name string) {
+		if tool := config.opts.Tool; tool != nil {
+			tool(config.batch, idx, name)
+		}
+	})
 	if err != nil {
 		return parallelTask{err: err.Error(), usage: spent}
 	}
@@ -315,9 +342,10 @@ func DelegateParallel(ctx context.Context, cfg Config, tasks []string, opts Para
 		name = ParallelSubAgentToolName
 	}
 	config := parallelContext{
-		cfg:  cfg,
-		opts: opts,
-		name: name,
+		cfg:   cfg,
+		opts:  opts,
+		name:  name,
+		batch: opts.Batch,
 	}
 
 	results := make(chan ParallelTaskResult)

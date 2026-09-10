@@ -4,6 +4,17 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [v0.17.0] — 2026-09-10
+
+### Added
+- **Live tool-call reporting for parallel fan-outs** via
+  `ParallelSubAgentOptions.Tool`. Each nested task's tool calls are surfaced as
+  they begin, tagged with the fan-out's batch key (from the new `Batch` option,
+  set for the Detach'd tool), the task's index, and the tool name. A host uses
+  it to draw what each subagent is doing right now. `delegate` takes a per-task
+  tool callback alongside its usage reporter, so tool events are no longer
+  discarded on the way through.
+
 ## [v0.16.0] — 2026-09-10
 
 ### Added

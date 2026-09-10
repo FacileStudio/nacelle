@@ -3,6 +3,8 @@ package nacelle_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"iter"
 	"strings"
 	"testing"
 	"time"
@@ -263,6 +265,129 @@ func TestParallelSubAgentDetachStreamsResults(t *testing.T) {
 		!strings.Contains(strings.Join(results, " "), "result2") ||
 		!strings.Contains(strings.Join(results, " "), "result3") {
 		t.Errorf("streamed results = %v, want result1/result2/result3", results)
+	}
+}
+
+// ctxRecord is a backend that yields one finished run and records the context
+// each stream ran on, so a test can ask afterwards whether any of those
+// contexts was cancelled. It is the lens a detached fan-out's lifetime is
+// asserted through: the subagents must not share the caller's cancellable
+// context.
+type ctxRecord struct {
+	seen chan context.Context
+}
+
+func (b *ctxRecord) Name() string                                                { return "ctxrecord" }
+func (b *ctxRecord) Capabilities() nacelle.Capabilities                          { return nacelle.Capabilities{} }
+func (b *ctxRecord) CountTokens(context.Context, nacelle.Request) (int64, error) { return 0, nil }
+
+func (b *ctxRecord) Stream(ctx context.Context, _ nacelle.Request) iter.Seq2[nacelle.Event, error] {
+	b.seen <- ctx
+	return func(yield func(nacelle.Event, error) bool) {
+		yield(nacelle.Event{Kind: nacelle.KindText, Text: "ok"}, nil)
+		yield(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopEnd}, nil)
+	}
+}
+
+// TestParallelSubAgentDetachSurvivesParentCancel verifies that cancelling the
+// caller's context does not take a detached fan-out down with it. The parent
+// that launched the subagents sent its turn back to ready — the running agent
+// settles, which cancels the turn's context — and the work it left grinding
+// in the background has to keep going. A detached fan-out must run on its own
+// background context, never the caller's cancellable one.
+func TestParallelSubAgentDetachSurvivesParentCancel(t *testing.T) {
+	backend := &ctxRecord{seen: make(chan context.Context, 3)}
+	got := make(chan nacelle.ParallelTaskResult, 3)
+
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: backend, System: "s",
+	}, nacelle.ParallelSubAgentOptions{Detach: true, Results: func(r nacelle.ParallelTaskResult) { got <- r }})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sink := &nacelle.ToolSink{}
+	nacelle.RunTool(ctx, sub, nacelle.Invocation{ID: "x"},
+		json.RawMessage(`{"tasks":["task1","task2","task3"]}`), sink)
+
+	stub := drainToolResult(t, sink)
+	if !strings.Contains(stub, `"started":3`) {
+		t.Fatalf("stub %q does not say 3 agents started", stub)
+	}
+
+	cancel()
+
+	var ctxs []context.Context
+	deadline := time.After(5 * time.Second)
+	for len(ctxs) < 3 {
+		select {
+		case c := <-backend.seen:
+			ctxs = append(ctxs, c)
+		case <-deadline:
+			t.Fatalf("timed out waiting for the subagents to start")
+		}
+	}
+	for _, c := range ctxs {
+		if c.Err() != nil {
+			t.Error("a detached subagent streamed on a cancelled context — the fan-out must outlive the parent's turn")
+		}
+	}
+
+	var results []string
+	for len(results) < 3 {
+		select {
+		case r := <-got:
+			results = append(results, r.Result)
+		case <-deadline:
+			t.Fatalf("timed out waiting for streamed results, got %v", results)
+		}
+	}
+	if len(results) != 3 {
+		t.Errorf("got %d streamed results, want 3", len(results))
+	}
+}
+
+// TestParallelSubAgentReportsToolCalls verifies the Tool callback fires as each
+// nested task begins a tool call, tagged with the task's index and the tool's
+// name, so a host can draw what each subagent is doing right now.
+func TestParallelSubAgentReportsToolCalls(t *testing.T) {
+	backend := newLoop(
+		[]step{toolStep("echo", `{}`), textStep("ok")},
+		[]step{toolStep("echo", `{}`), textStep("ok")},
+	)
+	echo := &echoTool{}
+	calls := make(chan string, 6)
+
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
+	}, nacelle.ParallelSubAgentOptions{Tool: func(batch string, idx int, name string) {
+		calls <- fmt.Sprintf("%s:%d:%s", batch, idx, name)
+	}})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	sink := &nacelle.ToolSink{}
+	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
+		json.RawMessage(`{"tasks":["t0","t1"]}`), sink)
+	drainToolResult(t, sink)
+
+	got := make(map[string]int)
+	for timeout := 0; timeout < 100; timeout++ {
+		select {
+		case c := <-calls:
+			got[c] = 1
+		default:
+		}
+		if len(got) == 2 {
+			break
+		}
+	}
+	for _, want := range []string{":0:echo", ":1:echo"} {
+		if got[want] == 0 {
+			t.Errorf("tool calls = %v, want %q reported", got, want)
+		}
 	}
 }
 
