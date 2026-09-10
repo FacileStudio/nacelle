@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 )
 
 // ParallelSubAgentToolName is the name the parallel sub-agent tool registers
@@ -41,7 +42,25 @@ type ParallelSubAgentOptions struct {
 
 	// Usage receives what every nested turn costs. Nil drops it.
 	Usage func(Usage)
+
+	// Detach makes the tool non-blocking. Run returns immediately with a stub
+	// that says how many agents started (and the batch key Results tags its
+	// results with), and the fan-out keeps going in the background, streaming
+	// each task's outcome to Results as it finishes. The model reads the stub
+	// and keeps its turn; the host surfaces the real results. This is the mode
+	// an interactive UI wants, so its main thread is never pinned by the
+	// parent waiting on one merged result. Nil Results drops the outcomes while
+	// the work still runs. Zero (false) keeps the historical blocking behaviour.
+	Detach bool
+
+	// Results receives each task's outcome when Detach is set, one call per task
+	// as it finishes, on a background goroutine — keep it cheap and non-blocking.
+	Results func(ParallelTaskResult)
 }
+
+// parallelBatch hands out the batch key that ties a Detach'd fan-out's streamed
+// results to the stub the model read, so a host can route overlapping calls.
+var parallelBatch atomic.Uint64
 
 // NewParallelSubAgentTool builds a tool that fans out to multiple concurrent
 // agents, one per task, and collects their results. The parent's event stream
@@ -84,8 +103,41 @@ func NewParallelSubAgentTool(cfg Config, opts ParallelSubAgentOptions) (Tool, er
 			opts: opts,
 			name: name,
 		}
+		if opts.Detach {
+			return detachToolResult(ctx, cfg, opts, name, in.Tasks)
+		}
 		return parallelDelegate(ctx, config, in.Tasks, maxConcurrency)
 	})
+}
+
+// detachParallelResult is the stub a Detach'd parallel tool returns so the
+// parent's stream can continue instead of waiting on the whole fan-out. It
+// names how many agents started and the batch Results tags its outcomes with.
+type detachParallelResult struct {
+	Started int    `json:"started"`
+	Batch   string `json:"batch"`
+}
+
+// detachToolResult is the non-blocking run path. It launches the fan-out and
+// immediately returns a stub, forwarding each task's result to opts.Results as
+// the background work finishes. The model keeps its turn; a host that showed
+// the stub to the reader can surface the real outcomes from Results.
+func detachToolResult(ctx context.Context, cfg Config, opts ParallelSubAgentOptions, name string, tasks []string) (string, error) {
+	batch := fmt.Sprintf("psa-%d", parallelBatch.Add(1))
+	results, err := DelegateParallel(ctx, cfg, tasks, opts)
+	if err != nil {
+		return "", err
+	}
+	go func() {
+		for r := range results {
+			if opts.Results != nil {
+				r.Batch = batch
+				opts.Results(r)
+			}
+		}
+	}()
+	data, _ := json.Marshal(detachParallelResult{Started: len(tasks), Batch: batch})
+	return string(data), nil
 }
 
 func clampConcurrency(n int) int {
@@ -236,6 +288,12 @@ type ParallelTaskResult struct {
 	Result string
 	Err    string
 	Usage  Usage
+	// Batch is an opaque key tying a result to the fan-out that produced it. It
+	// is set only when the result is forwarded by a Detach'd NewParallelSubAgentTool,
+	// which lets one host route overlapping calls' outcomes; results on a
+	// DelegateParallel channel leave it empty, since the caller already holds one
+	// batch per channel.
+	Batch string
 }
 
 // DelegateParallel is the detached counterpart to NewParallelSubAgentTool: it

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/FacileStudio/nacelle"
 )
@@ -210,6 +211,58 @@ func TestDelegateParallelEmptyTasksErrors(t *testing.T) {
 	}, []string{}, nacelle.ParallelSubAgentOptions{})
 	if err == nil {
 		t.Error("DelegateParallel accepted an empty task list")
+	}
+}
+
+// TestParallelSubAgentDetachReturnsImmediately verifies the non-blocking mode:
+// Run hands back a stub naming how many agents started and the batch key, and
+// the real per-task outcomes arrive on the Results callback as they finish
+// instead of being held until the whole fan-out returns.
+func TestParallelSubAgentDetachStreamsResults(t *testing.T) {
+	backend := newLoop(
+		[]step{toolStep("echo", `{}`), textStep("result1")},
+		[]step{toolStep("echo", `{}`), textStep("result2")},
+		[]step{toolStep("echo", `{}`), textStep("result3")},
+	)
+	echo := &echoTool{}
+	got := make(chan nacelle.ParallelTaskResult, 3)
+
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
+	}, nacelle.ParallelSubAgentOptions{Detach: true, Results: func(r nacelle.ParallelTaskResult) { got <- r }})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	sink := &nacelle.ToolSink{}
+	_, runErr := nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
+		json.RawMessage(`{"tasks":["task1","task2","task3"]}`), sink)
+
+	stub := drainToolResult(t, sink)
+	if !strings.Contains(stub, `"started":3`) {
+		t.Fatalf("stub %q does not say 3 agents started", stub)
+	}
+	if !strings.Contains(stub, `"batch"`) {
+		t.Errorf("stub %q has no batch key", stub)
+	}
+	if runErr != nil {
+		t.Fatalf("detached tool returned before completion, yet errored: %v", runErr)
+	}
+
+	results := make([]string, 0, 3)
+	deadline := time.After(5 * time.Second)
+	for len(results) < 3 {
+		select {
+		case r := <-got:
+			results = append(results, r.Result)
+		case <-deadline:
+			t.Fatalf("timed out waiting for streamed results, got %v", results)
+		}
+	}
+	if !strings.Contains(strings.Join(results, " "), "result1") ||
+		!strings.Contains(strings.Join(results, " "), "result2") ||
+		!strings.Contains(strings.Join(results, " "), "result3") {
+		t.Errorf("streamed results = %v, want result1/result2/result3", results)
 	}
 }
 
