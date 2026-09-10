@@ -55,16 +55,16 @@ func TestToolsAreOrderedSoTheCachedPrefixIsStable(t *testing.T) {
 	}
 	alpha, beta := build("alpha"), build("beta")
 
-	forwards := adapt([]nacelle.Tool{alpha, beta}, &nacelle.ToolSink{}, newInvocations())
-	backwards := adapt([]nacelle.Tool{beta, alpha}, &nacelle.ToolSink{}, newInvocations())
+	forwards := toolParams([]nacelle.Tool{alpha, beta})
+	backwards := toolParams([]nacelle.Tool{beta, alpha})
 
 	for position := range forwards {
-		if forwards[position].Name() != backwards[position].Name() {
+		if forwards[position].OfTool.Name != backwards[position].OfTool.Name {
 			t.Fatalf("tool %d = %q and %q, want the same name from either order",
-				position, forwards[position].Name(), backwards[position].Name())
+				position, forwards[position].OfTool.Name, backwards[position].OfTool.Name)
 		}
 	}
-	if forwards[0].Name() != "alpha" {
-		t.Errorf("first tool = %q, want alpha", forwards[0].Name())
+	if forwards[0].OfTool.Name != "alpha" {
+		t.Errorf("first tool = %q, want alpha", forwards[0].OfTool.Name)
 	}
 }

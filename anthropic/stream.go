@@ -32,87 +32,119 @@ func isCompactRequested(ctx context.Context, b *Backend) bool {
 	return false
 }
 
-// session is what every turn of one run needs and none of it changes: where
-// the calls of the turn just closed are filed, whether the consumer asked for
-// reasoning, and the one door events leave by.
-//
-// It is a struct rather than three more parameters threaded through each turn
-// because a function taking six arguments is a function nobody calls
-// correctly, and because it keeps the run-scoped state visibly run-scoped.
+// session is what every turn of one run needs and none of it changes: the
+// request parameters, where the events leave, and whether reasoning is shown.
 type session struct {
-	pending  *invocations
 	thinking bool
 	out      *emitter
+	base     sdk.BetaMessageNewParams
+	opts     []option.RequestOption
+	sink     *nacelle.ToolSink
 }
 
-// Stream runs the conversation on the SDK's streaming tool runner.
+// Stream runs the conversation on the agent loop this package owns.
+//
+// It deliberately does not use the SDK's BetaToolRunnerStreaming. That runner
+// blocks a turn's tools to completion before it streams the next turn, so a
+// tool's streamed output can only arrive as a burst once the tool finishes.
+// Owning the loop passes it the pause: tools run on this package's goroutines,
+// the tool sink is drained on a live tick while they run, and KindToolOutput
+// reaches the consumer as the line is produced.
 func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error] {
 	return func(yield func(nacelle.Event, error) bool) {
-		sink := &nacelle.ToolSink{Approve: request.Approve, Hooks: request.Hooks}
 		state := &session{
-			pending:  newInvocations(),
 			thinking: request.Thinking.Show,
-			out:      &emitter{yield: yield, sink: sink},
+			sink:     &nacelle.ToolSink{Approve: request.Approve, Hooks: request.Hooks},
+			base:     b.params(request),
+			opts:     append([]option.RequestOption(nil), b.options...),
 		}
-
-		params := b.params(request)
-		opts := make([]option.RequestOption, len(b.options))
-		copy(opts, b.options)
+		state.out = &emitter{yield: yield, sink: state.sink}
 		if isCompactRequested(ctx, b) {
-			params.Betas = append(params.Betas, sdk.AnthropicBeta(BetaCompaction))
-			opts = append(opts, option.WithHeaderAdd("anthropic-beta", BetaCompaction))
+			state.base.Betas = append(state.base.Betas, sdk.AnthropicBeta(BetaCompaction))
+			state.opts = append(state.opts, option.WithHeaderAdd("anthropic-beta", BetaCompaction))
 		}
-		runner := b.client.Beta.Messages.NewToolRunnerStreaming(adapt(request.Tools, sink, state.pending), params, opts...)
 
-		if run, ok := runTurns(ctx, runner, state); ok {
-			state.out.send(nacelle.Event{Kind: nacelle.KindDone, Usage: run.usage, Stop: run.stop})
+		run, ok := b.loop(ctx, request, state)
+		if !ok || !state.out.flushTools() {
+			return
 		}
+		state.out.send(nacelle.Event{Kind: nacelle.KindDone, Usage: run.usage, Stop: run.stop})
 	}
 }
 
-// runTurns drives the runner to completion, returning what the run cost, why
-// it ended, and whether it finished well enough to report a KindDone.
-func runTurns(ctx context.Context, runner *sdk.BetaToolRunnerStreaming, state *session) (outcome, bool) {
+// loop drives the turns of one run, owning the conversation history the way
+// the SDK runner used to.
+//
+// Each iteration streams one assistant turn, then decides by its stop reason:
+// a tool_use turn hands its local calls to execution on the next pass, and a
+// terminal turn ends the run. The pending batch is checked against the
+// iteration cap before it runs, which is what turns a capped run into a
+// StopIterations instead of a finished one.
+func (b *Backend) loop(ctx context.Context, request nacelle.Request, s *session) (outcome, bool) {
 	var run outcome
+	history := toParams(request.Messages)
+	var pending []*nacelle.ToolEvent
+	iterations := 0
 
-	for turn, err := range runner.AllStreaming(ctx) {
-		if err != nil {
-			state.out.fail(err)
+	for {
+		if request.MaxIterations > 0 && iterations >= request.MaxIterations {
+			run.stop = finalStop(len(pending) > 0, run.stop, iterations, request.MaxIterations)
+			return run, true
+		}
+		if len(pending) > 0 {
+			s.base.Messages = history
+			results, ok := runCalls(ctx, pending, s, nacelle.ToolsByName(request.Tools))
+			if !ok {
+				return run, false
+			}
+			history = append(history, sdk.NewBetaUserMessage(results...))
+		}
+
+		iterations++
+		s.base.Messages = history
+		assistant, queued, ok := b.streamOne(ctx, s, &run)
+		if !ok {
 			return run, false
 		}
-		if !streamTurn(turn, state, &run) {
-			return run, false
+		history = append(history, assistant.ToParam())
+		if assistant.StopReason != sdk.BetaStopReasonToolUse {
+			run.stop = finalStop(false, stopOf(assistant.StopReason), iterations, request.MaxIterations)
+			return run, true
 		}
+		pending = queued
 	}
-
-	if err := runner.Err(); err != nil {
-		state.out.fail(err)
-		return run, false
-	}
-	run.stop = finalStop(runner, run.stop)
-	return run, state.out.flushTools()
 }
 
-// streamTurn maps one assistant turn onto the event stream, adding what it
-// cost to the run. It reports whether the consumer is still ranging.
-func streamTurn(turn iter.Seq2[sdk.BetaRawMessageStreamEventUnion, error], state *session, run *outcome) bool {
-	calls := newCallTracker(state.pending, state.thinking)
+// streamOne streams one assistant turn onto the event stream, adding what it
+// cost to the run, and returns the turn's message and its queued local calls.
+func (b *Backend) streamOne(ctx context.Context, s *session, run *outcome) (*sdk.BetaMessage, []*nacelle.ToolEvent, bool) {
+	calls := newCallTracker(s.thinking)
+	stream := b.client.Beta.Messages.NewStreaming(ctx, s.base, s.opts...)
+	defer func() { _ = stream.Close() }()
 
-	for event, err := range turn {
-		if err != nil {
-			state.out.fail(err)
-			return false
+	var assistant sdk.BetaMessage
+	for stream.Next() {
+		event := stream.Current()
+		if err := assistant.Accumulate(event); err != nil {
+			s.out.fail(err)
+			return nil, nil, false
 		}
-		if !state.out.flushTools() {
-			return false
+		if !s.out.flushTools() {
+			return nil, nil, false
 		}
-		if !state.out.sendAll(calls.consume(event)) {
-			return false
+		if !s.out.sendAll(calls.consume(event)) {
+			return nil, nil, false
 		}
-		if !state.out.sendAll(turnEnd(event, run)) {
-			return false
+		if !s.out.sendAll(turnEnd(event, run)) {
+			return nil, nil, false
 		}
 	}
-
-	return state.out.flushTools()
+	if err := stream.Err(); err != nil {
+		s.out.fail(err)
+		return nil, nil, false
+	}
+	if !s.out.sendAll(calls.finish()) {
+		return nil, nil, false
+	}
+	return &assistant, calls.localCalls(), true
 }

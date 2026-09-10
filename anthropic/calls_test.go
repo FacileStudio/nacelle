@@ -12,7 +12,7 @@ import (
 // A tool call arrives in pieces and must be reported whole: emitting it at
 // content_block_start would report a call whose arguments are still empty.
 func TestToolCallIsReportedOnceItsInputIsComplete(t *testing.T) {
-	tracker := newCallTracker(newInvocations(), false)
+	tracker := newCallTracker(false)
 
 	if got := tracker.consume(raw(t, `{"type":"content_block_start","index":0,
 		"content_block":{"type":"tool_use","id":"toolu_1","name":"search_events"}}`)); len(got) != 0 {
@@ -34,7 +34,7 @@ func TestToolCallIsReportedOnceItsInputIsComplete(t *testing.T) {
 // Two tools requested in one turn interleave on the wire, so the index is what
 // keeps their arguments apart.
 func TestConcurrentToolCallsDoNotMixTheirInput(t *testing.T) {
-	tracker := newCallTracker(newInvocations(), false)
+	tracker := newCallTracker(false)
 	tracker.consume(raw(t, `{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"a","name":"first"}}`))
 	tracker.consume(raw(t, `{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"b","name":"second"}}`))
 	tracker.consume(argumentFragment(t, 0, `{"a":1}`))
@@ -52,7 +52,7 @@ func TestConcurrentToolCallsDoNotMixTheirInput(t *testing.T) {
 }
 
 func TestTextBecomesDeltas(t *testing.T) {
-	tracker := newCallTracker(newInvocations(), false)
+	tracker := newCallTracker(false)
 
 	text := tracker.consume(raw(t, `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}`))
 	if len(text) != 1 || text[0].Kind != nacelle.KindText || text[0].Text != "hello" {
@@ -66,26 +66,23 @@ func TestTextBecomesDeltas(t *testing.T) {
 func TestReasoningIsOnlyStreamedWhenItWasAskedFor(t *testing.T) {
 	delta := `{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hmm"}}`
 
-	silent := newCallTracker(newInvocations(), false).consume(raw(t, delta))
+	silent := newCallTracker(false).consume(raw(t, delta))
 	if len(silent) != 0 {
 		t.Errorf("a run that did not ask for reasoning was sent %+v", silent)
 	}
 
-	asked := newCallTracker(newInvocations(), true).consume(raw(t, delta))
+	asked := newCallTracker(true).consume(raw(t, delta))
 	if len(asked) != 1 || asked[0].Kind != nacelle.KindThinking || asked[0].Text != "hmm" {
 		t.Errorf("thinking delta = %+v, want a KindThinking event carrying hmm", asked)
 	}
 }
 
-// The runner skips every tool_use block before the last fallback block: they
+// The loop skips every tool_use block before the last fallback block: they
 // belong to the attempt that refused, and the fallback middleware strips them
-// from the replayed history. Registering them anyway leaves entries nothing
-// will ever claim, which is how a later call with the same name and arguments
-// pops the wrong one — and reporting them without ever closing them leaves a
+// from the replayed history. Reporting them without closing them leaves a
 // consumer waiting on a call that was already abandoned.
 func TestAFallbackDiscardsTheCallsBeforeIt(t *testing.T) {
-	pending := newInvocations()
-	tracker := newCallTracker(pending, false)
+	tracker := newCallTracker(false)
 
 	tracker.consume(raw(t, `{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"refused","name":"echo"}}`))
 	tracker.consume(argumentFragment(t, 0, `{"text":"same"}`))
@@ -94,7 +91,6 @@ func TestAFallbackDiscardsTheCallsBeforeIt(t *testing.T) {
 	tracker.consume(raw(t, `{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"retried","name":"echo"}}`))
 	tracker.consume(argumentFragment(t, 2, `{"text":"same"}`))
 	tracker.consume(raw(t, `{"type":"content_block_stop","index":2}`))
-	tracker.consume(raw(t, `{"type":"message_stop"}`))
 
 	if len(discarded) != 1 || discarded[0].Tool.ID != "refused" || discarded[0].Tool.Err == nil {
 		t.Fatalf("the fallback emitted %+v, want the refused call closed with an error", discarded)
@@ -102,12 +98,9 @@ func TestAFallbackDiscardsTheCallsBeforeIt(t *testing.T) {
 	if !discarded[0].Tool.Discarded {
 		t.Errorf("close for %+v was not marked Discarded, so a consumer would replay a call that never ran", discarded[0].Tool)
 	}
-	call, _ := pending.take("echo", []byte(`{"text":"same"}`))
-	if call.ID != "retried" {
-		t.Errorf("call = %+v, want the block after the fallback; the skipped one was still registered", call)
-	}
-	if again, _ := pending.take("echo", []byte(`{"text":"same"}`)); again.ID != "" {
-		t.Errorf("call = %+v, want nothing left; a call the runner never executes was registered", again)
+	local := tracker.localCalls()
+	if len(local) != 1 || local[0].ID != "retried" {
+		t.Errorf("queued = %+v, want only the block after the fallback; the skipped one was left queued", local)
 	}
 }
 

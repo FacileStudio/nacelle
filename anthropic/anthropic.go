@@ -36,7 +36,7 @@ type Config struct {
 	// Compact requests server-side compaction via the compact-2026-01-12 beta header.
 	Compact bool
 
-	// Options are extra request options passed to the streaming tool runner.
+	// Options are extra request options passed to every streaming request.
 	Options []option.RequestOption
 }
 
@@ -93,23 +93,21 @@ func (b *Backend) Capabilities() nacelle.Capabilities {
 func (b *Backend) Model() string { return b.model }
 
 // params is the request every turn of a run is made from. Only the messages
-// change between turns, and the runner owns those.
+// change between turns, and the agent loop owns those.
 //
 // CacheControl is set at the top level, which asks the API to mark the last
 // cacheable block itself and move that mark forward as the conversation grows.
 // Doing it there rather than per block is not a shortcut: the runner owns the
 // message slice, so the individual blocks are not ours to annotate, and the
 // server-side placement is the pattern the documentation recommends anyway.
-func (b *Backend) params(request nacelle.Request) sdk.BetaToolRunnerParams {
-	params := sdk.BetaToolRunnerParams{
-		BetaMessageNewParams: sdk.BetaMessageNewParams{
-			Model:     b.model,
-			MaxTokens: request.MaxTokens,
-			System:    []sdk.BetaTextBlockParam{{Text: request.System}},
-			Thinking:  thinkingConfig(request.Thinking),
-			Messages:  toParams(request.Messages),
-		},
-		MaxIterations: request.MaxIterations,
+func (b *Backend) params(request nacelle.Request) sdk.BetaMessageNewParams {
+	params := sdk.BetaMessageNewParams{
+		Model:     b.model,
+		MaxTokens: request.MaxTokens,
+		System:    []sdk.BetaTextBlockParam{{Text: request.System}},
+		Thinking:  thinkingConfig(request.Thinking),
+		Messages:  toParams(request.Messages),
+		Tools:     toolParams(request.Tools),
 	}
 	if amortises(request) {
 		params.CacheControl = sdk.NewBetaCacheControlEphemeralParam()
@@ -117,7 +115,7 @@ func (b *Backend) params(request nacelle.Request) sdk.BetaToolRunnerParams {
 	if effort, wanted := outputEffort(request.Thinking.Effort); wanted {
 		params.OutputConfig = sdk.BetaOutputConfigParam{Effort: effort}
 	}
-	applyMCP(&params.BetaMessageNewParams, request.MCP)
+	applyMCP(&params, request.MCP)
 	return params
 }
 
@@ -135,7 +133,7 @@ func (b *Backend) params(request nacelle.Request) sdk.BetaToolRunnerParams {
 // every caller a quarter extra to spare this package a condition is not a
 // trade-off worth defending, so the condition is here.
 //
-// Two things predict the second request. Local tools mean the SDK's runner
+// Two things predict the second request. Local tools mean the agent loop
 // resends the whole conversation on every iteration, so any run that calls one
 // has already made it. A conversation handed in means an earlier run wrote
 // this prefix and this one is the read. MCP servers deliberately do not count:

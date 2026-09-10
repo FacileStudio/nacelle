@@ -6,16 +6,11 @@ import (
 	"testing"
 
 	"github.com/FacileStudio/nacelle"
-
-	sdk "github.com/anthropics/anthropic-sdk-go"
 )
 
-// A refusal has to reach the model the same way any other tool failure
-// does: Execute returns an error, which the SDK's own runner turns into a
-// tool_result marked as an error rather than aborting the run — see
-// executeToolUse in the vendor SDK. This only has to prove the refusal
-// reaches Execute at all; the SDK's own handling of that error is not this
-// package's to test.
+// A refusal is enforced in one place, RunTool, which means a refused call must
+// never reach the tool body and must still surface as a KindToolResult carrying
+// an error — the pairing contract a consumer builds on.
 func TestARefusedCallNeverReachesTheTool(t *testing.T) {
 	ran := false
 	tool, err := nacelle.NewTool("search", "Find things", func(context.Context, struct {
@@ -28,23 +23,38 @@ func TestARefusedCallNeverReachesTheTool(t *testing.T) {
 		t.Fatalf("NewTool: %v", err)
 	}
 
-	pending := newInvocations()
-	pending.reset([]*nacelle.ToolEvent{{ID: "toolu_1", Name: "search", Input: `{"query":"x"}`}})
+	backend := New(Config{Client: stub(t,
+		sse(t, messageStart(),
+			`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"search","input":{}}}`,
+			arguments(t, 0, `{"query":"x"}`),
+			`{"type":"content_block_stop","index":0}`,
+			messageDelta("tool_use"), `{"type":"message_stop"}`),
+		sse(t, messageStart(), messageDelta("end_turn"), `{"type":"message_stop"}`),
+	)})
 
 	deny := func(context.Context, string, json.RawMessage) bool { return false }
-	adapted := adapt([]nacelle.Tool{tool}, &nacelle.ToolSink{Approve: deny}, pending)
+	events := collect(t, backend, nacelle.Request{
+		Tools:         []nacelle.Tool{tool},
+		Approve:       deny,
+		MaxTokens:     1024,
+		MaxIterations: 4,
+	})
 
-	if _, err := adapted[0].Execute(context.Background(), []byte(`{"query":"x"}`)); err == nil {
-		t.Fatal("Execute returned no error for a refused call")
-	}
 	if ran {
 		t.Fatal("the tool ran despite being refused")
+	}
+	result := toolsOf(events, nacelle.KindToolResult)["toolu_1"]
+	if result == nil || result.Err == nil {
+		t.Fatalf("saw result %+v, want a refused result carrying an error", result)
+	}
+	if !result.Refused {
+		t.Errorf("result %+v was not marked Refused", result)
 	}
 }
 
 // The ordinary case is unchanged by adding Approve: nil runs every call the
-// way this package always has, and a real approve function that says yes
-// has to let the call through, not just fail to crash.
+// way this package always has, and a real approve function that says yes has
+// to let the call through, not just fail to crash.
 func TestAnApprovedCallReachesTheTool(t *testing.T) {
 	tool, err := nacelle.NewTool("search", "Find things", func(context.Context, struct {
 		Query string `json:"query" jsonschema:"required"`
@@ -55,28 +65,28 @@ func TestAnApprovedCallReachesTheTool(t *testing.T) {
 		t.Fatalf("NewTool: %v", err)
 	}
 
-	pending := newInvocations()
-	pending.reset([]*nacelle.ToolEvent{{ID: "toolu_1", Name: "search", Input: `{"query":"x"}`}})
+	backend := New(Config{Client: stub(t,
+		sse(t, messageStart(),
+			`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"search","input":{}}}`,
+			arguments(t, 0, `{"query":"x"}`),
+			`{"type":"content_block_stop","index":0}`,
+			messageDelta("tool_use"), `{"type":"message_stop"}`),
+		sse(t, messageStart(), messageDelta("end_turn"), `{"type":"message_stop"}`),
+	)})
 
 	allow := func(context.Context, string, json.RawMessage) bool { return true }
-	adapted := adapt([]nacelle.Tool{tool}, &nacelle.ToolSink{Approve: allow}, pending)
+	events := collect(t, backend, nacelle.Request{
+		Tools:         []nacelle.Tool{tool},
+		Approve:       allow,
+		MaxTokens:     1024,
+		MaxIterations: 4,
+	})
 
-	content, err := adapted[0].Execute(context.Background(), []byte(`{"query":"x"}`))
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
+	result := toolsOf(events, nacelle.KindToolResult)["toolu_1"]
+	if result == nil || result.Err != nil {
+		t.Fatalf("saw result %+v, want an approved result with no error", result)
 	}
-	text, ok := sdkTextBlock(t, content)
-	if !ok || text != "found it" {
-		t.Errorf("content = %+v, want the tool's own result", content)
+	if result.Result != "found it" {
+		t.Errorf("result = %q, want the tool's own answer", result.Result)
 	}
-}
-
-// sdkTextBlock reads the text out of the one content block Execute returns,
-// so the test above can assert on what the model would actually be told.
-func sdkTextBlock(t *testing.T, content []sdk.BetaToolResultBlockParamContentUnion) (string, bool) {
-	t.Helper()
-	if len(content) != 1 || content[0].OfText == nil {
-		return "", false
-	}
-	return content[0].OfText.Text, true
 }

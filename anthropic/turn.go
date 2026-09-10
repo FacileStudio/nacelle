@@ -31,19 +31,18 @@ func turnEnd(event sdk.BetaRawMessageStreamEventUnion, run *outcome) []nacelle.E
 
 // finalStop is why the run ended, which is not always why its last turn did.
 //
-// They differ in one case and it is the one worth catching. The runner stops
-// calling the API once MaxIterations is reached, and it stops between turns,
-// so the last turn it did make ended with the model still asking for tools
-// that will never run. Left alone that reports StopTools, which promises more
-// turns and is the documented one reason a run never ends with. A run that
-// merely used its last permitted iteration to finish is not capped, which is
-// why the pending tools are half of the test rather than the count alone.
+// They differ in one case and it is the one worth catching. A run stops making
+// API calls once MaxIterations is reached, and it stops between turns, so the
+// last call it did make ended with the model still asking for tools that will
+// never run. Left alone that reports StopTools, which promises more turns and
+// is the documented one reason a run never ends with. A run that merely used
+// its last permitted iteration to finish is not capped, which is why the
+// pending tools are half of the test rather than the count alone.
 //
 // Hitting the cap is unfinished work and not a failure, so it is a stop
 // reason rather than an error out of the stream.
-func finalStop(runner *sdk.BetaToolRunnerStreaming, stop nacelle.Stop) nacelle.Stop {
-	limit := runner.Params.MaxIterations
-	if stop == nacelle.StopTools && limit > 0 && runner.IterationCount() >= limit {
+func finalStop(toolUse bool, stop nacelle.Stop, iterations, cap int) nacelle.Stop {
+	if toolUse && cap > 0 && iterations >= cap {
 		return nacelle.StopIterations
 	}
 	return stop

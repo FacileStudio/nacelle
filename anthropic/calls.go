@@ -15,16 +15,28 @@ import (
 //
 // A tracker covers one turn, which is what makes its counter the position of
 // a call within the turn that asked for it. It sorts the turn's calls by who
-// will run them: a local one is queued for the registry, because the runner
-// executes a turn's tools at the start of the next one, while an MCP one is
-// held here until its result block arrives on this same turn.
+// will run them: a local one is queued for the agent loop, which executes a
+// turn's tools after the turn closes, while an MCP one is held here until its
+// result block arrives on this same turn.
 type callTracker struct {
 	open     map[int64]*openCall
 	remote   map[string]*nacelle.ToolEvent
 	queued   []*nacelle.ToolEvent
-	pending  *invocations
 	thinking bool
 	next     int
+}
+
+// localCalls hands the turn's local calls to the loop and clears the queue.
+//
+// It is called once, at the end of the turn, the first moment the batch is
+// final — a fallback block can still have discarded it — and it is the only
+// way a call reaches execution. The loop runs these exactly once, in the order
+// the model asked, pairing each by its id rather than by a name-and-arguments
+// heuristic, because it already holds the whole Invocation.
+func (c *callTracker) localCalls() []*nacelle.ToolEvent {
+	calls := c.queued
+	c.queued = nil
+	return calls
 }
 
 // openCall is a content block still streaming, and which side of the request
@@ -34,11 +46,10 @@ type openCall struct {
 	remote bool
 }
 
-func newCallTracker(pending *invocations, thinking bool) *callTracker {
+func newCallTracker(thinking bool) *callTracker {
 	return &callTracker{
 		open:     map[int64]*openCall{},
 		remote:   map[string]*nacelle.ToolEvent{},
-		pending:  pending,
 		thinking: thinking,
 	}
 }
@@ -137,15 +148,14 @@ func (c *callTracker) stop(event sdk.BetaRawMessageStreamEventUnion) []nacelle.E
 	return []nacelle.Event{{Kind: nacelle.KindToolCall, Tool: open.event}}
 }
 
-// finish hands the turn's local calls to the registry and closes any MCP call
-// whose result never arrived.
+// finish closes any MCP call whose result never arrived.
 //
-// The handoff is at the end of the turn rather than at each call because that
-// is the moment the batch is final — a fallback block can still have discarded
-// it — and because replacing the registry whole is what stops a turn's entries
-// outliving the turn.
+// Local calls stay queued for the loop to execute; an MCP call, by contrast,
+// runs on Anthropic's side and is answered by a result block on this turn or
+// never. A result block that never arrives is not hypothetical — a server can
+// fail in a way the API reports as nothing at all — so it is closed here, at
+// the end of the turn, rather than waited on forever.
 func (c *callTracker) finish() []nacelle.Event {
-	c.pending.reset(c.queued)
 	return c.orphans()
 }
 

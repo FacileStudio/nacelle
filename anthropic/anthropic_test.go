@@ -80,7 +80,7 @@ func TestConversationRolesSurvive(t *testing.T) {
 	}
 }
 
-// The runner needs the schema in its own shape, and a tool whose properties
+// The request needs the schema in the API's shape, and a tool whose properties
 // were dropped is a tool the model calls with nothing in it.
 func TestToolSchemaSurvivesTheAdaptation(t *testing.T) {
 	type input struct {
@@ -93,11 +93,11 @@ func TestToolSchemaSurvivesTheAdaptation(t *testing.T) {
 		t.Fatalf("NewTool: %v", err)
 	}
 
-	adapted := adapt([]nacelle.Tool{tool}, &nacelle.ToolSink{}, newInvocations())
-	if len(adapted) != 1 {
-		t.Fatalf("adapted %d tools, want 1", len(adapted))
+	params := toolParams([]nacelle.Tool{tool})
+	if len(params) != 1 {
+		t.Fatalf("rendered %d tools, want 1", len(params))
 	}
-	schema := adapted[0].InputSchema()
+	schema := params[0].OfTool.InputSchema
 	properties, ok := schema.Properties.(map[string]any)
 	if !ok {
 		t.Fatalf("properties = %#v, want the reflected object", schema.Properties)
