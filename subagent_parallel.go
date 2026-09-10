@@ -124,8 +124,25 @@ func parallelDelegate(ctx context.Context, config parallelContext, tasks []strin
 		return "", fmt.Errorf("no tasks given")
 	}
 
-	sem := make(chan struct{}, maxConcurrency)
 	results := make([]parallelTask, len(tasks))
+	fanOut(ctx, config, tasks, maxConcurrency, func(idx int, pt parallelTask) {
+		results[idx] = pt
+	})
+
+	data, err := json.Marshal(buildParallelResponse(results))
+	if err != nil {
+		return "", fmt.Errorf("encoding response: %w", err)
+	}
+	return string(data), nil
+}
+
+// fanOut runs each task in its own goroutine, capped at maxConcurrency at a
+// time, and calls done with each task's result as it finishes. It shares the
+// semaphore that bounds concurrency between the blocking tool and the detached
+// surface below, so neither can drift from the other on how many agents run at
+// once.
+func fanOut(ctx context.Context, config parallelContext, tasks []string, maxConcurrency int, done func(int, parallelTask)) {
+	sem := make(chan struct{}, maxConcurrency)
 	var wg sync.WaitGroup
 
 	for i, task := range tasks {
@@ -135,17 +152,11 @@ func parallelDelegate(ctx context.Context, config parallelContext, tasks []strin
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			results[idx] = runParallelTask(ctx, config, task)
+			done(idx, runParallelTask(ctx, config, task))
 		}(i, task)
 	}
 
 	wg.Wait()
-
-	data, err := json.Marshal(buildParallelResponse(results))
-	if err != nil {
-		return "", fmt.Errorf("encoding response: %w", err)
-	}
-	return string(data), nil
 }
 
 // runParallelTask executes one task inside a nested agent and returns the result.
@@ -214,4 +225,49 @@ func buildParallelResponse(results []parallelTask) parallelResponse {
 		}
 	}
 	return resp
+}
+
+// ParallelTaskResult is the outcome of one detached parallel agent. Index names
+// which task in the caller's list it came from; the fan-out posts these as each
+// agent finishes, so a caller that streams them sees results arrive in the order
+// the agents complete, not the order the tasks were given.
+type ParallelTaskResult struct {
+	Index  int
+	Result string
+	Err    string
+	Usage  Usage
+}
+
+// DelegateParallel is the detached counterpart to NewParallelSubAgentTool: it
+// fans the tasks out to concurrent nested agents on cfg and returns a channel
+// their results arrive on for the caller to drain, instead of blocking the
+// caller until every task is done and handing back one merged JSON.
+//
+// The returned channel carries one ParallelTaskResult per task — with that
+// task's own spend, the same per-index accounting the tool reports — and closes
+// when the last task finishes. An empty task list is an error, returned rather
+// than posted, matching the tool.
+func DelegateParallel(ctx context.Context, cfg Config, tasks []string, opts ParallelSubAgentOptions) (<-chan ParallelTaskResult, error) {
+	if len(tasks) == 0 {
+		return nil, fmt.Errorf("no tasks given")
+	}
+
+	name := opts.Name
+	if name == "" {
+		name = ParallelSubAgentToolName
+	}
+	config := parallelContext{
+		cfg:  cfg,
+		opts: opts,
+		name: name,
+	}
+
+	results := make(chan ParallelTaskResult)
+	go func() {
+		defer close(results)
+		fanOut(ctx, config, tasks, clampConcurrency(opts.MaxConcurrency), func(idx int, pt parallelTask) {
+			results <- ParallelTaskResult{Index: idx, Result: pt.result, Err: pt.err, Usage: pt.usage}
+		})
+	}()
+	return results, nil
 }

@@ -157,6 +157,62 @@ func TestParallelSubAgentConcurrency(t *testing.T) {
 	}
 }
 
+// TestDelegateParallelStreamsResults verifies the detached surface posts one
+// result per task through the channel, keyed by the task's index so the caller
+// can reunite them with the list it gave regardless of completion order.
+func TestDelegateParallelStreamsResults(t *testing.T) {
+	backend := newLoop(
+		[]step{toolStep("echo", `{}`), textStep("result1")},
+		[]step{toolStep("echo", `{}`), textStep("result2")},
+		[]step{toolStep("echo", `{}`), textStep("result3")},
+	)
+	echo := &echoTool{}
+
+	results, err := nacelle.DelegateParallel(context.Background(), nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
+	}, []string{"task1", "task2", "task3"}, nacelle.ParallelSubAgentOptions{})
+	if err != nil {
+		t.Fatalf("DelegateParallel: %v", err)
+	}
+
+	got := make(map[int]string)
+	for {
+		next, open := <-results
+		if !open {
+			break
+		}
+		if next.Err != "" {
+			t.Errorf("task %d failed: %q", next.Index, next.Err)
+			continue
+		}
+		got[next.Index] = next.Result
+	}
+
+	if len(got) != 3 {
+		t.Errorf("got %d results, want 3", len(got))
+	}
+	joined := ""
+	for _, r := range got {
+		joined += r + " "
+	}
+	for _, want := range []string{"result1", "result2", "result3"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("result set %q missing %q", joined, want)
+		}
+	}
+}
+
+// TestDelegateParallelEmptyTasksErrors verifies the detached surface rejects an
+// empty task list, matching the tool's own failure.
+func TestDelegateParallelEmptyTasksErrors(t *testing.T) {
+	_, err := nacelle.DelegateParallel(context.Background(), nacelle.Config{
+		Backend: newLoop(), System: "s",
+	}, []string{}, nacelle.ParallelSubAgentOptions{})
+	if err == nil {
+		t.Error("DelegateParallel accepted an empty task list")
+	}
+}
+
 // TestParallelSubAgentDirectCall verifies parallel delegation via direct
 // RunTool call, bypassing the parent stream to avoid the loop backend mutex.
 func TestParallelSubAgentDirectCall(t *testing.T) {
