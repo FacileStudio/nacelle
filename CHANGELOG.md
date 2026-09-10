@@ -17,7 +17,7 @@ while on `v0`, a breaking change bumps the minor.
 - **`ToolSourceLocal` constant**: empty source for local tool calls, completing the `ToolEvent.Source` split from v0.11.0.
 - **`source_test.go`**: regression test for the zero-value `ToolSourceLocal` contract.
 
-## [Unreleased]
+## [v0.14.0] — 2026-09-10
 
 ### Added
 - **Parallel per-task usage**: the `parallel_subagent` result now carries a `usage` map keyed
