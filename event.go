@@ -22,6 +22,14 @@ const (
 	// work happens.
 	KindToolCall Kind = "tool_call"
 
+	// KindToolOutput is a fragment of a tool's output, streamed while an
+	// output-streaming tool runs. Text holds the delta. It is display-only:
+	// never replayed into the conversation and never counted in usage. The
+	// tool's complete return value still arrives whole on the matching
+	// KindToolResult, so a consumer can ignore these and keep the one-event
+	// behaviour.
+	KindToolOutput Kind = "tool_output"
+
 	// KindToolResult is that tool having finished, successfully or not.
 	KindToolResult Kind = "tool_result"
 
@@ -96,10 +104,11 @@ const (
 type Event struct {
 	Kind Kind
 
-	// Text is the delta for KindText and KindThinking.
+	// Text is the delta for KindText, KindThinking and KindToolOutput.
 	Text string
 
-	// Tool describes the call for KindToolCall and KindToolResult.
+	// Tool describes the call for KindToolCall, KindToolOutput and
+	// KindToolResult.
 	Tool *ToolEvent
 
 	// Usage is the turn's cost for KindTurn, and the run's total for

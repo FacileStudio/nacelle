@@ -4,6 +4,23 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [v0.20.0] — 2026-09-10
+
+### Added
+- **Stream a tool's output as it is produced.** A tool may implement the new
+  `OutputTool` interface (an optional `RunOutput` alongside the existing
+  `Run`) and emit each fragment of its output as it works. `run_command` now
+  does — its stdout and stderr stream one line at a time. Each emitted
+  fragment surfaces to the consumer as a new `KindToolOutput` event carrying
+  the call's id, and the complete return value still arrives on the final
+  `KindToolResult`, so consumers that ignore the new kind keep their
+  one-event behaviour unchanged. Output events are display-only: never
+  replayed into the conversation and never counted in usage. `NewOutputTool`
+  builds an output-streaming tool from a function that takes an `emit`
+  callback. Livestreaming reaches the consumer at the points a backend drains
+  the tool sink while a call runs; backends that only drain at completion
+  deliver the output events together with the result.
+
 ## [v0.19.0] — 2026-09-10
 
 ### Added

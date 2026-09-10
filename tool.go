@@ -56,6 +56,20 @@ type ReadOnlyTool interface {
 	IsReadOnly() bool
 }
 
+// OutputTool is an optional interface a Tool may implement to stream its
+// output as it is produced, rather than returning it whole at completion.
+//
+// emit is called by the tool for each fragment of output (run_command calls it
+// once per completed line). The fragments surface to the stream as
+// KindToolOutput events and are never replayed into the conversation or
+// counted in usage; the final KindToolResult still carries the complete
+// return value, exactly as for a plain Tool. A consumer that does not want the
+// live stream simply ignores KindToolOutput and reads the result.
+type OutputTool interface {
+	Tool
+	RunOutput(ctx context.Context, input json.RawMessage, emit func(string)) (string, error)
+}
+
 // Approve decides whether a tool call may run, asked once per call before
 // RunTool ever calls Run.
 //

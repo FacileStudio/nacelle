@@ -88,6 +88,7 @@ const (
 	KindText       Kind = "text"       // an answer delta
 	KindThinking   Kind = "thinking"   // a reasoning delta, opt-in
 	KindToolCall   Kind = "tool_call"  // the model asking for a tool, before it runs
+	KindToolOutput Kind = "tool_output" // a fragment of a running tool's output
 	KindToolResult Kind = "tool_result" // that tool having finished
 	KindTurn       Kind = "turn"       // one assistant turn ended
 	KindDone       Kind = "done"       // the run ended

@@ -118,7 +118,7 @@ func TestACallerCancellationIsNotDressedUpAsATimeout(t *testing.T) {
 	defer cancel()
 	time.AfterFunc(200*time.Millisecond, cancel)
 
-	out, err := set.run(ctx, "sleep 30", time.Minute)
+	out, err := set.run(ctx, "sleep 30", time.Minute, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("run = %q, %v; want the cancellation reported as an error", out, err)
 	}
@@ -194,7 +194,7 @@ func TestStrictConfinementBlocksDirectoryChangingCommands(t *testing.T) {
 		"pwd && cd /etc",
 	}
 	for _, command := range cases {
-		_, err := set.run(context.Background(), command, DefaultCommandTimeout)
+		_, err := set.run(context.Background(), command, DefaultCommandTimeout, nil)
 		if err == nil {
 			t.Errorf("strict confinement allowed directory change: %q", command)
 		}
@@ -208,7 +208,7 @@ func TestStrictConfinementAllowsSafeCommands(t *testing.T) {
 	}
 	defer set.Close()
 
-	out, err := set.run(context.Background(), "pwd", DefaultCommandTimeout)
+	out, err := set.run(context.Background(), "pwd", DefaultCommandTimeout, nil)
 	if err != nil {
 		t.Fatalf("strict confinement blocked safe command: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestNonStrictConfinementAllowsDirectoryChangingCommands(t *testing.T) {
 	}
 	defer set.Close()
 
-	out, err := set.run(context.Background(), "cd /etc && pwd", DefaultCommandTimeout)
+	out, err := set.run(context.Background(), "cd /etc && pwd", DefaultCommandTimeout, nil)
 	if err != nil {
 		t.Fatalf("non-strict run failed: %v", err)
 	}

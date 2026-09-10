@@ -168,6 +168,7 @@ const (
 	KindText       Kind = "text"
 	KindThinking   Kind = "thinking"
 	KindToolCall   Kind = "tool_call"
+	KindToolOutput Kind = "tool_output"
 	KindToolResult Kind = "tool_result"
 	KindTurn       Kind = "turn"
 	KindDone       Kind = "done"
@@ -188,8 +189,8 @@ func (s Stop) Complete() bool // true only for StopEnd
 
 type Event struct {
 	Kind  Kind
-	Text  string    // delta, for KindText and KindThinking
-	Tool  *ToolEvent // for KindToolCall and KindToolResult
+	Text  string    // delta, for KindText, KindThinking and KindToolOutput
+	Tool  *ToolEvent // for KindToolCall, KindToolOutput and KindToolResult
 	Usage Usage      // for KindTurn (this turn) and KindDone (run total)
 	Stop  Stop       // for KindTurn and KindDone
 }

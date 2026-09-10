@@ -1,6 +1,8 @@
 package nacelle_test
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
@@ -11,6 +13,52 @@ import (
 // finished builds the event a backend parks in the sink for one tool that ran.
 func finished(index int, name string) nacelle.Event {
 	return nacelle.Event{Kind: nacelle.KindToolResult, Tool: &nacelle.ToolEvent{Index: index, Name: name}}
+}
+
+// outputTool is a Tool that also implements OutputTool, emitting each fragment
+// it is handed and returning a fixed result.
+type outputTool struct{}
+
+func (outputTool) Name() string           { return "outputter" }
+func (outputTool) Description() string    { return "an output-streaming tool" }
+func (outputTool) Schema() map[string]any { return nil }
+func (outputTool) Run(_ context.Context, _ json.RawMessage) (string, error) {
+	return "done", nil
+}
+func (outputTool) RunOutput(_ context.Context, _ json.RawMessage, emit func(string)) (string, error) {
+	emit("one")
+	emit("two")
+	return "done", nil
+}
+
+// A tool that implements OutputTool reports each emitted fragment as a
+// KindToolOutput event ahead of its KindToolResult, so a consumer that drains
+// the sink while the tool runs sees progress rather than only the finale.
+func TestRunToolStreamsOutputBeforeTheResult(t *testing.T) {
+	sink := &nacelle.ToolSink{}
+	result, err := nacelle.RunTool(context.Background(), outputTool{}, nacelle.Invocation{ID: "c", Index: 2}, json.RawMessage(`{}`), sink)
+	if err != nil || result != "done" {
+		t.Fatalf("RunTool = %q, %v; want the complete result", result, err)
+	}
+
+	events := sink.Drain()
+	if len(events) != 3 {
+		t.Fatalf("drained %d events, want 3 (two output, one result)", len(events))
+	}
+	if events[0].Kind != nacelle.KindToolOutput || events[0].Text != "one" {
+		t.Errorf("event 0 = %+v, want a KindToolOutput carrying 'one'", events[0])
+	}
+	if events[1].Kind != nacelle.KindToolOutput || events[1].Text != "two" {
+		t.Errorf("event 1 = %+v, want a KindToolOutput carrying 'two'", events[1])
+	}
+	if events[2].Kind != nacelle.KindToolResult || events[2].Tool.Result != "done" {
+		t.Errorf("event 2 = %+v, want the final KindToolResult", events[2])
+	}
+	for _, ev := range events {
+		if ev.Tool == nil || ev.Tool.ID != "c" || ev.Tool.Index != 2 {
+			t.Errorf("event %+v lost the call's pairing (id/index)", ev)
+		}
+	}
 }
 
 // Sorting a batch is the only thing Drain does beyond emptying a slice, and

@@ -131,7 +131,22 @@ func RunTool(ctx context.Context, tool Tool, call Invocation, input json.RawMess
 	}
 
 	started := time.Now()
-	result, err := tool.Run(ctx, input)
+	var result string
+	var err error
+	if out, ok := tool.(OutputTool); ok {
+		result, err = out.RunOutput(ctx, input, func(fragment string) {
+			if fragment == "" {
+				return
+			}
+			sink.Report(Event{
+				Kind: KindToolOutput,
+				Tool: &ToolEvent{ID: call.ID, Index: call.Index, Name: tool.Name()},
+				Text: fragment,
+			})
+		})
+	} else {
+		result, err = tool.Run(ctx, input)
+	}
 
 	result = sink.runAfterHooks(ctx, tool.Name(), input, result, err)
 	event := toolResultEvent(tool, call, input, result, err)

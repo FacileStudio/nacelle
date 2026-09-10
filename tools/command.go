@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -32,13 +33,13 @@ type commandInput struct {
 // mounted unless the caller asked for it, and that whoever asked knows a
 // command runs with the process's own privileges.
 func (s *Set) commandTool() (nacelle.Tool, error) {
-	return nacelle.NewTool("run_command",
+	return nacelle.NewOutputTool("run_command",
 		"Run a shell command in the working directory and return its output. Use it for builds, tests, version control and anything else the other tools do not cover. Output is truncated if it is very long, so prefer commands that answer a question over commands that print everything.",
-		func(ctx context.Context, in commandInput) (string, error) {
+		func(ctx context.Context, in commandInput, emit func(string)) (string, error) {
 			if strings.TrimSpace(in.Command) == "" {
 				return "", fmt.Errorf("no command given")
 			}
-			return s.run(ctx, in.Command, bounded(in.Timeout, s.commandTimeout))
+			return s.run(ctx, in.Command, bounded(in.Timeout, s.commandTimeout), emit)
 		})
 }
 
@@ -87,7 +88,7 @@ func bounded(seconds int, ceiling time.Duration) time.Duration {
 // asking for the command to stop is the caller's own business, so it comes
 // back as an error rather than as output the model would read as a run that
 // finished.
-func (s *Set) run(ctx context.Context, command string, timeout time.Duration) (string, error) {
+func (s *Set) run(ctx context.Context, command string, timeout time.Duration, emit func(string)) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -97,7 +98,7 @@ func (s *Set) run(ctx context.Context, command string, timeout time.Duration) (s
 		}
 	}
 
-	out, waitErr := executeCommand(ctx, command, s.dir, s.commandEnv)
+	out, waitErr := executeCommand(ctx, command, s.dir, s.commandEnv, emit)
 
 	var reportErr error
 	switch {
@@ -115,7 +116,11 @@ func (s *Set) run(ctx context.Context, command string, timeout time.Duration) (s
 	return outStr, nil
 }
 
-func executeCommand(ctx context.Context, command string, dir string, env []string) (*bytes.Buffer, error) {
+// executeCommand runs the command, collecting its stdout and stderr into out
+// and — when emit is non-nil — reporting each completed line to it as the
+// command produces it. The emitter runs from os/exec's copying goroutine, so
+// it has to be safe to call concurrently (a stream socket is; a slice is not).
+func executeCommand(ctx context.Context, command string, dir string, env []string, emit func(string)) (*bytes.Buffer, error) {
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	cmd.Dir = dir
 	cmd.Env = env
@@ -124,7 +129,11 @@ func executeCommand(ctx context.Context, command string, dir string, env []strin
 	cmd.Cancel = func() error { return signalGroup(cmd, syscall.SIGTERM) }
 
 	out := &bytes.Buffer{}
-	cmd.Stdout, cmd.Stderr = out, out
+	dest := io.Writer(out)
+	if emit != nil {
+		dest = io.MultiWriter(out, &lineEmitter{emit: emit})
+	}
+	cmd.Stdout, cmd.Stderr = dest, dest
 
 	if err := cmd.Start(); err != nil {
 		return out, err
