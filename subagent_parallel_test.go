@@ -391,6 +391,62 @@ func TestParallelSubAgentReportsToolCalls(t *testing.T) {
 	}
 }
 
+// turnBackend streams a single turn carrying fixed usage, so a host can assert
+// what the parallel tool forwards per task as each nested run spends.
+type turnBackend struct{}
+
+func (turnBackend) Name() string                       { return "turn" }
+func (turnBackend) Capabilities() nacelle.Capabilities { return nacelle.Capabilities{} }
+func (turnBackend) CountTokens(context.Context, nacelle.Request) (int64, error) {
+	return 0, nil
+}
+func (turnBackend) Stream(context.Context, nacelle.Request) iter.Seq2[nacelle.Event, error] {
+	return func(yield func(nacelle.Event, error) bool) {
+		if !yield(nacelle.Event{Kind: nacelle.KindTurn, Usage: nacelle.Usage{InputTokens: 10, OutputTokens: 2}}, nil) {
+			return
+		}
+		yield(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopEnd}, nil)
+	}
+}
+
+// TestParallelSubAgentReportsLiveUsage verifies the LiveUsage callback fires as
+// each nested task's turn spends, tagged with the task's index, so a host can
+// draw a per-subagent token counter that moves while the fan-out runs.
+func TestParallelSubAgentReportsLiveUsage(t *testing.T) {
+	reports := make(chan string, 6)
+
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: turnBackend{}, System: "s",
+	}, nacelle.ParallelSubAgentOptions{LiveUsage: func(batch string, idx int, usage nacelle.Usage) {
+		reports <- fmt.Sprintf("%s:%d:%d:%d", batch, idx, usage.InputTokens, usage.OutputTokens)
+	}})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	sink := &nacelle.ToolSink{}
+	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
+		json.RawMessage(`{"tasks":["t0","t1"]}`), sink)
+	drainToolResult(t, sink)
+
+	got := make(map[string]int)
+	for timeout := 0; timeout < 100; timeout++ {
+		select {
+		case r := <-reports:
+			got[r] = 1
+		default:
+		}
+		if len(got) == 2 {
+			break
+		}
+	}
+	for _, want := range []string{":0:10:2", ":1:10:2"} {
+		if got[want] == 0 {
+			t.Errorf("live usage = %v, want %q reported", got, want)
+		}
+	}
+}
+
 // TestParallelSubAgentDirectCall verifies parallel delegation via direct
 // RunTool call, bypassing the parent stream to avoid the loop backend mutex.
 func TestParallelSubAgentDirectCall(t *testing.T) {

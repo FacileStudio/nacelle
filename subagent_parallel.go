@@ -43,6 +43,14 @@ type ParallelSubAgentOptions struct {
 	// Usage receives what every nested turn costs. Nil drops it.
 	Usage func(Usage)
 
+	// LiveUsage receives each nested turn's spend as it streams, tagged with
+	// the fan-out's batch key and the task's index, so a host can draw a
+	// per-subagent token counter that moves while the fan-out runs instead of
+	// waiting for the task's result. Nil drops it. It fires on the task's
+	// stream goroutine, once per turn, just before Usage when both are set;
+	// keep it cheap and non-blocking.
+	LiveUsage func(batch string, idx int, usage Usage)
+
 	// Detach makes the tool non-blocking. Run returns immediately with a stub
 	// that says how many agents started (and the batch key Results tags its
 	// results with), and the fan-out keeps going in the background, streaming
@@ -246,10 +254,14 @@ func runParallelTask(ctx context.Context, config parallelContext, idx int, task 
 
 	var spent Usage
 	report := config.opts.Usage
+	live := config.opts.LiveUsage
 	accumulate := func(usage Usage) {
 		spent = spent.Add(usage)
 		if report != nil {
 			report(usage)
+		}
+		if live != nil {
+			live(config.batch, idx, usage)
 		}
 	}
 
