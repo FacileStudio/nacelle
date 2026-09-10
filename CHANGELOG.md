@@ -4,6 +4,16 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [v0.19.0] — 2026-09-10
+
+### Added
+- **MCP servers definable from any config source.** `mcp/client` now exports
+  `ServerDef` (the shape the `mcpServers` format spells, decodable from JSON or
+  YAML), `Parse`, which turns a name-keyed set of definitions into servers, and
+  `LoadDefs`, which reads the filesystem half. `Load` is now `LoadDefs` +
+  `Parse`, so a consumer can feed its own definitions (a YAML config, a
+  database) without writing a `.mcp.json` first.
+
 ## [v0.18.0] — 2026-09-10
 
 ### Added

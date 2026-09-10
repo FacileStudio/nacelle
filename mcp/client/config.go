@@ -32,7 +32,20 @@ import (
 // its own scopes, and the servers come back sorted by name so that two runs
 // over one configuration build the same tool set in the same order.
 func Load(paths ...string) ([]Server, error) {
-	merged := map[string]entry{}
+	defs, err := LoadDefs(paths...)
+	if err != nil {
+		return nil, err
+	}
+	return Parse(defs)
+}
+
+// LoadDefs reads server definitions from files in the mcpServers format and
+// returns them merged by name, later files winning — the same merge Load
+// performs without building the servers. A consumer that already has its own
+// definitions (a YAML config, a database) can merge them into the map and hand
+// the result to Parse.
+func LoadDefs(paths ...string) (map[string]ServerDef, error) {
+	merged := map[string]ServerDef{}
 	for _, path := range paths {
 		if path == "" {
 			return nil, fmt.Errorf(
@@ -45,13 +58,21 @@ func Load(paths ...string) ([]Server, error) {
 		}
 		maps.Copy(merged, found)
 	}
+	return merged, nil
+}
 
-	servers := make([]Server, 0, len(merged))
-	for _, name := range slices.Sorted(maps.Keys(merged)) {
-		if merged[name].Disabled {
+// Parse turns a name-keyed set of definitions into servers, sorted by name so
+// that two runs over one configuration build the same tool set in the same
+// order. A disabled server is skipped. It is the half of Load that does not
+// touch the filesystem, so a consumer can feed it definitions it parsed from
+// its own configuration rather than from a file in the mcpServers format.
+func Parse(named map[string]ServerDef) ([]Server, error) {
+	servers := make([]Server, 0, len(named))
+	for _, name := range slices.Sorted(maps.Keys(named)) {
+		if named[name].Disabled {
 			continue
 		}
-		server, err := merged[name].server(name)
+		server, err := named[name].server(name)
 		if err != nil {
 			return nil, err
 		}
@@ -60,8 +81,8 @@ func Load(paths ...string) ([]Server, error) {
 	return servers, nil
 }
 
-// entry is one server as the mcpServers format spells it. Both halves are on
-// one struct because that is how the format is written, not because they
+// ServerDef is one server as the mcpServers format spells it. Both halves are
+// on one struct because that is how the format is written, not because they
 // belong together — server() sorts them out into the two types that do.
 //
 // cwd and disabled are here because other clients write them and this one has
@@ -72,15 +93,18 @@ func Load(paths ...string) ([]Server, error) {
 // purpose is to narrow what a server may do would leave someone believing
 // they had restricted it. This client spells that AllowedTools, and says so
 // rather than nodding along.
-type entry struct {
-	Type     string            `json:"type"`
-	Command  string            `json:"command"`
-	Args     []string          `json:"args"`
-	Env      map[string]string `json:"env"`
-	Dir      string            `json:"cwd"`
-	URL      string            `json:"url"`
-	Headers  map[string]string `json:"headers"`
-	Disabled bool              `json:"disabled"`
+//
+// The yaml tags match the json ones so a consumer can decode the same shape
+// out of its own YAML config and hand it to Parse.
+type ServerDef struct {
+	Type     string            `json:"type"     yaml:"type"`
+	Command  string            `json:"command"  yaml:"command"`
+	Args     []string          `json:"args"     yaml:"args"`
+	Env      map[string]string `json:"env"      yaml:"env"`
+	Dir      string            `json:"cwd"      yaml:"cwd"`
+	URL      string            `json:"url"      yaml:"url"`
+	Headers  map[string]string `json:"headers"  yaml:"headers"`
+	Disabled bool              `json:"disabled" yaml:"disabled"`
 }
 
 // read decodes one file: tolerant about what surrounds mcpServers, strict
@@ -96,7 +120,7 @@ type entry struct {
 // a file that is wrong. So "comand" is an error that names itself, and the
 // error names the server as well as the file, because these objects look
 // alike and a person with nine of them needs to know which.
-func read(path string) (map[string]entry, error) {
+func read(path string) (map[string]ServerDef, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("nacelle/mcp/client: reading %s: %w", path, err)
@@ -116,11 +140,11 @@ func read(path string) (map[string]entry, error) {
 		return nil, fmt.Errorf("nacelle/mcp/client: reading the mcpServers object in %s: %w", path, err)
 	}
 
-	servers := make(map[string]entry, len(named))
+	servers := make(map[string]ServerDef, len(named))
 	for name, blob := range named {
 		decoder := json.NewDecoder(bytes.NewReader(blob))
 		decoder.DisallowUnknownFields()
-		var declaration entry
+		var declaration ServerDef
 		if err := decoder.Decode(&declaration); err != nil {
 			return nil, fmt.Errorf("nacelle/mcp/client: %s: server %q: %w", path, name, err)
 		}
@@ -135,7 +159,7 @@ func read(path string) (map[string]entry, error) {
 // the great majority of these files rely on. A url with no type is refused
 // rather than guessed at: reading it as http would make a file that works
 // here and nowhere else, and the fix is one key the error names.
-func (e entry) server(name string) (Server, error) {
+func (e ServerDef) server(name string) (Server, error) {
 	if !callable.MatchString(name) {
 		return nil, fmt.Errorf(
 			"nacelle/mcp/client: server %q cannot be named to the model, which allows only %s", name, callable)
@@ -157,7 +181,7 @@ func (e entry) server(name string) (Server, error) {
 
 // command builds the stdio half, and says so when the entry is plainly a
 // remote one that forgot to say which transport it wanted.
-func (e entry) command(name string) (Server, error) {
+func (e ServerDef) command(name string) (Server, error) {
 	if e.Command == "" && e.URL != "" {
 		return nil, fmt.Errorf(
 			"nacelle/mcp/client: server %q has a url and no type, which reads as a stdio server with no "+
@@ -184,7 +208,7 @@ func (e entry) command(name string) (Server, error) {
 }
 
 // remote builds the HTTP half.
-func (e entry) remote(name string) (Server, error) {
+func (e ServerDef) remote(name string) (Server, error) {
 	endpoint, err := expand(name, e.URL)
 	if err != nil {
 		return nil, err

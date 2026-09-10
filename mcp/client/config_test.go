@@ -169,3 +169,24 @@ func TestAnEmptyPathIsRefusedBySayingSo(t *testing.T) {
 		t.Errorf("Load = %v, want it to name the empty path and the likely cause", err)
 	}
 }
+
+// Parse is how a consumer feeds its own configuration — a YAML file, a
+// database — into servers without writing a file to disk first.
+func TestParseBuildsServersFromDefinitions(t *testing.T) {
+	servers, err := Parse(map[string]ServerDef{
+		"git":  {Command: "/usr/bin/mcp-server-git", Args: []string{"--repo", "."}},
+		"docs": {Type: "http", URL: "https://example.invalid/mcp"},
+	})
+	if err != nil {
+		t.Fatalf("Parse = %v, want two servers", err)
+	}
+	if len(servers) != 2 {
+		t.Fatalf("Parse returned %d servers, want 2", len(servers))
+	}
+	if got := servers[0].(Remote).URL; got != "https://example.invalid/mcp" {
+		t.Errorf("servers[0].URL = %q, want the Remote first — sorted by name", got)
+	}
+	if got := servers[1].(Command).Path; got != "/usr/bin/mcp-server-git" {
+		t.Errorf("servers[1].Path = %q, want the stdio server", got)
+	}
+}
