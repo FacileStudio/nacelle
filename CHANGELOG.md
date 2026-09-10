@@ -4,6 +4,16 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [v0.18.0] — 2026-09-10
+
+### Added
+- **Live per-task spend** via `ParallelSubAgentOptions.LiveUsage`, the streaming
+  counterpart to `Usage`. Each nested task's turn spend is reported as it is
+  spent — tagged with the fan-out's batch key and the task's index — so a host
+  can draw a per-subagent token counter that moves while the fan-out runs,
+  instead of waiting for the task's result. It fires on the task's stream
+  goroutine just before `Usage` when both are set.
+
 ## [v0.17.0] — 2026-09-10
 
 ### Added
