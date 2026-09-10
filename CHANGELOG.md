@@ -4,6 +4,22 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [Unreleased]
+
+### Changed
+- **The anthropic backend owns its agent loop instead of the SDK's
+  `BetaToolRunnerStreaming`.** The SDK runner blocks a turn's tools to
+  completion before streaming the next turn, so a tool's streamed output could
+  only surface as a burst once the tool finished. The native loop runs a
+  turn's tools on the backend's own goroutines and drains the tool sink on a
+  live tick while they run, so a `KindToolOutput` reaches the consumer the
+  moment a line is produced — true line-by-line streaming on the default
+  anthropic main thread. Call pairing now runs by the call's id directly
+  instead of recovering it from a name-and-arguments heuristic, which removes
+  the impossible-to-correlate edge cases that heuristic existed to paper over.
+  No event-contract change: every event a consumer already handles arrives the
+  same way, just earlier for tool output.
+
 ## [v0.20.0] — 2026-09-10
 
 ### Added
