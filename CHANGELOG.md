@@ -4,6 +4,18 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [v0.16.0] — 2026-09-10
+
+### Added
+- **Non-blocking `parallel_subagent`** via `ParallelSubAgentOptions.Detach`. When set, the tool
+  no longer holds the caller until the whole fan-out returns one merged JSON: it returns a stub
+  (`{"started":N,"batch":key}`) immediately and runs the fan-out in the background, streaming each
+  task's outcome to `ParallelSubAgentOptions.Results` as it finishes. `ParallelTaskResult` gained a
+  `Batch` field tagging streamed results with their fan-out, so a host can route overlapping calls.
+  This is the mode an interactive UI wants, so the model's turn — and the caller's main thread —
+  is never pinned by the parent waiting on a tool. Nil `Results` drops the outcomes while the work
+  still runs. Zero (false) keeps the historical blocking behaviour.
+
 ## [v0.15.0] — 2026-09-10
 
 ### Added
