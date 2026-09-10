@@ -49,9 +49,11 @@ type ParallelSubAgentOptions struct {
 // are consumed here.
 //
 // Each task runs in its own fresh agent on the same backend. Results are
-// returned as a JSON object mapping task index to result string:
+// returned as a JSON object mapping task index to result string, with each
+// task's spend alongside:
 //
-//	{"tasks":{"0":"result of task 0","1":"result of task 1"}}
+//	{"tasks":{"0":"result of task 0","1":"result of task 1"},
+//	 "usage":{"0":{"InputTokens":..,"OutputTokens":..,..},"1":{..}}}
 //
 // Errors from individual tasks appear in the "errors" field:
 //
@@ -105,6 +107,7 @@ type parallelSubAgentInput struct {
 type parallelTask struct {
 	result string
 	err    string
+	usage  Usage
 }
 
 // parallelContext carries everything parallelDelegate needs to spawn a worker.
@@ -146,17 +149,29 @@ func parallelDelegate(ctx context.Context, config parallelContext, tasks []strin
 }
 
 // runParallelTask executes one task inside a nested agent and returns the result.
+// The task's spend is accumulated per-index so the response can report what
+// each subagent cost, while the caller's own Usage hook still receives every
+// nested turn as before.
 func runParallelTask(ctx context.Context, config parallelContext, task string) parallelTask {
 	nested, err := New(parallelSubAgentConfig(config.cfg, config.opts, config.name))
 	if err != nil {
 		return parallelTask{err: fmt.Sprintf("building agent: %v", err)}
 	}
 
-	result, err := delegate(ctx, nested, task, config.opts.Usage)
-	if err != nil {
-		return parallelTask{err: err.Error()}
+	var spent Usage
+	report := config.opts.Usage
+	accumulate := func(usage Usage) {
+		spent = spent.Add(usage)
+		if report != nil {
+			report(usage)
+		}
 	}
-	return parallelTask{result: result}
+
+	result, err := delegate(ctx, nested, task, accumulate)
+	if err != nil {
+		return parallelTask{err: err.Error(), usage: spent}
+	}
+	return parallelTask{result: result, usage: spent}
 }
 
 // parallelSubAgentConfig builds the Config each parallel nested agent runs on.
@@ -175,6 +190,7 @@ func parallelSubAgentConfig(cfg Config, opts ParallelSubAgentOptions, name strin
 type parallelResponse struct {
 	Tasks  map[string]string `json:"tasks,omitempty"`
 	Errors map[string]string `json:"errors,omitempty"`
+	Usage  map[string]Usage  `json:"usage,omitempty"`
 }
 
 // buildParallelResponse builds the JSON-serializable response map from results.
@@ -182,6 +198,7 @@ func buildParallelResponse(results []parallelTask) parallelResponse {
 	resp := parallelResponse{
 		Tasks:  make(map[string]string),
 		Errors: make(map[string]string),
+		Usage:  make(map[string]Usage),
 	}
 	for i, r := range results {
 		key := strconv.Itoa(i)
@@ -191,6 +208,9 @@ func buildParallelResponse(results []parallelTask) parallelResponse {
 		}
 		if r.result != "" {
 			resp.Tasks[key] = r.result
+		}
+		if r.usage.Total() > 0 {
+			resp.Usage[key] = r.usage
 		}
 	}
 	return resp
