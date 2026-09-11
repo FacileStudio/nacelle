@@ -391,6 +391,91 @@ func TestParallelSubAgentReportsToolCalls(t *testing.T) {
 	}
 }
 
+// TestParallelSubAgentReportsToolDone verifies the ToolDone callback fires as a
+// nested task's tool call ends with err nil on success, so a host can colour the
+// running-tool glyph green the moment its call lands. Echo needs an approving
+// policy, because the nested agent's default deny-all refuses every call.
+func TestParallelSubAgentReportsToolDone(t *testing.T) {
+	backend := newLoop([]step{toolStep("echo", `{}`), textStep("ok")})
+	echo := &echoTool{}
+	done := make(chan string, 4)
+
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
+	}, nacelle.ParallelSubAgentOptions{
+		Approve: func(context.Context, string, json.RawMessage) bool { return true },
+		ToolDone: func(batch string, idx int, name string, err error) {
+			s := "ok"
+			if err != nil {
+				s = "fail"
+			}
+			done <- fmt.Sprintf("%d:%s:%s", idx, name, s)
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	sink := &nacelle.ToolSink{}
+	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
+		json.RawMessage(`{"tasks":["t0"]}`), sink)
+	drainToolResult(t, sink)
+
+	if !awaitKey(t, done, "0:echo:ok") {
+		t.Error("tool done did not report echo succeeded")
+	}
+}
+
+// TestParallelSubAgentReportsToolFailure verifies the ToolDone callback fires
+// with a set err when a nested tool's call fails. The "nope" tool is not in the
+// nested agent's tool list, so the loop backend reports its call as an error
+// without approval being involved.
+func TestParallelSubAgentReportsToolFailure(t *testing.T) {
+	backend := newLoop([]step{toolStep("nope", `{}`), textStep("ok")})
+	echo := &echoTool{}
+	done := make(chan string, 4)
+
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
+	}, nacelle.ParallelSubAgentOptions{ToolDone: func(batch string, idx int, name string, err error) {
+		s := "ok"
+		if err != nil {
+			s = "fail"
+		}
+		done <- fmt.Sprintf("%d:%s:%s", idx, name, s)
+	}})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	sink := &nacelle.ToolSink{}
+	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
+		json.RawMessage(`{"tasks":["t0"]}`), sink)
+	drainToolResult(t, sink)
+
+	if !awaitKey(t, done, "0:nope:fail") {
+		t.Error("tool done did not report the unknown tool failing")
+	}
+}
+
+// awaitKey drains a channel until a wanted value appears, or the poll budget
+// runs out. It returns whether the value was seen.
+func awaitKey(t *testing.T, c <-chan string, want string) bool {
+	var got []string
+	for timeout := 0; timeout < 200; timeout++ {
+		select {
+		case v := <-c:
+			if v == want {
+				return true
+			}
+			got = append(got, v)
+		default:
+		}
+	}
+	t.Errorf("channel held %v, want %q", got, want)
+	return false
+}
+
 // turnBackend streams a single turn carrying fixed usage, so a host can assert
 // what the parallel tool forwards per task as each nested run spends.
 type turnBackend struct{}

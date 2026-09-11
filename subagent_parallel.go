@@ -77,6 +77,14 @@ type ParallelSubAgentOptions struct {
 	// stream goroutine; keep it cheap and non-blocking. A host draws "what is
 	// this subagent doing right now" from it.
 	Tool func(batch string, idx int, name string)
+
+	// ToolDone receives each nested task's tool call as it ends. The arguments
+	// match Tool's — batch, idx, the tool's name — plus err, nil when the call
+	// succeeded and set when it failed. It fires on the task's stream goroutine;
+	// keep it cheap and non-blocking. A host colours the running-tool glyph green
+	// or red from it, since the call happened inside a subagent and no other
+	// outcome event reaches the parent until the whole task returns.
+	ToolDone func(batch string, idx int, name string, err error)
 }
 
 // parallelBatch hands out the batch key that ties a Detach'd fan-out's streamed
@@ -268,6 +276,10 @@ func runParallelTask(ctx context.Context, config parallelContext, idx int, task 
 	result, err := delegate(ctx, nested, task, accumulate, func(name string) {
 		if tool := config.opts.Tool; tool != nil {
 			tool(config.batch, idx, name)
+		}
+	}, func(name string, err error) {
+		if done := config.opts.ToolDone; done != nil {
+			done(config.batch, idx, name, err)
 		}
 	})
 	if err != nil {

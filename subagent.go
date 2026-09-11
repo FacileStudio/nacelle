@@ -88,7 +88,7 @@ func subAgentConfig(cfg Config, opts SubAgentOptions, name string) Config {
 // erroring — out of iterations, cut off mid-answer — comes back as text that
 // says so, because handing the caller a truncated answer shaped like a whole
 // one is the failure Stop exists to prevent.
-func delegate(ctx context.Context, nested *Agent, task string, report func(Usage), onTool func(string)) (string, error) {
+func delegate(ctx context.Context, nested *Agent, task string, report func(Usage), onTool func(string), onToolDone func(string, error)) (string, error) {
 	task = strings.TrimSpace(task)
 	if task == "" {
 		return "", fmt.Errorf("no task given")
@@ -100,7 +100,7 @@ func delegate(ctx context.Context, nested *Agent, task string, report func(Usage
 		if err != nil {
 			return "", fmt.Errorf("the delegated run failed: %w", err)
 		}
-		stop = handledEvent(event, &answer, report, onTool, stop)
+		stop = handledEvent(event, &answer, report, onTool, onToolDone, stop)
 	}
 
 	return finish(answer.String(), stop), nil
@@ -109,7 +109,7 @@ func delegate(ctx context.Context, nested *Agent, task string, report func(Usage
 // handledEvent applies one delegated stream event and returns the updated stop
 // reason. It owns the switch the delivery loop would otherwise carry, so that
 // loop stays a straight line over the nested sequence.
-func handledEvent(event Event, answer *strings.Builder, report func(Usage), onTool func(string), stop Stop) Stop {
+func handledEvent(event Event, answer *strings.Builder, report func(Usage), onTool func(string), onToolDone func(string, error), stop Stop) Stop {
 	switch event.Kind {
 	case KindText:
 		answer.WriteString(event.Text)
@@ -121,6 +121,10 @@ func handledEvent(event Event, answer *strings.Builder, report func(Usage), onTo
 	case KindToolCall:
 		if onTool != nil {
 			onTool(event.Tool.Name)
+		}
+	case KindToolResult:
+		if onToolDone != nil {
+			onToolDone(event.Tool.Name, event.Tool.Err)
 		}
 	}
 	return stop
