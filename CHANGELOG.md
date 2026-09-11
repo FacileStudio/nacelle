@@ -4,6 +4,19 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [0.22.0] - 2026-09-11
+
+### Added
+- **`ParallelSubAgentOptions.ToolDone` reports each nested tool's outcome.**
+  The `Tool` callback fired only when a parallel subagent's tool began; nothing
+  told the host the outcome of the subagent's individual tool calls, because
+  the parent saw one merged result per task. `ToolDone(batch, idx, name, err)`
+  fires on each nested `KindToolResult` — err nil on success, set on failure —
+  so a host can colour the running-tool glyph green or red the moment its call
+  lands. `runParallelTask` forwards it tagged with batch and idx exactly as the
+  `Tool` path does, so it reaches every surface: the blocking tool, the Detach
+  tool, and `DelegateParallel`.
+
 ## [0.21.0] - 2026-09-11
 
 ### Changed
