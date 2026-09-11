@@ -4,7 +4,7 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
-## [Unreleased]
+## [0.21.0] - 2026-09-11
 
 ### Changed
 - **The anthropic backend owns its agent loop instead of the SDK's
