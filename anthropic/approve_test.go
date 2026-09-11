@@ -40,6 +40,13 @@ func TestARefusedCallNeverReachesTheTool(t *testing.T) {
 		MaxIterations: 4,
 	})
 
+	assertRefused(t, ran, events)
+}
+
+// assertRefused checks the pairing contract a refused call must meet: the tool
+// never ran, and the outbound KindToolResult carries the error and the Refused
+// flag a consumer builds on.
+func assertRefused(t *testing.T, ran bool, events []nacelle.Event) {
 	if ran {
 		t.Fatal("the tool ran despite being refused")
 	}

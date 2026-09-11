@@ -39,14 +39,18 @@ func TestStreamedToolOutputArrivesBeforeItsResult(t *testing.T) {
 		MaxTokens:     1024,
 		MaxIterations: 4,
 	})
+	assertOutputPrecedesResult(t, events)
+}
 
-	// Record arrival order in the stream rather than trusting wall-clock
-	// timestamps, which are not reliable for a delta in the tens of ms.
+// assertOutputPrecedesResult fails unless the first streamed KindToolOutput
+// appears before the call's KindToolResult. Arrival order is read from the
+// stream itself rather than from wall-clock timestamps, which are not reliable
+// for a delta in the tens of ms.
+func assertOutputPrecedesResult(t *testing.T, events []nacelle.Event) {
 	var sequence []nacelle.Kind
 	for _, event := range events {
 		sequence = append(sequence, event.Kind)
 	}
-
 	firstOutput := indexOfKind(sequence, nacelle.KindToolOutput)
 	result := indexOfKind(sequence, nacelle.KindToolResult)
 	if firstOutput < 0 {

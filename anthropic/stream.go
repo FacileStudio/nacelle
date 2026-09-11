@@ -87,17 +87,14 @@ func (b *Backend) loop(ctx context.Context, request nacelle.Request, s *session)
 	iterations := 0
 
 	for {
-		if request.MaxIterations > 0 && iterations >= request.MaxIterations {
-			run.stop = finalStop(len(pending) > 0, run.stop, iterations, request.MaxIterations)
+		if done, stop := capped(request, pending, iterations, run.stop); done {
+			run.stop = stop
 			return run, true
 		}
-		if len(pending) > 0 {
-			s.base.Messages = history
-			results, ok := runCalls(ctx, pending, s, nacelle.ToolsByName(request.Tools))
-			if !ok {
-				return run, false
-			}
-			history = append(history, sdk.NewBetaUserMessage(results...))
+		if history2, ok := runPending(ctx, request, s, history, pending); ok {
+			history = history2
+		} else {
+			return run, false
 		}
 
 		iterations++
@@ -115,6 +112,30 @@ func (b *Backend) loop(ctx context.Context, request nacelle.Request, s *session)
 	}
 }
 
+// capped decides whether the run has exhausted its allowed iterations, folding
+// that outcome into stop so the loop neither issues another request nor lets
+// the last turn's pending tools masquerade as a finished stop.
+func capped(request nacelle.Request, pending []*nacelle.ToolEvent, iterations int, stop nacelle.Stop) (bool, nacelle.Stop) {
+	if request.MaxIterations > 0 && iterations >= request.MaxIterations {
+		return true, finalStop(len(pending) > 0, stop, iterations, request.MaxIterations)
+	}
+	return false, stop
+}
+
+// runPending executes a turn's queued local calls and appends their results to
+// the conversation, returning the grown history and whether the batch survived.
+func runPending(ctx context.Context, request nacelle.Request, s *session, history []sdk.BetaMessageParam, pending []*nacelle.ToolEvent) ([]sdk.BetaMessageParam, bool) {
+	if len(pending) == 0 {
+		return history, true
+	}
+	s.base.Messages = history
+	results, ok := runCalls(ctx, pending, s, nacelle.ToolsByName(request.Tools))
+	if !ok {
+		return history, false
+	}
+	return append(history, sdk.NewBetaUserMessage(results...)), true
+}
+
 // streamOne streams one assistant turn onto the event stream, adding what it
 // cost to the run, and returns the turn's message and its queued local calls.
 func (b *Backend) streamOne(ctx context.Context, s *session, run *outcome) (*sdk.BetaMessage, []*nacelle.ToolEvent, bool) {
@@ -124,18 +145,7 @@ func (b *Backend) streamOne(ctx context.Context, s *session, run *outcome) (*sdk
 
 	var assistant sdk.BetaMessage
 	for stream.Next() {
-		event := stream.Current()
-		if err := assistant.Accumulate(event); err != nil {
-			s.out.fail(err)
-			return nil, nil, false
-		}
-		if !s.out.flushTools() {
-			return nil, nil, false
-		}
-		if !s.out.sendAll(calls.consume(event)) {
-			return nil, nil, false
-		}
-		if !s.out.sendAll(turnEnd(event, run)) {
+		if !streamEvent(s, calls, &assistant, stream.Current(), run) {
 			return nil, nil, false
 		}
 	}
@@ -147,4 +157,22 @@ func (b *Backend) streamOne(ctx context.Context, s *session, run *outcome) (*sdk
 		return nil, nil, false
 	}
 	return &assistant, calls.localCalls(), true
+}
+
+// streamEvent advances one raw stream event onto the turn: folding it into the
+// assistant message, draining any tool output the backend just produced, and
+// reporting the streamed call or turn cost it carries. It reports whether the
+// consumer is still ranging.
+func streamEvent(s *session, calls *callTracker, assistant *sdk.BetaMessage, event sdk.BetaRawMessageStreamEventUnion, run *outcome) bool {
+	if err := assistant.Accumulate(event); err != nil {
+		s.out.fail(err)
+		return false
+	}
+	if !s.out.flushTools() {
+		return false
+	}
+	if !s.out.sendAll(calls.consume(event)) {
+		return false
+	}
+	return s.out.sendAll(turnEnd(event, run))
 }
