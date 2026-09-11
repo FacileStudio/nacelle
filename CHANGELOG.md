@@ -4,6 +4,21 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [0.22.1] - 2026-09-11
+
+### Fixed
+- **Empty tool-call entries no longer replay as `tool_calls: [{}]`.** A provider
+  can close a streamed turn with a tool-call delta that carries no id, name or
+  arguments; the accumulator filed it under its index and the runner replayed
+  it verbatim on the next request, which OpenAI-compatible providers answer
+  with a 400 listing missing `id`/`function`/`type` fields. `turnStream.finish`
+  now drops the empty entry from both the calls it would execute and the
+  assistant message it replays.
+- **Relative globs match in `search_content` and `find_files`.** The file walk
+  yields absolute paths, so a model-supplied glob such as `internal/tui/*.go`
+  matched nothing; `matchGlob` now tries both the absolute path and the path
+  relative to the tool's root.
+
 ## [0.22.0] - 2026-09-11
 
 ### Added
