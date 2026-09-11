@@ -12,7 +12,6 @@ import (
 
 	"github.com/FacileStudio/nacelle"
 )
-
 // skipped are directories never worth walking. They are large, generated, and
 // searching them buries the answer rather than finding more of it.
 var skipped = map[string]bool{
@@ -58,8 +57,8 @@ func (s *Set) globTool() (nacelle.Tool, error) {
 			pattern = relativise(pattern, s.dir)
 
 			var found []string
-			err := s.walk(func(name string, _ fs.DirEntry) error {
-				if matchGlob(pattern, name) {
+			err := s.walk(func(name, rel string, _ fs.DirEntry) error {
+				if matchGlob(pattern, name) || matchGlob(pattern, rel) {
 					found = append(found, name)
 				}
 				return nil
@@ -93,8 +92,8 @@ func (s *Set) grepTool() (nacelle.Tool, error) {
 			glob := relativise(strings.TrimSpace(in.Glob), s.dir)
 
 			var matches []string
-			err = s.walk(func(name string, _ fs.DirEntry) error {
-				if glob == "" || matchGlob(glob, name) {
+			err = s.walk(func(name, rel string, _ fs.DirEntry) error {
+				if glob == "" || matchGlob(glob, name) || matchGlob(glob, rel) {
 					s.grepFile(name, expression, &matches)
 				}
 				return nil
@@ -135,27 +134,44 @@ func (s *Set) grepFile(name string, expression *regexp.Regexp, matches *[]string
 
 // walk visits every file under the root, skipping generated directories.
 //
+// It gives the visitor both the absolute path and the path relative to the
+// root, because a model-supplied glob is usually relative while WalkDir
+// yields absolute names; matching either is what lets `internal/tui/*.go`
+// find anything.
+//
 // It walks root.FS() rather than the real filesystem, so the traversal itself
 // cannot follow a symlink out of the tree. ErrSkipEntry is returned by
 // visit to skip a single file without aborting the walk; other errors from
 // visit stop the walk.
-func (s *Set) walk(visit func(name string, entry fs.DirEntry) error) error {
+func (s *Set) walk(visit func(name, rel string, entry fs.DirEntry) error) error {
 	root, err := filepath.Abs(s.dir)
 	if err != nil {
 		return err
 	}
-	return filepath.WalkDir(root, func(name string, d fs.DirEntry, err error) error {
+	return filepath.WalkDir(root, s.visitor(root, visit))
+}
+
+func (s *Set) visitor(root string, visit func(name, rel string, entry fs.DirEntry) error) fs.WalkDirFunc {
+	return func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return ErrSkipEntry
 		}
 		if d.IsDir() {
-			if name != root && (skipped[d.Name()] || strings.HasPrefix(d.Name(), ".")) {
+			if name != root && skipDir(d.Name()) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		return visit(name, d)
-	})
+		rel, relErr := filepath.Rel(root, name)
+		if relErr != nil {
+			rel = name
+		}
+		return visit(name, rel, d)
+	}
+}
+
+func skipDir(name string) bool {
+	return skipped[name] || strings.HasPrefix(name, ".")
 }
 
 // ErrSkipEntry stops the walk at the current entry without failing.
@@ -174,46 +190,4 @@ func isBinary(data []byte) bool {
 		}
 	}
 	return false
-}
-
-// matchGlob reports whether name matches pattern, with ** matching any number
-// of path segments.
-//
-// The standard library's filepath.Match has no **, and ** is the segment
-// models reach for first — a glob tool without it forces a caller to know the
-// directory depth in advance, which is exactly what they were searching to
-// find out.
-func matchGlob(pattern, name string) bool {
-	var matchStar func([]string, []string) bool
-	matchStar = func(p, n []string) bool {
-		if len(p) == 0 {
-			return true
-		}
-		for i := 0; i <= len(n); i++ {
-			if matchSegments(p, n[i:], matchStar) {
-				return true
-			}
-		}
-		return false
-	}
-	return matchSegments(strings.Split(pattern, "/"), strings.Split(name, "/"), matchStar)
-}
-
-// matchSegments matches path segments against pattern segments. matchStar is
-// the closure that handles a ** segment, which recurses back into
-// matchSegments, so the two call each other rather than duplicating the loop.
-func matchSegments(pattern, name []string, matchStar func([]string, []string) bool) bool {
-	for len(pattern) > 0 {
-		if pattern[0] == "**" {
-			return matchStar(pattern[1:], name)
-		}
-		if len(name) == 0 {
-			return false
-		}
-		if ok, err := filepath.Match(pattern[0], name[0]); err != nil || !ok {
-			return false
-		}
-		pattern, name = pattern[1:], name[1:]
-	}
-	return len(name) == 0
 }

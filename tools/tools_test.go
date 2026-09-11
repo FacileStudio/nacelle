@@ -142,6 +142,25 @@ func TestSearchFindsMatchesAndSkipsGeneratedTrees(t *testing.T) {
 	if strings.Contains(scoped, "a.go") {
 		t.Errorf("the glob did not restrict the search:\n%s", scoped)
 	}
+
+	relative, err := call(t, set, "search_content", grepInput{Pattern: "needle", Glob: "internal/deep/*.txt"})
+	if err != nil {
+		t.Fatalf("relative-glob search: %v", err)
+	}
+	if !strings.Contains(relative, "c.txt") {
+		t.Errorf("a relative glob must match the walk's absolute names:\n%s", relative)
+	}
+}
+
+func TestFindFilesMatchesRelativeGlob(t *testing.T) {
+	set := newSet(t, map[string]string{"internal/deep/c.txt": "x"})
+	out, err := call(t, set, "find_files", globInput{Pattern: "internal/deep/*.txt"})
+	if err != nil {
+		t.Fatalf("find_files: %v", err)
+	}
+	if !strings.Contains(out, "c.txt") {
+		t.Errorf("a relative glob must match the walk's absolute names:\n%s", out)
+	}
 }
 
 func TestOutputIsCappedAndSaysSo(t *testing.T) {
