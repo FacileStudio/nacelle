@@ -33,10 +33,11 @@ type Command struct {
 	// Args are handed to it unchanged.
 	Args []string
 
-	// Env names the variables the server starts with, on top of a minimal
-	// base. Read the doc comment on environment for why the process
-	// environment is not inherited and why every credential the server
-	// needs belongs here.
+	// Env names the variables the server starts with, on top of the
+	// environment it inherits (or, with IsolateEnv, on top of the minimal
+	// base). Entries win over inherited ones, and are the way a credential
+	// is named where the server is configured rather than reaching it
+	// invisibly from whatever started the agent.
 	Env map[string]string
 
 	// Dir is the working directory. Empty means the calling process's.
@@ -73,6 +74,18 @@ type Command struct {
 	// Timeout bounds one tools/call and the connect-time handshake.
 	// Defaults to DefaultCallTimeout.
 	Timeout time.Duration
+
+	// IsolateEnv starts the server with PATH, HOME and this server's own Env
+	// entries — not the process environment. Off by default: the child
+	// inherits the launching shell's environment in full, so servers that
+	// shell out to tools on PATH or read exported keys work as they do when
+	// run by hand. Turn it on per server, or for every server at once with
+	// [WithEnvIsolation], when a server is about to receive model-chosen
+	// arguments and the secrets in this environment must not reach it.
+	//
+	// Env entries win in either mode; in the isolated one they are the only
+	// thing besides PATH and HOME the child sees.
+	IsolateEnv bool
 }
 
 func (c Command) details() details {
@@ -96,7 +109,7 @@ func (c Command) check() error {
 func (c Command) dial() (sdk.Transport, *diagnostics, error) {
 	subprocess := exec.Command(c.Path, c.Args...)
 	subprocess.Dir = c.Dir
-	subprocess.Env = environment(c.Env)
+	subprocess.Env = environment(c.Env, c.IsolateEnv)
 
 	notes := &diagnostics{}
 	subprocess.Stderr = notes.tee(c.Stderr)

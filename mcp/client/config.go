@@ -105,6 +105,10 @@ type ServerDef struct {
 	URL      string            `json:"url"      yaml:"url"`
 	Headers  map[string]string `json:"headers"  yaml:"headers"`
 	Disabled bool              `json:"disabled" yaml:"disabled"`
+	// IsolateEnv starts this stdio server without the process environment.
+	// Most clients' mcpServers format has no key for it, so it stays unset
+	// in files written for them; nacelle builds it from a security setting.
+	IsolateEnv bool `json:"isolateEnv" yaml:"isolate_env"`
 }
 
 // read decodes one file: tolerant about what surrounds mcpServers, strict
@@ -204,7 +208,24 @@ func (e ServerDef) command(name string) (Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Command{Name: name, Path: path, Args: args, Env: env, Dir: dir}, nil
+	return Command{Name: name, Path: path, Args: args, Env: env, Dir: dir, IsolateEnv: e.IsolateEnv}, nil
+}
+
+// WithEnvIsolation returns the servers with IsolateEnv set on every stdio
+// Command, so a caller can make the choice once in configuration instead of
+// naming it per server. Servers are values behind the Server interface, so
+// the flip happens on a copy and the result has to be used — the slice that
+// went in is untouched.
+func WithEnvIsolation(servers []Server, isolate bool) []Server {
+	out := make([]Server, len(servers))
+	for i, server := range servers {
+		if command, ok := server.(Command); ok {
+			command.IsolateEnv = isolate
+			server = command
+		}
+		out[i] = server
+	}
+	return out
 }
 
 // remote builds the HTTP half.
