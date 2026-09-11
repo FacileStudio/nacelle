@@ -33,12 +33,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: FacileStudio/filet@v0.4.0
         with:
-          # info, not error, and deliberately. Every style rule filet has is
-          # info severity, so a gate failing on error alone can only fire on a
-          # Go file that does not parse or on a forbidden import — which is a
-          # gate that agrees with whatever is already committed. The repository
-          # is clean at this level today; keeping it there is the point.
-          fail-on: info
+          # error, not info. Every style rule filet has is info severity, so a
+          # gate failing on error alone can only fire on a Go file that does not
+          # parse or on a forbidden import — which is a gate that agrees with
+          # whatever is already committed. filet.yml records the same policy as
+          # failOn: error; this input is the workflow's copy of it.
+          fail-on: error
           # The run is always reported and the provider decides what deserves an
           # alert, so that policy lives in one place instead of in every fork's
           # workflow. The URL is withheld when the secret is not available: a
