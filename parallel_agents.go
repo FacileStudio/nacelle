@@ -9,16 +9,16 @@ import (
 	"sync/atomic"
 )
 
-// ParallelSubAgentToolName is the name the parallel sub-agent tool registers
+// ParallelAgentsToolName is the name the parallel sub-agent tool registers
 // under, and the name stripped from the tools nested parallel agents inherit.
-const ParallelSubAgentToolName = "parallel_subagent"
+const ParallelAgentsToolName = "parallel_agents"
 
 // ParallelSubAgentOptions overrides what each nested agent inherits from its
 // parent's Config. The zero value runs up to 4 tasks concurrently on the
 // parent's backend and system prompt, under the parent's iteration ceiling,
 // with the parent's tools minus the parallel subagent itself.
 type ParallelSubAgentOptions struct {
-	// Name is the tool name the model calls, defaulting to ParallelSubAgentToolName.
+	// Name is the tool name the model calls, defaulting to ParallelAgentsToolName.
 	Name string
 
 	// Description is what the model reads when choosing the tool.
@@ -112,7 +112,7 @@ var parallelBatch atomic.Uint64
 func NewParallelSubAgentTool(cfg Config, opts ParallelSubAgentOptions) (Tool, error) {
 	name := opts.Name
 	if name == "" {
-		name = ParallelSubAgentToolName
+		name = ParallelAgentsToolName
 	}
 
 	description := opts.Description
@@ -363,7 +363,7 @@ func DelegateParallel(ctx context.Context, cfg Config, tasks []string, opts Para
 
 	name := opts.Name
 	if name == "" {
-		name = ParallelSubAgentToolName
+		name = ParallelAgentsToolName
 	}
 	config := parallelContext{
 		cfg:   cfg,

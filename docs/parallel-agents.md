@@ -96,7 +96,7 @@ If using a shared task list:
 
 - Do NOT change the Backend interface or Agent struct
 - Do NOT make the model itself run in parallel
-- Do NOT resurrect a single-subagent tool; `parallel_subagent` with a one-task list is the delegation primitive (the single `subagent` tool was removed for it)
+- Do NOT resurrect a single-subagent tool; `parallel_agents` with a one-task list is the delegation primitive (the single `subagent` tool was removed for it)
 - Do NOT add generic orchestration framework
 - Do NOT add split-pane UI (tabbed first)
 - Do NOT add rate-limiting

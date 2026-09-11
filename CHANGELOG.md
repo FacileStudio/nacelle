@@ -4,6 +4,15 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [0.23.0] - 2026-09-11
+
+### Changed
+- **Breaking: the parallel subagent tool is renamed `parallel_agents`.**
+  `ParallelSubAgentToolName` is now `ParallelAgentsToolName` and the tool the
+  model calls is `"parallel_agents"`; `subagent_parallel.go` is
+  `parallel_agents.go`. Hosts that mount the tool and prompts that reference it
+  by name must follow.
+
 ## [0.22.1] - 2026-09-11
 
 ### Fixed
@@ -99,7 +108,7 @@ while on `v0`, a breaking change bumps the minor.
 ## [v0.16.0] — 2026-09-10
 
 ### Added
-- **Non-blocking `parallel_subagent`** via `ParallelSubAgentOptions.Detach`. When set, the tool
+- **Non-blocking `parallel_agents`** via `ParallelSubAgentOptions.Detach`. When set, the tool
   no longer holds the caller until the whole fan-out returns one merged JSON: it returns a stub
   (`{"started":N,"batch":key}`) immediately and runs the fan-out in the background, streaming each
   task's outcome to `ParallelSubAgentOptions.Results` as it finishes. `ParallelTaskResult` gained a
@@ -111,7 +120,7 @@ while on `v0`, a breaking change bumps the minor.
 ## [v0.15.0] — 2026-09-10
 
 ### Added
-- **`DelegateParallel`**: the detached counterpart to the `parallel_subagent` tool. It fans
+- **`DelegateParallel`**: the detached counterpart to the `parallel_agents` tool. It fans
   tasks out to concurrent nested agents on a caller's `Config` and returns a `<-chan ParallelTaskResult`
   the caller drains as each task finishes — instead of blocking the caller until every task returns
   one merged JSON. Each `ParallelTaskResult` carries the task index, its result text or error, and
@@ -135,7 +144,7 @@ while on `v0`, a breaking change bumps the minor.
 ## [v0.14.0] — 2026-09-10
 
 ### Added
-- **Parallel per-task usage**: the `parallel_subagent` result now carries a `usage` map keyed
+- **Parallel per-task usage**: the `parallel_agents` result now carries a `usage` map keyed
   by task index (`{"usage":{"0":{"InputTokens":..,"OutputTokens":..}}}`), so a consumer can
   bill a single subagent without summing the whole fan-out. Each task's spend accumulates
   per-index inside the SDK; a caller's own `Usage` hook still receives every nested turn as

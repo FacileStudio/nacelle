@@ -13,7 +13,7 @@ import (
 // task result.
 func TestParallelSubAgentReportsAnUnfinishedRun(t *testing.T) {
 	backend := newLoop(
-		[]step{toolStep(nacelle.ParallelSubAgentToolName, `{"tasks":["task"]}`), textStep("ok")},
+		[]step{toolStep(nacelle.ParallelAgentsToolName, `{"tasks":["task"]}`), textStep("ok")},
 		[]step{textStep("half a thought", nacelle.StopMaxTokens)},
 	)
 
@@ -35,7 +35,7 @@ func TestParallelSubAgentReportsAnUnfinishedRun(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parent stream: %v", err)
 		}
-		if event.Kind == nacelle.KindToolResult && event.Tool != nil && event.Tool.Name == nacelle.ParallelSubAgentToolName {
+		if event.Kind == nacelle.KindToolResult && event.Tool != nil && event.Tool.Name == nacelle.ParallelAgentsToolName {
 			result = event.Tool.Result
 		}
 	}

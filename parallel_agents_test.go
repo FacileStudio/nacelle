@@ -16,7 +16,7 @@ import (
 // and all results are returned, regardless of completion order.
 func TestParallelSubAgentReturnsAllResults(t *testing.T) {
 	backend := newLoop(
-		[]step{toolStep(nacelle.ParallelSubAgentToolName, `{"tasks":["count the stars","echo hello","echo world"]}`), textStep("ok")},
+		[]step{toolStep(nacelle.ParallelAgentsToolName, `{"tasks":["count the stars","echo hello","echo world"]}`), textStep("ok")},
 		[]step{toolStep("echo", `{}`), textStep("seven")},
 		[]step{toolStep("echo", `{}`), textStep("hello")},
 		[]step{toolStep("echo", `{}`), textStep("world")},
@@ -27,7 +27,7 @@ func TestParallelSubAgentReturnsAllResults(t *testing.T) {
 
 	var toolResult string
 	runParent(t, parent, "parallel", func(event nacelle.Event) {
-		if event.Kind == nacelle.KindToolResult && event.Tool != nil && event.Tool.Name == nacelle.ParallelSubAgentToolName {
+		if event.Kind == nacelle.KindToolResult && event.Tool != nil && event.Tool.Name == nacelle.ParallelAgentsToolName {
 			toolResult = event.Tool.Result
 		}
 	})
@@ -39,7 +39,7 @@ func TestParallelSubAgentReturnsAllResults(t *testing.T) {
 // the others still complete and their results are returned.
 func TestParallelSubAgentPartialFailure(t *testing.T) {
 	backend := newLoop(
-		[]step{toolStep(nacelle.ParallelSubAgentToolName, `{"tasks":["good","bad","good"]}`), textStep("ok")},
+		[]step{toolStep(nacelle.ParallelAgentsToolName, `{"tasks":["good","bad","good"]}`), textStep("ok")},
 		[]step{toolStep("echo", `{}`), textStep("good1")},
 		[]step{toolStep("echo", `{}`), textStep("bad")},
 		[]step{toolStep("echo", `{}`), textStep("good2")},
@@ -50,7 +50,7 @@ func TestParallelSubAgentPartialFailure(t *testing.T) {
 
 	var toolResult string
 	runParent(t, parent, "parallel", func(event nacelle.Event) {
-		if event.Kind == nacelle.KindToolResult && event.Tool != nil && event.Tool.Name == nacelle.ParallelSubAgentToolName {
+		if event.Kind == nacelle.KindToolResult && event.Tool != nil && event.Tool.Name == nacelle.ParallelAgentsToolName {
 			toolResult = event.Tool.Result
 		}
 	})
@@ -62,7 +62,7 @@ func TestParallelSubAgentPartialFailure(t *testing.T) {
 // share the same config and the parent config is not mutated.
 func TestParallelSubAgentSharedConfig(t *testing.T) {
 	backend := newLoop(
-		[]step{toolStep(nacelle.ParallelSubAgentToolName, `{"tasks":["task1","task2","task3"]}`), textStep("ok")},
+		[]step{toolStep(nacelle.ParallelAgentsToolName, `{"tasks":["task1","task2","task3"]}`), textStep("ok")},
 		[]step{toolStep("echo", `{}`), textStep("task1")},
 		[]step{toolStep("echo", `{}`), textStep("task2")},
 		[]step{toolStep("echo", `{}`), textStep("task3")},
@@ -73,7 +73,7 @@ func TestParallelSubAgentSharedConfig(t *testing.T) {
 
 	var toolResult string
 	runParent(t, parent, "parallel", func(event nacelle.Event) {
-		if event.Kind == nacelle.KindToolResult && event.Tool != nil && event.Tool.Name == nacelle.ParallelSubAgentToolName {
+		if event.Kind == nacelle.KindToolResult && event.Tool != nil && event.Tool.Name == nacelle.ParallelAgentsToolName {
 			toolResult = event.Tool.Result
 		}
 	})

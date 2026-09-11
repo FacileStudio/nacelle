@@ -14,7 +14,7 @@ import (
 // one agent run, and it walks its scripted steps in order, running tools
 // through RunTool exactly as a real backend would until a step answers. It
 // is how delegation is tested end to end without a network — the first run
-// belongs to the parent and asks for the parallel_subagent tool; the later
+// belongs to the parent and asks for the parallel_agents tool; the later
 // runs are the nested agents on this same backend, answering their own
 // scripts.
 type loop struct {
