@@ -179,8 +179,8 @@ func TestBashIsNotMountedUnlessAskedFor(t *testing.T) {
 	}
 }
 
-func TestStrictConfinementBlocksDirectoryChangingCommands(t *testing.T) {
-	set, err := New(Config{Root: t.TempDir(), AllowBash: true, StrictConfinement: true})
+func TestPathIsolationBlocksDirectoryChangingCommands(t *testing.T) {
+	set, err := New(Config{Root: t.TempDir(), AllowBash: true, PathIsolation: true})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -201,8 +201,8 @@ func TestStrictConfinementBlocksDirectoryChangingCommands(t *testing.T) {
 	}
 }
 
-func TestStrictConfinementAllowsSafeCommands(t *testing.T) {
-	set, err := New(Config{Root: t.TempDir(), AllowBash: true, StrictConfinement: true})
+func TestPathIsolationAllowsSafeCommands(t *testing.T) {
+	set, err := New(Config{Root: t.TempDir(), AllowBash: true, PathIsolation: true})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -217,8 +217,8 @@ func TestStrictConfinementAllowsSafeCommands(t *testing.T) {
 	}
 }
 
-func TestNonStrictConfinementAllowsDirectoryChangingCommands(t *testing.T) {
-	set, err := New(Config{Root: t.TempDir(), AllowBash: true, StrictConfinement: false})
+func TestNonPathIsolationAllowsDirectoryChangingCommands(t *testing.T) {
+	set, err := New(Config{Root: t.TempDir(), AllowBash: true, PathIsolation: false})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

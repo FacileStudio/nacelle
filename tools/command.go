@@ -92,7 +92,7 @@ func (s *Set) run(ctx context.Context, command string, timeout time.Duration, em
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	if s.strictConfinement {
+	if s.pathIsolation {
 		if err := checkCommandEscapes(command); err != nil {
 			return "", err
 		}
