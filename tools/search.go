@@ -12,6 +12,7 @@ import (
 
 	"github.com/FacileStudio/nacelle"
 )
+
 // skipped are directories never worth walking. They are large, generated, and
 // searching them buries the answer rather than finding more of it.
 var skipped = map[string]bool{

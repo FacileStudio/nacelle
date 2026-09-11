@@ -4,6 +4,7 @@ package oairunner
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/FacileStudio/nacelle"
 
@@ -96,6 +97,13 @@ func (t *turnStream) emit(chunk oai.ChatCompletionChunk, thinking bool, out *emi
 	return out.sendAll(deltaEvents(chunk.Choices[0].Delta, thinking))
 }
 
+// finish seals the turn: it reports the usage, and hands back the assistant
+// message to replay and the tool calls to run. A provider can close a turn
+// with a tool-call entry that carries no id, name or arguments: the
+// accumulator files the delta under its index and nothing ever fills it.
+// Replaying it sends tool_calls: [{}] and the provider answers 400, so the
+// empty entry is dropped from both the calls the runner would execute and
+// the assistant message it replays.
 func (t *turnStream) finish(out *emitter) (*turnResult, error) {
 	*t.total = t.total.Add(t.usage)
 	if !out.send(nacelle.Event{Kind: nacelle.KindTurn, Usage: t.usage, Stop: t.stop}) {
@@ -105,6 +113,10 @@ func (t *turnStream) finish(out *emitter) (*turnResult, error) {
 		return nil, fmt.Errorf("nacelle: the response carried no choices")
 	}
 	message := t.accumulator.Choices[0].Message
+
+	message.ToolCalls = slices.DeleteFunc(message.ToolCalls, func(call oai.ChatCompletionMessageToolCallUnion) bool {
+		return call.ID == "" && call.Function.Name == "" && call.Function.Arguments == ""
+	})
 
 	calls := make([]toolCall, 0, len(message.ToolCalls))
 	for _, call := range message.ToolCalls {
