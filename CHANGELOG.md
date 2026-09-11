@@ -4,6 +4,22 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [0.24.0] - 2026-09-11
+
+### Added
+- **`Command.IsolateEnv` and `WithEnvIsolation`.** Opt a single MCP stdio
+  server, or every server at once, back to the minimal PATH/HOME base.
+
+### Changed
+- **Breaking: MCP servers and tool commands inherit the parent environment.**
+  Children now start with the launching shell's environment instead of a
+  minimal PATH/HOME base, so servers that shell out to helpers on PATH or
+  read exported keys work as they do when run by hand. `Command.Env` entries
+  still win in either mode.
+- **Breaking: `StrictConfinement` is renamed `PathIsolation`** in
+  `tools.Config` and `tools.Set` (`strict_confinement` becomes
+  `path_isolation` in docs). Same behaviour, a name that says what it does.
+
 ## [0.23.0] - 2026-09-11
 
 ### Changed
