@@ -13,6 +13,11 @@ import (
 // under, and the name stripped from the tools nested parallel agents inherit.
 const ParallelAgentsToolName = "parallel_agents"
 
+// ParallelCancelToolName is the name the parallel cancel tool registers under.
+// Nested parallel agents never inherit it: a subagent cancelling its own
+// fan-out would be a run reaching up to kill its siblings and its parent.
+const ParallelCancelToolName = "parallel_cancel"
+
 // ParallelSubAgentOptions overrides what each nested agent inherits from its
 // parent's Config. The zero value runs up to 4 tasks concurrently on the
 // parent's backend and system prompt, under the parent's iteration ceiling,
@@ -148,6 +153,44 @@ type detachParallelResult struct {
 	Batch   string `json:"batch"`
 }
 
+// parallelCancels holds the cancel function of every live detached fan-out by
+// batch key. detachToolResult registers on launch and drops the entry when the
+// results channel closes, so a batch is cancellable exactly while it can still
+// produce results.
+var parallelCancels = struct {
+	sync.Mutex
+	byBatch map[string]context.CancelFunc
+}{byBatch: map[string]context.CancelFunc{}}
+
+func registerParallelCancel(batch string, cancel context.CancelFunc) {
+	parallelCancels.Lock()
+	parallelCancels.byBatch[batch] = cancel
+	parallelCancels.Unlock()
+}
+
+func dropParallelCancel(batch string) {
+	parallelCancels.Lock()
+	delete(parallelCancels.byBatch, batch)
+	parallelCancels.Unlock()
+}
+
+// CancelParallel cancels a detached fan-out by its batch key — the one the
+// detach stub named and every Results callback is tagged with. It reports
+// whether a live fan-out was found: false means the batch already finished or
+// never existed. Each task still running ends as a context-cancelled error on
+// the Results channel, so a host sees the killed tasks as failures and the ones
+// that finished before the cancel keep their results.
+func CancelParallel(batch string) bool {
+	parallelCancels.Lock()
+	cancel, ok := parallelCancels.byBatch[batch]
+	parallelCancels.Unlock()
+	if !ok {
+		return false
+	}
+	cancel()
+	return true
+}
+
 // detachToolResult is the non-blocking run path. It launches the fan-out and
 // immediately returns a stub, forwarding each task's result to opts.Results as
 // the background work finishes. The model keeps its turn; a host that showed
@@ -157,15 +200,21 @@ type detachParallelResult struct {
 // it outlives the turn that launched it: a parent that finishes (or is
 // cancelled) while its subagents grind does not take them down with it. Detach
 // is the "keep going in the background" contract, and a background that dies
-// with the turn that spawned it would violate that name.
+// with the turn that spawned it would violate that name. The cost of that
+// contract is that only CancelParallel can stop a detached fan-out, which is
+// why the registry above exists.
 func detachToolResult(cfg Config, opts ParallelSubAgentOptions, tasks []string) (string, error) {
 	batch := fmt.Sprintf("psa-%d", parallelBatch.Add(1))
 	opts.Batch = batch
-	results, err := DelegateParallel(context.Background(), cfg, tasks, opts)
+	ctx, cancel := context.WithCancel(context.Background())
+	results, err := DelegateParallel(ctx, cfg, tasks, opts)
 	if err != nil {
+		cancel()
 		return "", err
 	}
+	registerParallelCancel(batch, cancel)
 	go func() {
+		defer dropParallelCancel(batch)
 		for r := range results {
 			if opts.Results != nil {
 				r.Batch = batch
@@ -190,6 +239,35 @@ func clampConcurrency(n int) int {
 // parallelSubAgentInput is what the model hands the parallel tool.
 type parallelSubAgentInput struct {
 	Tasks []string `json:"tasks" jsonschema:"required,minItems=1,description=List of independent tasks to run in parallel"`
+}
+
+// parallelCancelInput is what the model hands the cancel tool: the batch key
+// the detach stub returned when the fan-out was launched.
+type parallelCancelInput struct {
+	Batch string `json:"batch" jsonschema:"required,description=The batch key of the parallel_agents run to cancel, from the started stub"`
+}
+
+// NewParallelCancelTool builds the tool a model uses to stop a detached
+// parallel_agents fan-out it no longer wants — one task stuck on a permission
+// denial, a batch that has become pointless. The batch key is in the stub the
+// fan-out returned when it started.
+//
+// Cancelling reports whether the batch was live. Tasks that had finished keep
+// their results on the Results channel; each still-running task ends there as a
+// context-cancelled error, so the host shows them as killed rather than as
+// silently dropped work.
+func NewParallelCancelTool() (Tool, error) {
+	return NewTool(ParallelCancelToolName,
+		"Cancel a parallel_agents fan-out you started earlier, by the batch key its started stub named. Use it when a fan-out is no longer wanted: a task is stuck, the work became pointless, or you have what you need from the tasks that already finished. Cancelled tasks come back as errors on the results stream; finished tasks keep their results.",
+		func(ctx context.Context, in parallelCancelInput) (string, error) {
+			if in.Batch == "" {
+				return "", fmt.Errorf("no batch given")
+			}
+			if !CancelParallel(in.Batch) {
+				return fmt.Sprintf("no live parallel batch named %q — it already finished or never existed", in.Batch), nil
+			}
+			return fmt.Sprintf("cancelled %q", in.Batch), nil
+		})
 }
 
 // parallelTask holds the result of one parallel agent run.
@@ -290,7 +368,7 @@ func runParallelTask(ctx context.Context, config parallelContext, idx int, task 
 
 // parallelSubAgentConfig builds the Config each parallel nested agent runs on.
 func parallelSubAgentConfig(cfg Config, opts ParallelSubAgentOptions, name string) Config {
-	return subAgentConfig(cfg, SubAgentOptions{
+	nested := subAgentConfig(cfg, SubAgentOptions{
 		Name:          name,
 		Description:   opts.Description,
 		System:        opts.System,
@@ -298,6 +376,8 @@ func parallelSubAgentConfig(cfg Config, opts ParallelSubAgentOptions, name strin
 		Approve:       opts.Approve,
 		Usage:         opts.Usage,
 	}, name)
+	nested.Tools = withoutTool(nested.Tools, ParallelCancelToolName)
+	return nested
 }
 
 // parallelResponse is the JSON returned to the model.
