@@ -96,6 +96,68 @@ func TestParallelSubAgentEmptyTasks(t *testing.T) {
 	}
 }
 
+// TestParallelSubAgentLenientTasks verifies the input shapes models actually
+// send still run a fan-out instead of dying on decode: one task as a bare
+// string, and the list double-encoded inside a string.
+func TestParallelSubAgentLenientTasks(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  int
+	}{
+		{"single string", `{"tasks":"do the thing"}`, 1},
+		{"double encoded", `{"tasks":"[\"task1\",\"task2\"]"}`, 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) { runLenient(t, tc.input, tc.want) })
+	}
+}
+
+func runLenient(t *testing.T, input string, want int) {
+	t.Helper()
+	backend := newLoop([]step{toolStep("echo", `{}`), textStep("done")})
+	echo := &echoTool{}
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
+	}, nacelle.ParallelSubAgentOptions{})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	result, err := sub.Run(context.Background(), json.RawMessage(input))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var resp struct {
+		Tasks map[string]string `json:"tasks"`
+	}
+	if err := json.Unmarshal([]byte(result), &resp); err != nil {
+		t.Fatalf("decoding result: %v", err)
+	}
+	if len(resp.Tasks) != want {
+		t.Errorf("got %d task results, want %d", len(resp.Tasks), want)
+	}
+}
+
+// TestParallelSubAgentNonStringTasks verifies a tasks field that is neither a
+// list nor a string is still refused, with a message that names the shape.
+func TestParallelSubAgentNonStringTasks(t *testing.T) {
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: newLoop(), System: "s",
+	}, nacelle.ParallelSubAgentOptions{})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	_, err = sub.Run(context.Background(), json.RawMessage(`{"tasks":42}`))
+	if err == nil {
+		t.Error("a numeric tasks field was accepted")
+	}
+	if !strings.Contains(err.Error(), "list of strings") {
+		t.Errorf("error %q does not name the expected shape", err)
+	}
+}
+
 // TestParallelSubAgentMaxConcurrencyClamped verifies that maxConcurrency
 // values above 8 are clamped to 8.
 func TestParallelSubAgentMaxConcurrencyClamped(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -239,6 +240,40 @@ func clampConcurrency(n int) int {
 // parallelSubAgentInput is what the model hands the parallel tool.
 type parallelSubAgentInput struct {
 	Tasks []string `json:"tasks" jsonschema:"required,minItems=1,description=List of independent tasks to run in parallel"`
+}
+
+// UnmarshalJSON accepts the shapes models actually send, not only the schema's.
+// A fan-out is the tool's whole purpose, and a rejection after one millisecond
+// is the cheapest possible way to waste the turn that asked for it: with long
+// or non-ASCII payloads models sometimes emit the list as one string. A JSON
+// array of strings is the normal form; a string that itself parses as one is
+// accepted as the double-encoded array it is; any other string is one task.
+func (in *parallelSubAgentInput) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Tasks json.RawMessage `json:"tasks"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if len(raw.Tasks) == 0 || string(raw.Tasks) == "null" {
+		return nil
+	}
+	var list []string
+	if err := json.Unmarshal(raw.Tasks, &list); err == nil {
+		in.Tasks = list
+		return nil
+	}
+	var single string
+	if err := json.Unmarshal(raw.Tasks, &single); err != nil {
+		return fmt.Errorf("tasks must be a list of strings, got %s", raw.Tasks)
+	}
+	trimmed := strings.TrimSpace(single)
+	if strings.HasPrefix(trimmed, "[") && json.Unmarshal([]byte(trimmed), &list) == nil {
+		in.Tasks = list
+		return nil
+	}
+	in.Tasks = []string{single}
+	return nil
 }
 
 // parallelCancelInput is what the model hands the cancel tool: the batch key
