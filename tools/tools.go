@@ -82,6 +82,17 @@ type Config struct {
 	// `cd`, `pushd`, `eval`, and similar primitives.
 	PathIsolation bool
 
+	// DenyElevation refuses commands that raise privileges.
+	//
+	// Off by default. When true, the command runner checks every field of
+	// the command against the elevation primitives — sudo, su, doas,
+	// pkexec, docker, chroot and their relatives — however spelled,
+	// quoted, chained or hidden behind a path, and refuses to run any
+	// binary that is setuid root. It is a denylist, and the package
+	// comment says what a denylist is worth; it is a brake on the obvious
+	// spellings, not a jail.
+	DenyElevation bool
+
 	// CommandEnv is the environment commands run with.
 	//
 	// Nil means a minimal environment — PATH, HOME, and nothing else. The
@@ -120,6 +131,7 @@ type Set struct {
 	dir            string
 	allowBash      bool
 	pathIsolation  bool
+	denyElevation  bool
 	commandEnv     []string
 	commandTimeout time.Duration
 	maxOutput      int
@@ -144,6 +156,7 @@ func New(cfg Config) (*Set, error) {
 		dir:            cfg.Root,
 		allowBash:      cfg.AllowBash,
 		pathIsolation:  cfg.PathIsolation,
+		denyElevation:  cfg.DenyElevation,
 		commandEnv:     cfg.CommandEnv,
 		commandTimeout: cfg.CommandTimeout,
 		maxOutput:      cfg.MaxOutputBytes,

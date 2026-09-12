@@ -98,6 +98,12 @@ func (s *Set) run(ctx context.Context, command string, timeout time.Duration, em
 		}
 	}
 
+	if s.denyElevation {
+		if err := checkCommandElevation(command); err != nil {
+			return "", err
+		}
+	}
+
 	out, waitErr := executeCommand(ctx, command, s.dir, s.commandEnv, emit)
 
 	var reportErr error
