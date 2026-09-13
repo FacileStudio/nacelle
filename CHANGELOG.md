@@ -4,6 +4,14 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [0.26.0] - 2026-09-13
+
+### Added
+- **`SessionStart` hook point.** Fires once per run, before the first model
+  call, on an empty event — no tool to gate, nothing to compact. A hook's
+  `Inject` is appended to the conversation as a user message the model reads
+  on the run's first turn; `Deny` is ignored, as on the compaction points.
+
 ## [0.24.0] - 2026-09-11
 
 ### Added
