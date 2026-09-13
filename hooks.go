@@ -36,6 +36,13 @@ const (
 	// has been trimmed by this point. A hook here reads the post-compact
 	// size and decides what to do about it (log, alert, adjust throttle).
 	AfterCompact HookPoint = "after_compact"
+
+	// SessionStart fires once per run, before the first model call. There is
+	// no tool to gate and nothing to compact, so a hook here is an observer
+	// with one power: its Inject is appended to the conversation the model
+	// reads on the run's first turn. Deny is ignored — nothing has happened
+	// yet for a refusal to stop.
+	SessionStart HookPoint = "session_start"
 )
 
 // MaxInject caps one hook's Inject, in bytes, before it reaches the model.
@@ -56,6 +63,9 @@ const MaxInject = 10000
 // On compaction points (BeforeCompact, AfterCompact), Input carries the
 // pre-compact conversation size in tokens ("<size>") and Result carries the
 // post-compact size when available. Tool and Retry are empty.
+//
+// On SessionStart the event is empty: no tool has run, so there is no Input,
+// Result, Err or Retry to report.
 type HookEvent struct {
 	// Point is which moment fired. A hook registered at one point can be
 	// handed to another by mistake; reading this first is cheaper than
@@ -87,13 +97,15 @@ type HookEvent struct {
 type HookResult struct {
 	// Deny, when non-empty, blocks a BeforeToolCall. The string is the
 	// reason the model reads in place of a tool result. On AfterToolCall
-	// it is too late to block anything and a Deny is ignored. On compaction
-	// points (BeforeCompact, AfterCompact), a Deny is always ignored.
+	// it is too late to block anything and a Deny is ignored. On
+	// compaction points (BeforeCompact, AfterCompact) and SessionStart,
+	// a Deny is always ignored.
 	Deny string
 
 	// Inject is text appended to what the model sees. On BeforeToolCall
 	// there is no result yet to append to, so Inject there is ignored;
-	// injection belongs on AfterToolCall.
+	// injection belongs on AfterToolCall and SessionStart, where it rides
+	// in the tool result and the conversation respectively.
 	//
 	// Truncated to MaxInject bytes. The cut is silent because the
 	// alternative — refusing the whole injection over a long tail —

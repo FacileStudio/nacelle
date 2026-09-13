@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"slices"
+	"strings"
 )
 
 // Stream runs the conversation and yields what happens as it happens.
@@ -27,8 +29,35 @@ func (a *Agent) Stream(ctx context.Context, conversation []Message) iter.Seq2[Ev
 	}
 
 	request := a.request
-	request.Messages = conversation
+	request.Messages = a.fireSessionStart(ctx, conversation)
 	return a.backend.Stream(ctx, request)
+}
+
+// fireSessionStart asks every SessionStart hook once, before the run's first
+// model call. Injection reuses the after_tool_call rule — each hook's Inject
+// is capped at MaxInject and the texts join with newlines — except there is
+// no tool result to amend, so what they say rides into the conversation as a
+// user message instead. A Deny has nothing to stop and is ignored, as on the
+// compaction points; a hook that panics is heard as silence, as after a
+// tool. The caller's slice is left alone: the backend gets a copy ending in
+// the injection, or the conversation unchanged when nothing was injected.
+func (a *Agent) fireSessionStart(ctx context.Context, conversation []Message) []Message {
+	hooks := a.request.Hooks[SessionStart]
+	if len(hooks) == 0 {
+		return conversation
+	}
+
+	ev := HookEvent{Point: SessionStart}
+	injected := make([]string, 0, len(hooks))
+	for _, hook := range hooks {
+		if res := recoverHook(hook)(ctx, ev); res.Inject != "" {
+			injected = append(injected, truncate(res.Inject, MaxInject))
+		}
+	}
+	if len(injected) == 0 {
+		return conversation
+	}
+	return append(slices.Clone(conversation), UserText(strings.Join(injected, "\n")))
 }
 
 // CountTokens reports how many tokens this conversation would use if sent as
