@@ -147,7 +147,7 @@ func clean(name, root string, strict bool) (string, error) {
 //
 // When strict is true, paths that resolve outside root are rejected.
 func cleanDir(name, root string, strict bool) (string, error) {
-	trimmed := strings.TrimSpace(name)
+	trimmed := ExpandHome(strings.TrimSpace(name))
 	if trimmed == "" {
 		abs, err := filepath.Abs(root)
 		if err != nil {
