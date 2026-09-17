@@ -20,7 +20,7 @@ const ParallelAgentsToolName = "parallel_agents"
 const ParallelCancelToolName = "parallel_cancel"
 
 // ParallelSubAgentOptions overrides what each nested agent inherits from its
-// parent's Config. The zero value runs up to 4 tasks concurrently on the
+// parent's Config. The zero value runs up to 16 tasks concurrently on the
 // parent's backend and system prompt, under the parent's iteration ceiling,
 // with the parent's tools minus the parallel subagent itself.
 type ParallelSubAgentOptions struct {
@@ -38,8 +38,8 @@ type ParallelSubAgentOptions struct {
 	// when positive.
 	MaxIterations int
 
-	// MaxConcurrency caps how many agents run at once. Zero means 4; values
-	// above 8 are clamped to 8.
+	// MaxConcurrency caps how many agents run at once. Zero means 16; values
+	// above 32 are clamped to 32.
 	MaxConcurrency int
 
 	// Approve governs tool calls inside each nested run. Nil — the default —
@@ -230,9 +230,9 @@ func detachToolResult(cfg Config, opts ParallelSubAgentOptions, tasks []string) 
 func clampConcurrency(n int) int {
 	switch {
 	case n == 0:
-		return 4
-	case n < 0 || n > 8:
-		return 8
+		return 16
+	case n < 0 || n > 32:
+		return 32
 	}
 	return n
 }

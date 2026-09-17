@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"iter"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -159,7 +160,7 @@ func TestParallelSubAgentNonStringTasks(t *testing.T) {
 }
 
 // TestParallelSubAgentMaxConcurrencyClamped verifies that maxConcurrency
-// values above 8 are clamped to 8.
+// values above 32 are clamped to 32.
 func TestParallelSubAgentMaxConcurrencyClamped(t *testing.T) {
 	backend := newLoop(
 		[]step{toolStep("echo", `{}`), textStep("ok")},
@@ -183,6 +184,66 @@ func TestParallelSubAgentMaxConcurrencyClamped(t *testing.T) {
 	}
 }
 
+type parallelConcurrencyTracker struct {
+	active    atomic.Int32
+	maxActive atomic.Int32
+	release   chan struct{}
+}
+
+func (b *parallelConcurrencyTracker) Name() string                       { return "parallelConcurrencyTracker" }
+func (b *parallelConcurrencyTracker) Capabilities() nacelle.Capabilities { return nacelle.Capabilities{} }
+func (b *parallelConcurrencyTracker) CountTokens(context.Context, nacelle.Request) (int64, error) {
+	return 0, nil
+}
+func (b *parallelConcurrencyTracker) Stream(ctx context.Context, _ nacelle.Request) iter.Seq2[nacelle.Event, error] {
+	return func(yield func(nacelle.Event, error) bool) {
+		cur := b.active.Add(1)
+		for {
+			max := b.maxActive.Load()
+			if cur <= max || b.maxActive.CompareAndSwap(max, cur) {
+				break
+			}
+		}
+		<-b.release
+		b.active.Add(-1)
+		yield(nacelle.Event{Kind: nacelle.KindText, Text: "ok"}, nil)
+		yield(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopEnd}, nil)
+	}
+}
+
+// TestParallelSubAgentConcurrentFanOut verifies that 8 or more agents
+// run concurrently.
+func TestParallelSubAgentConcurrentFanOut(t *testing.T) {
+	backend := &parallelConcurrencyTracker{release: make(chan struct{})}
+	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
+		Backend: backend, System: "s",
+	}, nacelle.ParallelSubAgentOptions{MaxConcurrency: 16})
+	if err != nil {
+		t.Fatalf("NewParallelSubAgentTool: %v", err)
+	}
+
+	go func() {
+		for backend.active.Load() < 8 {
+			time.Sleep(time.Millisecond)
+		}
+		close(backend.release)
+	}()
+
+	sink := &nacelle.ToolSink{}
+	tasks := `{"tasks":["t1","t2","t3","t4","t5","t6","t7","t8","t9","t10"]}`
+	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"}, json.RawMessage(tasks), sink)
+
+	var resp struct {
+		Tasks map[string]string `json:"tasks"`
+	}
+	if err := json.Unmarshal([]byte(drainToolResult(t, sink)), &resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	if len(resp.Tasks) != 10 || backend.maxActive.Load() < 8 {
+		t.Errorf("got %d tasks, max active %d", len(resp.Tasks), backend.maxActive.Load())
+	}
+}
+
 // TestParallelSubAgentConcurrency verifies that the concurrency semaphore
 // actually limits how many tasks run simultaneously. It uses a backend that
 // records the wall time of each call and checks that no two calls overlap.
@@ -192,7 +253,7 @@ func TestParallelSubAgentConcurrency(t *testing.T) {
 
 	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
 		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
-	}, nacelle.ParallelSubAgentOptions{MaxConcurrency: 4})
+	}, nacelle.ParallelSubAgentOptions{MaxConcurrency: 8})
 	if err != nil {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
