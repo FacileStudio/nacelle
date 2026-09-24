@@ -26,14 +26,27 @@ func deltaEvents(delta oai.ChatCompletionChunkChoiceDelta, thinking bool) []nace
 	return events
 }
 
+// usageOf maps this schema's usage onto nacelle's.
+//
+// prompt_tokens_details.cached_tokens is a subset of prompt_tokens, not a
+// neighbour of it: a prompt of 194 tokens with 100 cached bills 194 prompt
+// tokens. Carrying both through as reported counted those 100 twice, which
+// overstated Usage.Total, understated nothing in CacheHitRate only by luck,
+// and inflated every caller's idea of how full the context was — a client
+// sizing compaction on it compacts a conversation that still fits.
+//
+// The subtraction is floored at zero because a malformed or proxy-rewritten
+// response can report more cached tokens than prompt tokens, and a negative
+// input is worse than a wrong one: it would subtract from a caller's totals.
 func usageOf(chunk oai.ChatCompletionChunk) (nacelle.Usage, bool) {
 	if chunk.Usage.TotalTokens == 0 && chunk.Usage.PromptTokens == 0 {
 		return nacelle.Usage{}, false
 	}
+	cached := chunk.Usage.PromptTokensDetails.CachedTokens
 	u := nacelle.Usage{
-		InputTokens:     chunk.Usage.PromptTokens,
+		InputTokens:     max(chunk.Usage.PromptTokens-cached, 0),
 		OutputTokens:    chunk.Usage.CompletionTokens,
-		CacheReadTokens: chunk.Usage.PromptTokensDetails.CachedTokens,
+		CacheReadTokens: cached,
 	}
 	if raw, ok := extra(chunk.Usage.JSON.ExtraFields, "cost"); ok {
 		var cost float64

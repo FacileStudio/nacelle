@@ -4,6 +4,21 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [0.28.1] - 2026-09-24
+
+### Fixed
+- **Cached prompt tokens were counted twice on the OpenAI schema.** `openai`,
+  `openrouter` and `google` copied `prompt_tokens` into `InputTokens` and
+  `prompt_tokens_details.cached_tokens` into `CacheReadTokens`, but the first
+  already contains the second — the same response's `total_tokens` is their
+  sum and does not grow by the cached share. So `Usage.Total` overstated a
+  cached run by that share, `CacheHitRate` divided by a prompt inflated by it,
+  and any caller sizing a context as `InputTokens` + `CacheReadTokens` saw up
+  to double the conversation, which compacts a session that still fits.
+  `InputTokens` is now the uncached remainder on every backend, the way
+  Anthropic already reported it, and the subtraction floors at zero so a
+  rewritten or malformed response cannot produce a negative input.
+
 ## [0.26.0] - 2026-09-13
 
 ### Added
