@@ -4,6 +4,22 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [0.28.2] - 2026-09-24
+
+### Fixed
+- **Cache writes were still counted twice on the OpenAI schema.** 0.28.1
+  subtracted `cached_tokens` from `prompt_tokens` but left
+  `prompt_tokens_details.cache_write_tokens` in it, so a first, cache-
+  establishing request — the shape OpenRouter documents as 34375 prompt tokens
+  with 32768 written — still reported a `Usage.Total` of 67145 against the
+  provider's own 34377. Both parts of `prompt_tokens` are now subtracted, and
+  `cache_write_tokens` becomes `CacheCreationTokens`, the same field Anthropic
+  fills from `cache_creation_input_tokens`. So on all four backends
+  `Total` equals the provider's `total_tokens`, `InputTokens` is the input
+  billed at full price, and `CacheHitRate` divides by the prompt a hit could
+  have been served from rather than by a prompt inflated with writes that
+  nothing could read.
+
 ## [0.28.1] - 2026-09-24
 
 ### Fixed

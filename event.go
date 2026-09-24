@@ -182,16 +182,18 @@ type ToolEvent struct {
 // to be reconstructed afterwards is a total nobody trusts.
 type Usage struct {
 	// InputTokens is the input billed at full price: every prompt token that
-	// was not read from cache.
+	// was neither read from nor written to the cache.
 	//
 	// The two APIs count differently and the difference lands here. Anthropic
 	// reports input_tokens already net of its cache fields. The OpenAI schema
-	// reports prompt_tokens inclusive of prompt_tokens_details.cached_tokens —
-	// a prompt of 194 with 100 cached bills 194 prompt tokens, not 294 — so a
-	// backend on that schema subtracts the cached share on the way in. An
-	// InputTokens that meant "the whole prompt" on one backend and "the
-	// uncached rest" on another would make Total and CacheHitRate wrong on
-	// whichever one disagreed, by most of an agentic session's input.
+	// reports prompt_tokens as the whole prompt, with
+	// prompt_tokens_details.cached_tokens and cache_write_tokens as parts of
+	// it — a prompt of 194 with 100 cached bills 194 prompt tokens, not 294 —
+	// so a backend on that schema subtracts both parts on the way in, and
+	// reports the writes as CacheCreationTokens. An InputTokens that meant
+	// "the whole prompt" on one backend and "the uncached rest" on another
+	// would make Total and CacheHitRate wrong on whichever one disagreed, by
+	// most of an agentic session's input.
 	InputTokens int64
 
 	OutputTokens        int64

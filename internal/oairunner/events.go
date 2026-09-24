@@ -28,25 +28,34 @@ func deltaEvents(delta oai.ChatCompletionChunkChoiceDelta, thinking bool) []nace
 
 // usageOf maps this schema's usage onto nacelle's.
 //
-// prompt_tokens_details.cached_tokens is a subset of prompt_tokens, not a
-// neighbour of it: a prompt of 194 tokens with 100 cached bills 194 prompt
-// tokens. Carrying both through as reported counted those 100 twice, which
-// overstated Usage.Total, understated nothing in CacheHitRate only by luck,
-// and inflated every caller's idea of how full the context was — a client
-// sizing compaction on it compacts a conversation that still fits.
+// prompt_tokens is the whole prompt, and the two fields of details are parts of
+// it, not neighbours of it: the schema documents cached_tokens as "cached
+// tokens present in the prompt" and cache_write_tokens as "the number of prompt
+// tokens written to cache", and the response's own total_tokens is prompt plus
+// completion, grown by neither. Carrying prompt_tokens through alongside a part
+// of itself counted that part twice, which overstated Usage.Total, skewed
+// CacheHitRate, and inflated every caller's idea of how full the context was —
+// a client sizing compaction on it compacts a conversation that still fits.
+// Both parts are subtracted, and CacheWriteTokens becomes the cache-creation
+// count so the four backends report the same disjoint breakdown Anthropic does.
 //
-// The subtraction is floored at zero because a malformed or proxy-rewritten
-// response can report more cached tokens than prompt tokens, and a negative
-// input is worse than a wrong one: it would subtract from a caller's totals.
+// The subtraction is floored at zero because a response can report more cached
+// and written tokens than prompt tokens, which OpenAI's own forum has an
+// unanswered report of (cached 3945 and written 4580 against a prompt of 4583).
+// A negative input is worse than a wrong one: it would subtract from a caller's
+// totals, where an over-count only overstates a figure already inconsistent at
+// the source.
 func usageOf(chunk oai.ChatCompletionChunk) (nacelle.Usage, bool) {
 	if chunk.Usage.TotalTokens == 0 && chunk.Usage.PromptTokens == 0 {
 		return nacelle.Usage{}, false
 	}
 	cached := chunk.Usage.PromptTokensDetails.CachedTokens
+	written := chunk.Usage.PromptTokensDetails.CacheWriteTokens
 	u := nacelle.Usage{
-		InputTokens:     max(chunk.Usage.PromptTokens-cached, 0),
-		OutputTokens:    chunk.Usage.CompletionTokens,
-		CacheReadTokens: cached,
+		InputTokens:         max(chunk.Usage.PromptTokens-cached-written, 0),
+		OutputTokens:        chunk.Usage.CompletionTokens,
+		CacheReadTokens:     cached,
+		CacheCreationTokens: written,
 	}
 	if raw, ok := extra(chunk.Usage.JSON.ExtraFields, "cost"); ok {
 		var cost float64
