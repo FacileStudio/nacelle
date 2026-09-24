@@ -190,8 +190,10 @@ type parallelConcurrencyTracker struct {
 	release   chan struct{}
 }
 
-func (b *parallelConcurrencyTracker) Name() string                       { return "parallelConcurrencyTracker" }
-func (b *parallelConcurrencyTracker) Capabilities() nacelle.Capabilities { return nacelle.Capabilities{} }
+func (b *parallelConcurrencyTracker) Name() string { return "parallelConcurrencyTracker" }
+func (b *parallelConcurrencyTracker) Capabilities() nacelle.Capabilities {
+	return nacelle.Capabilities{}
+}
 func (b *parallelConcurrencyTracker) CountTokens(context.Context, nacelle.Request) (int64, error) {
 	return 0, nil
 }
