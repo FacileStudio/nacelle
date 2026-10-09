@@ -81,6 +81,13 @@ func subAgentConfig(cfg Config, opts SubAgentOptions, name string) Config {
 	}
 }
 
+// DelegateCallbacks groups hooks for monitoring a delegated nested run.
+type DelegateCallbacks struct {
+	Report     func(Usage)
+	OnTool     func(string)
+	OnToolDone func(string, error)
+}
+
 // delegate runs the nested agent to completion and returns its final text.
 //
 // A stream error ends the delegation with that error, which is reported to
@@ -88,7 +95,7 @@ func subAgentConfig(cfg Config, opts SubAgentOptions, name string) Config {
 // erroring — out of iterations, cut off mid-answer — comes back as text that
 // says so, because handing the caller a truncated answer shaped like a whole
 // one is the failure Stop exists to prevent.
-func delegate(ctx context.Context, nested *Agent, task string, report func(Usage), onTool func(string), onToolDone func(string, error)) (string, error) {
+func delegate(ctx context.Context, nested *Agent, task string, cbs DelegateCallbacks) (string, error) {
 	task = strings.TrimSpace(task)
 	if task == "" {
 		return "", fmt.Errorf("no task given")
@@ -100,7 +107,7 @@ func delegate(ctx context.Context, nested *Agent, task string, report func(Usage
 		if err != nil {
 			return "", fmt.Errorf("the delegated run failed: %w", err)
 		}
-		stop = handledEvent(event, &answer, report, onTool, onToolDone, stop)
+		stop = handledEvent(event, &answer, stop, cbs)
 	}
 
 	return finish(answer.String(), stop), nil
@@ -109,22 +116,22 @@ func delegate(ctx context.Context, nested *Agent, task string, report func(Usage
 // handledEvent applies one delegated stream event and returns the updated stop
 // reason. It owns the switch the delivery loop would otherwise carry, so that
 // loop stays a straight line over the nested sequence.
-func handledEvent(event Event, answer *strings.Builder, report func(Usage), onTool func(string), onToolDone func(string, error), stop Stop) Stop {
+func handledEvent(event Event, answer *strings.Builder, stop Stop, cbs DelegateCallbacks) Stop {
 	switch event.Kind {
 	case KindText:
 		answer.WriteString(event.Text)
 	case KindTurn, KindDone:
-		if report != nil && event.Kind == KindTurn {
-			report(event.Usage)
+		if cbs.Report != nil && event.Kind == KindTurn {
+			cbs.Report(event.Usage)
 		}
 		stop = trackStop(stop, event.Stop)
 	case KindToolCall:
-		if onTool != nil {
-			onTool(event.Tool.Name)
+		if cbs.OnTool != nil {
+			cbs.OnTool(event.Tool.Name)
 		}
 	case KindToolResult:
-		if onToolDone != nil {
-			onToolDone(event.Tool.Name, event.Tool.Err)
+		if cbs.OnToolDone != nil {
+			cbs.OnToolDone(event.Tool.Name, event.Tool.Err)
 		}
 	}
 	return stop

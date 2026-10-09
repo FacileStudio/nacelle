@@ -71,12 +71,10 @@ func readTogether(t *testing.T, read nacelle.Tool, callers int) ([]string, []err
 
 	var waiting sync.WaitGroup
 	for i := range callers {
-		waiting.Add(1)
-		go func() {
-			defer waiting.Done()
+		waiting.Go(func() {
 			asked := fmt.Sprintf(`{"path":"file-%d.txt"}`, i)
 			answers[i], failures[i] = read.Run(t.Context(), json.RawMessage(asked))
-		}()
+		})
 	}
 	waiting.Wait()
 	return answers, failures

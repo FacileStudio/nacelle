@@ -34,7 +34,7 @@ func TestParallelSubAgentReportsTurnUsage(t *testing.T) {
 	var seen []nacelle.Usage
 	tool, err := nacelle.NewParallelSubAgentTool(
 		nacelle.Config{Backend: &turns{spent: nacelle.Usage{InputTokens: 10, OutputTokens: 5}}, System: "outer"},
-		nacelle.ParallelSubAgentOptions{Usage: func(u nacelle.Usage) { seen = append(seen, u) }},
+		nacelle.ParallelSubAgentOptions{Callbacks: nacelle.ParallelSubAgentCallbacks{Usage: func(u nacelle.Usage) { seen = append(seen, u) }}},
 	)
 	if err != nil {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)

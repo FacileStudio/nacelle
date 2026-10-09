@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -42,8 +43,8 @@ func (s *ToolSink) runAfterHooks(ctx context.Context, name string, input json.Ra
 
 	ev := HookEvent{Point: AfterToolCall, Tool: name, Input: string(input), Result: result, Err: toolErr}
 	injected := make([]string, 0, len(hooks))
-	for i := len(hooks) - 1; i >= 0; i-- {
-		res := recoverHook(hooks[i])(ctx, ev)
+	for _, hook := range slices.Backward(hooks) {
+		res := recoverHook(hook)(ctx, ev)
 		if res.Inject != "" {
 			injected = append(injected, truncate(res.Inject, MaxInject))
 		}

@@ -54,7 +54,11 @@ func sse(t *testing.T, payloads ...string) string {
 		if err := json.Unmarshal([]byte(payload), &head); err != nil {
 			t.Fatalf("framing %s: %v", payload, err)
 		}
-		body.WriteString("event: " + head.Type + "\ndata: " + payload + "\n\n")
+		body.WriteString("event: ")
+		body.WriteString(head.Type)
+		body.WriteString("\ndata: ")
+		body.WriteString(payload)
+		body.WriteString("\n\n")
 	}
 	return body.String()
 }

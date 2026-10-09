@@ -6,18 +6,20 @@ import (
 )
 
 func TestCancelParallelReportsAnUnknownBatch(t *testing.T) {
-	if CancelParallel("psa-ghost") {
-		t.Error("CancelParallel reported cancelling a batch that never existed")
+	registry := NewParallelRegistry()
+	if registry.Cancel("psa-ghost") {
+		t.Error("registry.Cancel reported cancelling a batch that never existed")
 	}
 }
 
 func TestCancelParallelCancelsALiveBatch(t *testing.T) {
+	registry := NewParallelRegistry()
 	ctx, cancel := context.WithCancel(context.Background())
-	registerParallelCancel("psa-live", cancel)
-	defer dropParallelCancel("psa-live")
+	registry.Register("psa-live", cancel)
+	defer registry.Drop("psa-live")
 
-	if !CancelParallel("psa-live") {
-		t.Fatal("CancelParallel did not find a registered live batch")
+	if !registry.Cancel("psa-live") {
+		t.Fatal("registry.Cancel did not find a registered live batch")
 	}
 	select {
 	case <-ctx.Done():
@@ -27,7 +29,8 @@ func TestCancelParallelCancelsALiveBatch(t *testing.T) {
 }
 
 func TestParallelCancelToolResponds(t *testing.T) {
-	tool, err := NewParallelCancelTool()
+	registry := NewParallelRegistry()
+	tool, err := NewParallelCancelTool(registry)
 	if err != nil {
 		t.Fatalf("NewParallelCancelTool: %v", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -185,10 +186,5 @@ func isBinary(data []byte) bool {
 	if len(head) > 512 {
 		head = head[:512]
 	}
-	for _, b := range head {
-		if b == 0 {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(head, 0)
 }

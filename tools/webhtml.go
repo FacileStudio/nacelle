@@ -104,7 +104,9 @@ func (w *textWriter) open(node *html.Node) {
 	case node.Data == "li":
 		w.out.WriteString("\n- ")
 	case headingLevel[node.Data] > 0:
-		w.out.WriteString("\n\n" + strings.Repeat("#", headingLevel[node.Data]) + " ")
+		w.out.WriteString("\n\n")
+		w.out.WriteString(strings.Repeat("#", headingLevel[node.Data]))
+		w.out.WriteString(" ")
 	case node.Data == "a":
 		w.href = w.resolve(attribute(node, "href"))
 	case blockElements[node.Data]:

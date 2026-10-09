@@ -33,12 +33,10 @@ func TestOneServerAnswersManyCallersWithoutCrossingThem(t *testing.T) {
 
 	var waiting sync.WaitGroup
 	for i := range callers {
-		waiting.Add(1)
-		go func() {
-			defer waiting.Done()
+		waiting.Go(func() {
 			asked := fmt.Sprintf("caller-%d", i)
 			answers[i], failures[i] = echo.Run(t.Context(), json.RawMessage(`{"text":"`+asked+`"}`))
-		}()
+		})
 	}
 	waiting.Wait()
 

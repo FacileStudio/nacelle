@@ -105,7 +105,7 @@ type Approve func(ctx context.Context, name string, input json.RawMessage) bool
 // In must be a struct. A model calls a tool by naming arguments, and a bare
 // string or slice has no names to give.
 func NewTool[In any](name, description string, run func(ctx context.Context, in In) (string, error)) (Tool, error) {
-	return NewToolWithOptions[In](name, description, run, ToolOptions{})
+	return NewToolWithOptions(name, description, run, ToolOptions{})
 }
 
 // ToolOptions configures optional behavior for a tool created with NewToolWithOptions.
