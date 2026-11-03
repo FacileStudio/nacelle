@@ -4,6 +4,20 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [0.30.0] - 2026-11-03
+
+### Added
+- **`Image` and `Document` message parts.** `nacelle.Image{MediaType, Data}`
+  carries a png, jpeg, gif or webp picture and `nacelle.Document{Name,
+  MediaType, Data}` carries a PDF, both as raw bytes on a user message. The
+  role check refuses either one on an assistant message. `anthropic` sends
+  base64 `image` and `document` blocks, with the file name as the document
+  title. `openai` and `openrouter` send an `image_url` part and a `file` part,
+  both as data URIs. `google` sends images as `image_url` data URIs and
+  refuses a `Document` with an `*Unsupported` error, because Gemini's
+  OpenAI-compatible endpoint documents image input only. No backend drops a
+  part it cannot send.
+
 ## [0.28.2] - 2026-09-24
 
 ### Fixed
