@@ -99,6 +99,7 @@ func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2
 		Client:         b.client,
 		Model:          b.model,
 		RequestOptions: b.requestOptions,
+		Options:        oairunner.Options{Name: "openai", Documents: true},
 	}).Stream(ctx, request)
 }
 

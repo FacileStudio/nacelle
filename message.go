@@ -38,7 +38,7 @@ type Message struct {
 // Part is one piece of a message's content.
 //
 // The set is closed: part is unexported, so no type outside this package can
-// join it, and a type switch over the five below is exhaustive today and stays
+// join it, and a type switch over the seven below is exhaustive today and stays
 // exhaustive. That is why this is an interface and not a struct with a kind
 // and eleven optional fields — which is the shape Event uses, and the shape
 // that would let a backend read a tool call's arguments off a piece of prose.

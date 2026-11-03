@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"encoding/base64"
 	"encoding/json"
 
 	"github.com/FacileStudio/nacelle"
@@ -32,7 +33,7 @@ func toParams(conversation []nacelle.Message) []sdk.BetaMessageParam {
 
 // blocksOf renders one message's parts as content blocks.
 //
-// Three of the five parts have no block to render into, and each is dropped for
+// Three of the seven parts have no block to render into, and each is dropped for
 // its own reason. Reasoning would need the signature it was issued with, which
 // the stream never carries, so sending it back is a rejected request. Finish is
 // this package's own bookkeeping and has no field in the wire format. And a
@@ -53,9 +54,33 @@ func blocksOf(parts []nacelle.Part) []sdk.BetaContentBlockParamUnion {
 			}
 		case nacelle.ToolResult:
 			blocks = append(blocks, sdk.NewBetaToolResultBlock(part.ID, part.Result, part.Failed))
+		case nacelle.Image:
+			blocks = append(blocks, imageBlock(part))
+		case nacelle.Document:
+			blocks = append(blocks, documentBlock(part))
 		}
 	}
 	return blocks
+}
+
+// imageBlock is an Image as a base64 image block.
+func imageBlock(image nacelle.Image) sdk.BetaContentBlockParamUnion {
+	return sdk.NewBetaImageBlock(sdk.BetaBase64ImageSourceParam{
+		Data:      base64.StdEncoding.EncodeToString(image.Data),
+		MediaType: sdk.BetaBase64ImageSourceMediaType(image.MediaType),
+	})
+}
+
+// documentBlock is a Document as a base64 PDF document block, titled with the
+// file name when there is one.
+func documentBlock(document nacelle.Document) sdk.BetaContentBlockParamUnion {
+	block := sdk.NewBetaDocumentBlock(sdk.BetaBase64PDFSourceParam{
+		Data: base64.StdEncoding.EncodeToString(document.Data),
+	})
+	if document.Name != "" {
+		block.OfDocument.Title = sdk.String(document.Name)
+	}
+	return block
 }
 
 // toolInput is a tool call's input in the shape the SDK marshals.

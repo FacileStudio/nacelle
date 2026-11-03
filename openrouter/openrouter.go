@@ -153,6 +153,8 @@ func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2
 	opts := oairunner.Options{
 		RequestOptions: b.requestOptions,
 		ClassifyError:  classify,
+		Name:           "openrouter",
+		Documents:      true,
 		ResetTurn:      func() { reasoning = details{} },
 		ObserveChunk:   reasoning.observe,
 		FinishExtra: func(_ openai.ChatCompletionMessage, a openai.ChatCompletionMessageParamUnion) openai.ChatCompletionMessageParamUnion {

@@ -156,9 +156,16 @@ func TestAPartOnTheWrongRoleIsRefusedBeforeTheBackendIsCalled(t *testing.T) {
 		}},
 	}
 
+	imageFromTheAssistant := []nacelle.Message{
+		{Role: nacelle.RoleAssistant, Parts: []nacelle.Part{
+			nacelle.Image{MediaType: "image/png", Data: []byte("png")},
+		}},
+	}
+
 	cases := map[string][]nacelle.Message{
 		"a tool call from the user":        toolCallFromTheUser,
 		"a tool result from the assistant": toolResultFromTheAssistant,
+		"an image from the assistant":      imageFromTheAssistant,
 	}
 
 	for name, conversation := range cases {

@@ -9,52 +9,80 @@ import (
 	oai "github.com/openai/openai-go/v3"
 )
 
-func (b *Backend) messages(request nacelle.Request) []oai.ChatCompletionMessageParamUnion {
+func (b *Backend) messages(request nacelle.Request) ([]oai.ChatCompletionMessageParamUnion, error) {
 	messages := make([]oai.ChatCompletionMessageParamUnion, 0, len(request.Messages)+1)
 	messages = append(messages, oai.SystemMessage(request.System))
 
 	for _, message := range request.Messages {
-		messages = append(messages, convert(message)...)
+		converted, err := b.convert(message)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, converted...)
 	}
-	return messages
+	return messages, nil
 }
 
 type sorted struct {
 	text    []string
+	content []oai.ChatCompletionContentPartUnionParam
+	media   bool
 	calls   []oai.ChatCompletionMessageToolCallUnionParam
 	results []oai.ChatCompletionMessageParamUnion
 }
 
-func sift(parts []nacelle.Part) sorted {
+func (b *Backend) sift(parts []nacelle.Part) (sorted, error) {
 	var out sorted
 	for _, part := range parts {
 		switch part := part.(type) {
 		case nacelle.Text:
-			if part.Text != "" {
-				out.text = append(out.text, part.Text)
-			}
+			out.addText(part.Text)
 		case nacelle.ToolCall:
-			if part.Finished {
-				out.calls = append(out.calls, functionCall(part))
-			}
+			out.addCall(part)
 		case nacelle.ToolResult:
 			out.results = append(out.results, oai.ToolMessage(part.Result, part.ID))
+		case nacelle.Image:
+			out.addMedia(imagePart(part))
+		case nacelle.Document:
+			if !b.Options.Documents {
+				return out, &nacelle.Unsupported{Backend: b.Options.Name, Feature: "Document parts"}
+			}
+			out.addMedia(filePart(part))
 		}
 	}
-	return out
+	return out, nil
 }
 
-func convert(message nacelle.Message) []oai.ChatCompletionMessageParamUnion {
-	parts := sift(message.Parts)
+func (s *sorted) addText(text string) {
+	if text != "" {
+		s.text = append(s.text, text)
+		s.content = append(s.content, oai.TextContentPart(text))
+	}
+}
+
+func (s *sorted) addCall(call nacelle.ToolCall) {
+	if call.Finished {
+		s.calls = append(s.calls, functionCall(call))
+	}
+}
+
+func (b *Backend) convert(message nacelle.Message) ([]oai.ChatCompletionMessageParamUnion, error) {
+	parts, err := b.sift(message.Parts)
+	if err != nil {
+		return nil, err
+	}
 	text := strings.Join(parts.text, "\n")
 
 	if message.Role == nacelle.RoleAssistant {
-		return append(assistantTurn(text, parts.calls), parts.results...)
+		return append(assistantTurn(text, parts.calls), parts.results...), nil
+	}
+	if parts.media {
+		return append(parts.results, oai.UserMessage(parts.content)), nil
 	}
 	if text != "" {
-		return append(parts.results, oai.UserMessage(text))
+		return append(parts.results, oai.UserMessage(text)), nil
 	}
-	return parts.results
+	return parts.results, nil
 }
 
 func assistantTurn(text string, calls []oai.ChatCompletionMessageToolCallUnionParam) []oai.ChatCompletionMessageParamUnion {

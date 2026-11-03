@@ -148,13 +148,14 @@ func (a *Agent) binarySearchCompact(ctx context.Context, conversation []Message,
 // it, before either backend ever sees the request.
 //
 // A ToolCall is the model's own move and belongs only to RoleAssistant; a
-// ToolResult answers one and belongs only to RoleUser. Left unchecked, the two
+// ToolResult answers one and belongs only to RoleUser, as do the Image and
+// Document parts a caller attaches. Left unchecked, the two
 // backends disagree about what a mismatch does: the Anthropic converter sends
 // it and lets the API reject the request, while the OpenRouter converter drops
 // it in silence. Checking once, centrally, is what the roadmap's own warning
 // against the Crush trap — maintaining the same union check in more than one
 // place — argues for, and it keeps this package's "fails rather than
-// degrading" promise for the one part of the union a caller can get wrong.
+// degrading" promise for the parts of the union a caller can get wrong.
 func validateRoles(messages []Message) error {
 	for i, message := range messages {
 		if err := partsMatchRole(message); err != nil {
@@ -172,9 +173,9 @@ func partsMatchRole(message Message) error {
 			if message.Role != RoleAssistant {
 				return fmt.Errorf("a ToolCall belongs on an assistant message, not %s", message.Role)
 			}
-		case ToolResult:
+		case ToolResult, Image, Document:
 			if message.Role != RoleUser {
-				return fmt.Errorf("a ToolResult belongs on a user message, not %s", message.Role)
+				return fmt.Errorf("a %T belongs on a user message, not %s", part, message.Role)
 			}
 		}
 	}

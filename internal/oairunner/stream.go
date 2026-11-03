@@ -19,6 +19,8 @@ type Options struct {
 	ResetTurn      func()
 	ObserveChunk   func(chunk oai.ChatCompletionChunk)
 	FinishExtra    func(message oai.ChatCompletionMessage, assistant oai.ChatCompletionMessageParamUnion) oai.ChatCompletionMessageParamUnion
+	Name           string
+	Documents      bool
 }
 
 // Backend runs agents on an OpenAI-compatible API.
@@ -33,7 +35,10 @@ type Backend struct {
 var errStopped = errors.New("nacelle: the consumer stopped ranging")
 
 func (b *Backend) converse(ctx context.Context, request nacelle.Request, out *emitter, sink *nacelle.ToolSink) (nacelle.Usage, nacelle.Stop, error) {
-	messages := b.messages(request)
+	messages, err := b.messages(request)
+	if err != nil {
+		return nacelle.Usage{}, nacelle.StopOther, err
+	}
 	call := callContext{
 		tools:  toolParams(request.Tools),
 		byName: nacelle.ToolsByName(request.Tools),
