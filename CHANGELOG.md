@@ -6,6 +6,8 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-03
+
 ### Added
 - **Images in tool results.** `ToolResult.Images` carries pictures a tool
   returned, such as a browser screenshot. A tool returns them by implementing
