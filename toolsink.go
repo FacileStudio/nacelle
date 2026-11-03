@@ -4,10 +4,8 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
-	"fmt"
 	"slices"
 	"sync"
-	"time"
 )
 
 // ToolSink collects tool results for a backend to report.
@@ -109,7 +107,9 @@ type Invocation struct {
 	Index int
 }
 
-// RunTool executes a tool and reports the outcome to sink.
+// RunTool executes a tool and reports the outcome to sink. It is
+// RunToolImages with any pictures dropped, for a backend that has no slot
+// for them.
 //
 // Backends call this instead of calling Run directly, so that a tool result
 // reaches the event stream the same way whichever backend executed it, and so
@@ -123,35 +123,7 @@ type Invocation struct {
 // whether the task can still be finished without it. Refused is what tells a
 // consumer this was a policy decision, not the tool breaking.
 func RunTool(ctx context.Context, tool Tool, call Invocation, input json.RawMessage, sink *ToolSink) (string, error) {
-	if denied, reason := sink.runBeforeHooks(ctx, tool.Name(), input); denied {
-		return "", refuse(sink, tool, call, input, fmt.Errorf("nacelle: %q denied by hook: %s", tool.Name(), reason))
-	}
-	if sink.Approve != nil && !sink.Approve(ctx, tool.Name(), input) {
-		return "", refuse(sink, tool, call, input, fmt.Errorf("nacelle: %q was not approved to run", tool.Name()))
-	}
-
-	started := time.Now()
-	var result string
-	var err error
-	if out, ok := tool.(OutputTool); ok {
-		result, err = out.RunOutput(ctx, input, func(fragment string) {
-			if fragment == "" {
-				return
-			}
-			sink.Report(Event{
-				Kind: KindToolOutput,
-				Tool: &ToolEvent{ID: call.ID, Index: call.Index, Name: tool.Name()},
-				Text: fragment,
-			})
-		})
-	} else {
-		result, err = tool.Run(ctx, input)
-	}
-
-	result = sink.runAfterHooks(ctx, tool.Name(), input, result, err)
-	event := toolResultEvent(tool, call, input, result, err)
-	event.Tool.Duration = time.Since(started)
-	sink.Report(event)
+	result, _, err := RunToolImages(ctx, tool, call, input, sink)
 	return result, err
 }
 

@@ -40,7 +40,7 @@ func (b *Backend) sift(parts []nacelle.Part) (sorted, error) {
 		case nacelle.ToolCall:
 			out.addCall(part)
 		case nacelle.ToolResult:
-			out.results = append(out.results, oai.ToolMessage(part.Result, part.ID))
+			out.addResult(part)
 		case nacelle.Image:
 			out.addMedia(imagePart(part))
 		case nacelle.Document:

@@ -110,6 +110,12 @@ type ToolResult struct {
 	// carrying the same failure would not compare equal. What the model needs
 	// is in Result either way.
 	Failed bool
+
+	// Images are pictures the tool returned beside its text, such as a
+	// screenshot. They are empty for nearly every tool. A backend whose wire
+	// format has no image slot in a tool result sends them in a user turn
+	// right after the results, labelled with the call they answer.
+	Images []Image
 }
 
 // Finish is why a turn ended, recorded where it ended.

@@ -78,13 +78,13 @@ func executeOne(
 		return sdk.NewBetaToolResultBlock(call.ID, err.Error(), true)
 	}
 
-	result, err := nacelle.RunTool(ctx, tool, nacelle.Invocation{
+	result, images, err := nacelle.RunToolImages(ctx, tool, nacelle.Invocation{
 		ID: call.ID, Name: call.Name, Index: call.Index,
 	}, json.RawMessage(call.Input), sink)
 	if err != nil {
 		return sdk.NewBetaToolResultBlock(call.ID, err.Error(), true)
 	}
-	return sdk.NewBetaToolResultBlock(call.ID, result, false)
+	return toolResultBlock(nacelle.ToolResult{ID: call.ID, Result: result, Images: images})
 }
 
 // failedEvent is the result reported for a call nothing could answer: the tool

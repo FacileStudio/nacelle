@@ -53,7 +53,7 @@ func blocksOf(parts []nacelle.Part) []sdk.BetaContentBlockParamUnion {
 				blocks = append(blocks, sdk.NewBetaToolUseBlock(part.ID, toolInput(part.Input), part.Name))
 			}
 		case nacelle.ToolResult:
-			blocks = append(blocks, sdk.NewBetaToolResultBlock(part.ID, part.Result, part.Failed))
+			blocks = append(blocks, toolResultBlock(part))
 		case nacelle.Image:
 			blocks = append(blocks, imageBlock(part))
 		case nacelle.Document:
@@ -69,6 +69,19 @@ func imageBlock(image nacelle.Image) sdk.BetaContentBlockParamUnion {
 		Data:      base64.StdEncoding.EncodeToString(image.Data),
 		MediaType: sdk.BetaBase64ImageSourceMediaType(image.MediaType),
 	})
+}
+
+// toolResultBlock is a ToolResult as a tool_result block: its text first,
+// then each picture as an image block inside the same result, which is the
+// one slot the Messages API gives a tool's images.
+func toolResultBlock(result nacelle.ToolResult) sdk.BetaContentBlockParamUnion {
+	block := sdk.NewBetaToolResultBlock(result.ID, result.Result, result.Failed)
+	for _, image := range result.Images {
+		block.OfToolResult.Content = append(block.OfToolResult.Content, sdk.BetaToolResultBlockParamContentUnion{
+			OfImage: imageBlock(image).OfImage,
+		})
+	}
+	return block
 }
 
 // documentBlock is a Document as a base64 PDF document block, titled with the

@@ -151,6 +151,7 @@ type ToolResult struct {
 	Name   string
 	Result string
 	Failed bool
+	Images []Image // pictures an ImageTool returned, such as a screenshot
 }
 
 type Finish struct{ Stop Stop }
@@ -239,6 +240,20 @@ func NewTool[In any](name, description string, run func(ctx context.Context, in 
 `In` must be a struct — a model calls a tool by naming arguments, and a bare string or slice
 has no names to give. The schema is generated from `In`'s `json` and `jsonschema` struct tags.
 
+A tool whose answer includes pictures implements `ImageTool`. `anthropic` puts the images inside
+the `tool_result` block; the OpenAI-compatible backends (`openai`, `openrouter`, `google`) send
+them in a user turn right after the tool messages, labelled with the call id, because a tool
+message there holds text only.
+
+```go
+type ImageTool interface {
+	Tool
+	RunImages(ctx context.Context, input json.RawMessage) (string, []Image, error)
+}
+
+func NewImageTool[In any](name, description string, run func(ctx context.Context, in In) (string, []Image, error), opts ToolOptions) (Tool, error)
+```
+
 ### ToolSink, Invocation, RunTool
 
 For backend implementors; not otherwise interesting to a consumer.
@@ -254,6 +269,7 @@ type Invocation struct {
 }
 
 func RunTool(ctx context.Context, tool Tool, call Invocation, input json.RawMessage, sink *ToolSink) (string, error)
+func RunToolImages(ctx context.Context, tool Tool, call Invocation, input json.RawMessage, sink *ToolSink) (string, []Image, error)
 func ToolsByName(tools []Tool) map[string]Tool
 ```
 

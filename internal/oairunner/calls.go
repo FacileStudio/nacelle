@@ -57,22 +57,28 @@ func planCalls(calls []toolCall, byName map[string]nacelle.Tool) ([]toolCall, []
 
 func runCalls(ctx context.Context, calls []toolCall, call callContext) ([]oai.ChatCompletionMessageParamUnion, error) {
 	order, indices := planCalls(calls, call.byName)
-	results := make([]oai.ChatCompletionMessageParamUnion, 0, len(order))
+	results := make([]oai.ChatCompletionMessageParamUnion, 0, len(order)+1)
+	var pictures []oai.ChatCompletionContentPartUnionParam
 	for i, invocation := range order {
 		origIndex := indices[i]
 		if !call.out.send(invocation.event(origIndex)) {
 			return nil, errStopped
 		}
-		results = append(results, runCall(ctx, invocation, origIndex, call))
+		message, images := runCall(ctx, invocation, origIndex, call)
+		results = append(results, message)
+		pictures = append(pictures, toolImageParts(invocation.id, invocation.name, images)...)
 	}
 
 	if !call.out.flushTools() {
 		return nil, errStopped
 	}
+	if len(pictures) > 0 {
+		results = append(results, oai.UserMessage(pictures))
+	}
 	return results, nil
 }
 
-func runCall(ctx context.Context, invocation toolCall, index int, call callContext) oai.ChatCompletionMessageParamUnion {
+func runCall(ctx context.Context, invocation toolCall, index int, call callContext) (oai.ChatCompletionMessageParamUnion, []nacelle.Image) {
 	tool, known := call.byName[invocation.name]
 	if !known {
 		err := fmt.Errorf("nacelle: no tool named %q is available", invocation.name)
@@ -83,14 +89,14 @@ func runCall(ctx context.Context, invocation toolCall, index int, call callConte
 				Input: invocation.arguments, Result: err.Error(), Err: err,
 			},
 		})
-		return oai.ToolMessage(fmt.Sprintf("no tool named %q is available", invocation.name), invocation.id)
+		return oai.ToolMessage(fmt.Sprintf("no tool named %q is available", invocation.name), invocation.id), nil
 	}
 
-	result, err := nacelle.RunTool(ctx, tool, nacelle.Invocation{ID: invocation.id, Name: invocation.name, Index: index}, json.RawMessage(invocation.arguments), call.sink)
+	result, images, err := nacelle.RunToolImages(ctx, tool, nacelle.Invocation{ID: invocation.id, Name: invocation.name, Index: index}, json.RawMessage(invocation.arguments), call.sink)
 	if err != nil {
-		result = "the tool failed: " + err.Error()
+		return oai.ToolMessage("the tool failed: "+err.Error(), invocation.id), nil
 	}
-	return oai.ToolMessage(result, invocation.id)
+	return oai.ToolMessage(result, invocation.id), images
 }
 
 func toolParams(tools []nacelle.Tool) []oai.ChatCompletionToolUnionParam {

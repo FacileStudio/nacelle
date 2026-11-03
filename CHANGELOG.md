@@ -4,6 +4,18 @@ All notable changes to `nacelle` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow semver —
 while on `v0`, a breaking change bumps the minor.
 
+## [Unreleased]
+
+### Added
+- **Images in tool results.** `ToolResult.Images` carries pictures a tool
+  returned, such as a browser screenshot. A tool returns them by implementing
+  `ImageTool` (`RunImages`), or through `NewImageTool`; backends call the new
+  `RunToolImages`, and `RunTool` is it with the pictures dropped. `anthropic`
+  sends the images as `image` blocks inside the `tool_result`. `openai`,
+  `openrouter` and `google` send them in a user turn right after the tool
+  messages, opened by a text part naming the call, because a Chat Completions
+  tool message holds text only. Replayed conversations encode the same way.
+
 ## [0.30.0] - 2026-11-03
 
 ### Added
