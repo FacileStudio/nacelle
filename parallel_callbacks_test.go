@@ -27,7 +27,7 @@ func collectChannel(calls <-chan string, count int) map[string]int {
 
 // TestParallelSubAgentReportsToolCalls verifies the Tool callback fires as each
 // nested task begins a tool call, tagged with the task's index and the tool's
-// name, so a host can draw what each subagent is doing right now. 
+// name, so a host can draw what each subagent is doing right now.
 func TestParallelSubAgentReportsToolCalls(t *testing.T) {
 	backend := newLoop(
 		[]step{toolStep("echo", `{}`), textStep("ok")},
@@ -57,10 +57,11 @@ func TestParallelSubAgentReportsToolCalls(t *testing.T) {
 		}
 	}
 }
+
 // TestParallelSubAgentReportsToolDone verifies the ToolDone callback fires as a
 // nested task's tool call ends with err nil on success, so a host can colour the
 // running-tool glyph green the moment its call lands. Echo needs an approving
-// policy, because the nested agent's default deny-all refuses every call. 
+// policy, because the nested agent's default deny-all refuses every call.
 func TestParallelSubAgentReportsToolDone(t *testing.T) {
 	backend := newLoop([]step{toolStep("echo", `{}`), textStep("ok")})
 	echo := &echoTool{}
@@ -93,10 +94,11 @@ func TestParallelSubAgentReportsToolDone(t *testing.T) {
 		t.Error("tool done did not report echo succeeded")
 	}
 }
+
 // TestParallelSubAgentReportsToolFailure verifies the ToolDone callback fires
 // with a set err when a nested tool's call fails. The "nope" tool is not in the
 // nested agent's tool list, so the loop backend reports its call as an error
-// without approval being involved. 
+// without approval being involved.
 func TestParallelSubAgentReportsToolFailure(t *testing.T) {
 	backend := newLoop([]step{toolStep("nope", `{}`), textStep("ok")})
 	echo := &echoTool{}
@@ -162,9 +164,10 @@ func (turnBackend) Stream(context.Context, nacelle.Request) iter.Seq2[nacelle.Ev
 		yield(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopEnd}, nil)
 	}
 }
+
 // TestParallelSubAgentReportsLiveUsage verifies the LiveUsage callback fires as
 // each nested task's turn spends, tagged with the task's index, so a host can
-// draw a per-subagent token counter that moves while the fan-out runs. 
+// draw a per-subagent token counter that moves while the fan-out runs.
 func TestParallelSubAgentReportsLiveUsage(t *testing.T) {
 	reports := make(chan string, 6)
 

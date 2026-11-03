@@ -216,4 +216,3 @@ func (s *Set) Tools() ([]nacelle.Tool, error) {
 func (s *Set) ReadOnly() ([]nacelle.Tool, error) {
 	return buildAll(s.readTool, s.listTool, s.globTool, s.grepTool)
 }
-

@@ -74,7 +74,6 @@ func awaitParallelResultsWithErrors(got <-chan nacelle.ParallelTaskResult, count
 	return results
 }
 
-
 func TestParallelSubAgentDetachStreamsResults(t *testing.T) {
 	backend := newLoop(
 		[]step{toolStep("echo", `{}`), textStep("result1")},
@@ -124,7 +123,7 @@ func (b *ctxRecord) Stream(ctx context.Context, _ nacelle.Request) iter.Seq2[nac
 		yield(nacelle.Event{Kind: nacelle.KindText, Text: "ok"}, nil)
 		yield(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopEnd}, nil)
 	}
-}// TestParallelSubAgentDetachSurvivesParentCancel verifies that cancelling the
+} // TestParallelSubAgentDetachSurvivesParentCancel verifies that cancelling the
 // caller's context does not take a detached fan-out down with it. The parent
 // that launched the subagents sent its turn back to ready — the running agent
 // settles, which cancels the turn's context — and the work it left grinding

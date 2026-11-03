@@ -8,8 +8,9 @@ import (
 
 	"github.com/FacileStudio/nacelle"
 )
+
 // TestParallelSubAgentReturnsAllResults verifies that 3 tasks complete
-// and all results are returned, regardless of completion order. 
+// and all results are returned, regardless of completion order.
 func TestParallelSubAgentReturnsAllResults(t *testing.T) {
 	backend := newLoop(
 		[]step{toolStep(nacelle.ParallelAgentsToolName, `{"tasks":["count the stars","echo hello","echo world"]}`), textStep("ok")},
@@ -30,8 +31,9 @@ func TestParallelSubAgentReturnsAllResults(t *testing.T) {
 
 	assertContains(t, toolResult, "seven", "hello", "world")
 }
+
 // TestParallelSubAgentPartialFailure verifies that when one task fails,
-// the others still complete and their results are returned. 
+// the others still complete and their results are returned.
 func TestParallelSubAgentPartialFailure(t *testing.T) {
 	backend := newLoop(
 		[]step{toolStep(nacelle.ParallelAgentsToolName, `{"tasks":["good","bad","good"]}`), textStep("ok")},
@@ -52,8 +54,9 @@ func TestParallelSubAgentPartialFailure(t *testing.T) {
 
 	assertContains(t, toolResult, "good1", "good2", "bad")
 }
+
 // TestParallelSubAgentSharedConfig verifies that all parallel agents
-// share the same config and the parent config is not mutated. 
+// share the same config and the parent config is not mutated.
 func TestParallelSubAgentSharedConfig(t *testing.T) {
 	backend := newLoop(
 		[]step{toolStep(nacelle.ParallelAgentsToolName, `{"tasks":["task1","task2","task3"]}`), textStep("ok")},
@@ -74,7 +77,8 @@ func TestParallelSubAgentSharedConfig(t *testing.T) {
 
 	assertContains(t, toolResult, "task1", "task2", "task3")
 }
-// TestParallelSubAgentEmptyTasks verifies that an empty task list fails. 
+
+// TestParallelSubAgentEmptyTasks verifies that an empty task list fails.
 func TestParallelSubAgentEmptyTasks(t *testing.T) {
 	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
 		Backend: newLoop(), System: "s",
@@ -88,9 +92,10 @@ func TestParallelSubAgentEmptyTasks(t *testing.T) {
 		t.Error("an empty task list was accepted")
 	}
 }
+
 // TestParallelSubAgentLenientTasks verifies the input shapes models actually
 // send still run a fan-out instead of dying on decode: one task as a bare
-// string, and the list double-encoded inside a string. 
+// string, and the list double-encoded inside a string.
 func TestParallelSubAgentLenientTasks(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -130,8 +135,9 @@ func runLenient(t *testing.T, input string, want int) {
 		t.Errorf("got %d task results, want %d", len(resp.Tasks), want)
 	}
 }
+
 // TestParallelSubAgentNonStringTasks verifies a tasks field that is neither a
-// list nor a string is still refused, with a message that names the shape. 
+// list nor a string is still refused, with a message that names the shape.
 func TestParallelSubAgentNonStringTasks(t *testing.T) {
 	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
 		Backend: newLoop(), System: "s",
@@ -148,8 +154,9 @@ func TestParallelSubAgentNonStringTasks(t *testing.T) {
 		t.Errorf("error %q does not name the expected shape", err)
 	}
 }
+
 // TestParallelSubAgentDirectCall verifies parallel delegation via direct
-// RunTool call, bypassing the parent stream to avoid the loop backend mutex. 
+// RunTool call, bypassing the parent stream to avoid the loop backend mutex.
 func TestParallelSubAgentDirectCall(t *testing.T) {
 	backend := newLoop(
 		[]step{toolStep("echo", `{}`), textStep("result1")},

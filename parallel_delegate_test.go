@@ -11,6 +11,7 @@ import (
 
 	"github.com/FacileStudio/nacelle"
 )
+
 // TestParallelSubAgentMaxConcurrencyClamped verifies that maxConcurrency
 // values above 32 are clamped to 32.
 func TestParallelSubAgentMaxConcurrencyClamped(t *testing.T) {
@@ -63,7 +64,7 @@ func (b *parallelConcurrencyTracker) Stream(ctx context.Context, _ nacelle.Reque
 		yield(nacelle.Event{Kind: nacelle.KindText, Text: "ok"}, nil)
 		yield(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopEnd}, nil)
 	}
-}// TestParallelSubAgentConcurrentFanOut verifies that 8 or more agents
+} // TestParallelSubAgentConcurrentFanOut verifies that 8 or more agents
 // run concurrently.
 func TestParallelSubAgentConcurrentFanOut(t *testing.T) {
 	backend := &parallelConcurrencyTracker{release: make(chan struct{})}
@@ -94,7 +95,7 @@ func TestParallelSubAgentConcurrentFanOut(t *testing.T) {
 	if len(resp.Tasks) != 10 || backend.maxActive.Load() < 8 {
 		t.Errorf("got %d tasks, max active %d", len(resp.Tasks), backend.maxActive.Load())
 	}
-}// TestParallelSubAgentConcurrency verifies that the concurrency semaphore
+} // TestParallelSubAgentConcurrency verifies that the concurrency semaphore
 // actually limits how many tasks run simultaneously. It uses a backend that
 // records the wall time of each call and checks that no two calls overlap.
 func TestParallelSubAgentConcurrency(t *testing.T) {
@@ -131,9 +132,9 @@ func TestParallelSubAgentConcurrency(t *testing.T) {
 			t.Errorf("calls %d and %d overlapped — concurrency limit not enforced", i, i+1)
 		}
 	}
-}// TestDelegateParallelStreamsResults verifies the detached surface posts one
+} // TestDelegateParallelStreamsResults verifies the detached surface posts one
 // result per task through the channel, keyed by the task's index so the caller
-// can reunite them with the list it gave regardless of completion order. 
+// can reunite them with the list it gave regardless of completion order.
 
 func drainParallelResults(ch <-chan nacelle.ParallelTaskResult, t *testing.T) map[int]string {
 	t.Helper()
@@ -169,7 +170,7 @@ func TestDelegateParallelStreamsResults(t *testing.T) {
 			t.Errorf("result set %q missing %q", joined, want)
 		}
 	}
-}// TestDelegateParallelEmptyTasksErrors verifies the detached surface rejects an
+} // TestDelegateParallelEmptyTasksErrors verifies the detached surface rejects an
 // empty task list, matching the tool's own failure.
 func TestDelegateParallelEmptyTasksErrors(t *testing.T) {
 	_, err := nacelle.DelegateParallel(context.Background(), nacelle.Config{

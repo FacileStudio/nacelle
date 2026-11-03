@@ -38,7 +38,6 @@ var escapeCommands = map[string]struct{}{
 	"fish":     {},
 }
 
-
 func checkCommandEscapes(command string) error {
 	fields := strings.Fields(command)
 	if len(fields) == 0 {
@@ -91,5 +90,3 @@ func nextAfter(fields []string, token string) string {
 	}
 	return ""
 }
-
-

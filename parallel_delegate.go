@@ -150,7 +150,6 @@ func clampConcurrency(n int) int {
 	return n
 }
 
-
 func buildDelegateCallbacks(config parallelContext, idx int, spent *Usage) DelegateCallbacks {
 	opts := config.opts.Callbacks
 	return DelegateCallbacks{
@@ -175,4 +174,3 @@ func buildDelegateCallbacks(config parallelContext, idx int, spent *Usage) Deleg
 		},
 	}
 }
-
