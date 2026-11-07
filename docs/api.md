@@ -593,9 +593,10 @@ func (s *Set) ReadOnly() ([]nacelle.Tool, error) // read, find, search — nothi
 func WebFetch() ([]nacelle.Tool, error)
 ```
 
-`Tools()` returns: `read_file`, `write_file`, `edit_file` (exact-match replace, refuses an
-ambiguous or absent match), `list_directory` (one directory, subdirectories marked), `find_files`
-(glob, files only), `search_content` (grep), and — only when `AllowBash` — `run_command`. No tool takes a `path`, `cwd` or `root` argument the model could
+`Tools()` returns: `read_file`, `write_file`, `edit_file` (`path`, `old_string`, `new_string`,
+`replace_all`; refuses an ambiguous or absent match), `list_directory` (one directory,
+subdirectories marked), `glob` (`pattern`, `path`; files only), `grep` (`pattern`, `path`,
+`glob`), and — only when `AllowBash` — `bash` (`command`, `timeout_ms`, `description`). No tool takes a `path`, `cwd` or `root` argument the model could
 nominate itself; see [architecture.md](architecture.md#the-tool-call-loop) for why that
 specific restriction is load-bearing (CVE-2025-59532).
 

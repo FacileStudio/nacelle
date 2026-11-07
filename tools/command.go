@@ -21,8 +21,9 @@ import (
 const grace = 2 * time.Second
 
 type commandInput struct {
-	Command string `json:"command" jsonschema:"required,description=The shell command to run. It starts in the working directory"`
-	Timeout int    `json:"timeout,omitempty" jsonschema:"description=Seconds to allow before the command is killed. Omit for the default. A value above the configured ceiling is clamped to it"`
+	Command     string `json:"command" jsonschema:"required,description=The shell command to run. It starts in the working directory"`
+	TimeoutMs   int64  `json:"timeout_ms,omitempty" jsonschema:"description=Milliseconds to allow before the command is killed. Omit for the default. A value above the configured ceiling is clamped to it"`
+	Description string `json:"description,omitempty" jsonschema:"description=What the command does in five to ten words for the person watching"`
 }
 
 // commandTool builds the shell runner.
@@ -33,34 +34,34 @@ type commandInput struct {
 // mounted unless the caller asked for it, and that whoever asked knows a
 // command runs with the process's own privileges.
 func (s *Set) commandTool() (nacelle.Tool, error) {
-	return nacelle.NewOutputTool("run_command",
+	return nacelle.NewOutputTool("bash",
 		"Run a shell command in the working directory and return its output. Use it for builds, tests, version control and anything else the other tools do not cover. Output is truncated if it is very long, so prefer commands that answer a question over commands that print everything.",
 		func(ctx context.Context, in commandInput, emit func(string)) (string, error) {
 			if strings.TrimSpace(in.Command) == "" {
 				return "", fmt.Errorf("no command given")
 			}
-			return s.run(ctx, in.Command, bounded(in.Timeout, s.commandTimeout), emit)
+			return s.run(ctx, in.Command, bounded(in.TimeoutMs, s.commandTimeout), emit)
 		})
 }
 
 // bounded is the timeout one call actually gets.
 //
 // A model may ask for less than the operator configured and never for more.
-// Without the ceiling, a model writing `timeout: 86400` has raised a bound it
+// Without the ceiling, a model writing `timeout_ms: 86400000` has raised a bound it
 // does not own and the operator's setting is advisory. Anything absent, zero,
 // negative or above the ceiling falls back to the ceiling rather than being
 // refused, because a bad guess at a timeout should cost the model a shorter
 // command, not a failed tool call.
 //
-// The comparison is made in seconds on purpose. Converting first overflows:
-// time.Duration(1<<40) * time.Second wraps int64 into a negative duration,
-// which expires the moment it is set and turns a silly number into a
-// unrunnable tool.
-func bounded(seconds int, ceiling time.Duration) time.Duration {
-	if seconds <= 0 || time.Duration(seconds) > ceiling/time.Second {
+// The comparison is made in milliseconds on purpose. Converting first
+// overflows: time.Duration(1<<50) * time.Millisecond wraps int64 into a
+// negative duration, which expires the moment it is set and turns a silly
+// number into an unrunnable tool.
+func bounded(millis int64, ceiling time.Duration) time.Duration {
+	if millis <= 0 || time.Duration(millis) > ceiling/time.Millisecond {
 		return ceiling
 	}
-	return time.Duration(seconds) * time.Second
+	return time.Duration(millis) * time.Millisecond
 }
 
 // run executes one command, bounded in time, in output, and in how long it can

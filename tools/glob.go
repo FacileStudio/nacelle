@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"io/fs"
 	"path/filepath"
 	"strings"
 )
@@ -45,4 +46,21 @@ func matchSegments(pattern, name []string, matchStar func([]string, []string) bo
 		pattern, name = pattern[1:], name[1:]
 	}
 	return len(name) == 0
+}
+
+// collect walks the directory a model named, or the working directory when it
+// named none, and hands keep every file the glob matches. An empty glob
+// matches every file.
+func (s *Set) collect(path, glob string, keep func(name string)) error {
+	dir, err := cleanDir(path, s.dir, s.pathIsolation)
+	if err != nil {
+		return err
+	}
+	glob = relativise(glob, dir)
+	return s.walk(dir, func(name, rel string, _ fs.DirEntry) error {
+		if glob == "" || matchGlob(glob, name) || matchGlob(glob, rel) {
+			keep(name)
+		}
+		return nil
+	})
 }

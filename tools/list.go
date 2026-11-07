@@ -17,8 +17,8 @@ type listInput struct {
 
 // listTool builds the directory lister.
 //
-// find_files answers "which files match this", and a model that has just
-// arrived cannot write the glob yet: it walks files only, so `find_files *`
+// glob answers "which files match this", and a model that has just
+// arrived cannot write the glob yet: it walks files only, so `glob *`
 // returns the top-level files and no sign that apps/ or tui/ are there at all.
 // The move that worked instead was `**/*` — every path in the tree, paid for
 // out of the context window — and inferring the directories from the paths
@@ -54,7 +54,7 @@ func (s *Set) listTool() (nacelle.Tool, error) {
 //
 // The filter is walk's, on purpose. A model shown node_modules/ here will
 // search it, find nothing, and have learnt something false about the tree; a
-// listing that disagrees with find_files about what exists is worse than one
+// listing that disagrees with glob about what exists is worse than one
 // that shows less. Dotfiles stay, because walk skips dot *directories* only —
 // .gitignore and .golangci.yml are searchable, and are often the answer.
 func listing(entries []fs.DirEntry) []string {

@@ -92,15 +92,16 @@ func (s *Set) writeTool() (nacelle.Tool, error) {
 }
 
 type editInput struct {
-	Path string `json:"path" jsonschema:"required,description=Path to the file relative to the working directory"`
-	Old  string `json:"old" jsonschema:"required,description=The exact text to replace. Include enough surrounding lines to make it unique in the file"`
-	New  string `json:"new" jsonschema:"required,description=The text to put in its place"`
+	Path       string `json:"path" jsonschema:"required,description=Path to the file relative to the working directory"`
+	OldString  string `json:"old_string" jsonschema:"required,description=The exact text to replace. Include enough surrounding lines to make it unique in the file unless replace_all is set"`
+	NewString  string `json:"new_string" jsonschema:"required,description=The text to put in its place"`
+	ReplaceAll bool   `json:"replace_all,omitempty" jsonschema:"description=Replace every occurrence instead of requiring exactly one"`
 }
 
 // editTool builds the exact-match editor.
 func (s *Set) editTool() (nacelle.Tool, error) {
 	return nacelle.NewTool("edit_file",
-		"Replace an exact piece of text in a file. The old text must appear exactly once: include the lines around it until it does. Read the file first.",
+		"Replace an exact piece of text in a file. old_string must appear exactly once: include the lines around it until it does, or set replace_all to change every occurrence. Read the file first.",
 		func(_ context.Context, in editInput) (string, error) {
 			name, err := clean(in.Path, s.dir, s.pathIsolation)
 			if err != nil {
@@ -114,7 +115,7 @@ func (s *Set) editTool() (nacelle.Tool, error) {
 				return "", err
 			}
 
-			edited, err := replaceOnce(string(raw), in.Old, in.New)
+			edited, err := replace(string(raw), in.OldString, in.NewString, in.ReplaceAll)
 			if err != nil {
 				return "", fmt.Errorf("%s: %w", name, err)
 			}

@@ -104,6 +104,7 @@ func TestParallelSubAgentLenientTasks(t *testing.T) {
 	}{
 		{"single string", `{"tasks":"do the thing"}`, 1},
 		{"double encoded", `{"tasks":"[\"task1\",\"task2\"]"}`, 2},
+		{"objects", `{"tasks":[{"description":"one","prompt":"task1"},{"title":"two","task":"task2"}]}`, 2},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) { runLenient(t, tc.input, tc.want) })
@@ -150,7 +151,7 @@ func TestParallelSubAgentNonStringTasks(t *testing.T) {
 	if err == nil {
 		t.Error("a numeric tasks field was accepted")
 	}
-	if !strings.Contains(err.Error(), "list of strings") {
+	if !strings.Contains(err.Error(), "{description, prompt}") {
 		t.Errorf("error %q does not name the expected shape", err)
 	}
 }

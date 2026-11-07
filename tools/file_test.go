@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,7 +43,7 @@ func TestEditRequiresExactlyOneMatch(t *testing.T) {
 			if _, err := call(t, set, "read_file", readInput{Path: "f.txt"}); err != nil {
 				t.Fatalf("read: %v", err)
 			}
-			_, err := call(t, set, "edit_file", editInput{Path: "f.txt", Old: tc.old, New: "y"})
+			_, err := call(t, set, "edit_file", editInput{Path: "f.txt", OldString: tc.old, NewString: "y"})
 			if err == nil {
 				t.Fatal("the edit was accepted")
 			}
@@ -58,7 +59,7 @@ func TestEditReplacesAUniqueMatch(t *testing.T) {
 	if _, err := call(t, set, "read_file", readInput{Path: "f.txt"}); err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if _, err := call(t, set, "edit_file", editInput{Path: "f.txt", Old: "change me", New: "changed"}); err != nil {
+	if _, err := call(t, set, "edit_file", editInput{Path: "f.txt", OldString: "change me", NewString: "changed"}); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
 
@@ -73,16 +74,33 @@ func TestEditReplacesAUniqueMatch(t *testing.T) {
 
 func TestEditRefusesAFileThatWasNeverRead(t *testing.T) {
 	set := newSet(t, map[string]string{"f.txt": "hello\n"})
-	_, err := call(t, set, "edit_file", editInput{Path: "f.txt", Old: "hello", New: "bye"})
+	_, err := call(t, set, "edit_file", editInput{Path: "f.txt", OldString: "hello", NewString: "bye"})
 	if err == nil || !strings.Contains(err.Error(), "read") {
 		t.Fatalf("edit without a read = %v, want a refusal telling the model to read first", err)
 	}
 }
 
 func TestEditExplainsAWhitespaceMiss(t *testing.T) {
-	_, err := replaceOnce("func main() {\n\tprintln(1)\n}\n", "func main() {\n    println(1)\n}", "x")
+	_, err := replace("func main() {\n\tprintln(1)\n}\n", "func main() {\n    println(1)\n}", "x", false)
 	if err == nil || !strings.Contains(err.Error(), "whitespace") {
 		t.Fatalf("error = %v, want it to point at the whitespace", err)
+	}
+}
+
+func TestEditReplaceAllChangesEveryOccurrence(t *testing.T) {
+	got, err := replace("a b a", "a", "c", true)
+	if err != nil || got != "c b c" {
+		t.Fatalf("replace = %q, %v", got, err)
+	}
+}
+
+func TestEditDecodesTheLegacyArgumentNames(t *testing.T) {
+	var in editInput
+	if err := json.Unmarshal([]byte(`{"file_path":"f.txt","old":"a","new":"b","new_string":"kept"}`), &in); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if in.Path != "f.txt" || in.OldString != "a" || in.NewString != "kept" {
+		t.Fatalf("decoded %+v", in)
 	}
 }
 

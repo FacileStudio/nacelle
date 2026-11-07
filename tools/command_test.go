@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -18,12 +19,12 @@ import (
 func TestCommandReportsOutputAndExitStatus(t *testing.T) {
 	set := newSet(t, nil)
 
-	out, err := call(t, set, "run_command", commandInput{Command: "echo hello"})
+	out, err := call(t, set, "bash", commandInput{Command: "echo hello"})
 	if err != nil || !strings.Contains(out, "hello") {
 		t.Fatalf("run = %q, %v; want the command's output", out, err)
 	}
 
-	failed, err := call(t, set, "run_command", commandInput{Command: "exit 3"})
+	failed, err := call(t, set, "bash", commandInput{Command: "exit 3"})
 	if err != nil {
 		t.Fatalf("a failing command returned an error: %v", err)
 	}
@@ -38,7 +39,7 @@ func TestCommandsDoNotInheritTheProcessEnvironment(t *testing.T) {
 	t.Setenv("NACELLE_TEST_SECRET", "do-not-leak")
 	set := newSet(t, nil)
 
-	out, err := call(t, set, "run_command", commandInput{Command: "env"})
+	out, err := call(t, set, "bash", commandInput{Command: "env"})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -51,7 +52,7 @@ func TestCommandTimesOutAndSaysSo(t *testing.T) {
 	set := newSet(t, nil)
 
 	started := time.Now()
-	out, err := call(t, set, "run_command", commandInput{Command: "sleep 30", Timeout: 1})
+	out, err := call(t, set, "bash", commandInput{Command: "sleep 30", TimeoutMs: 1000})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -69,9 +70,9 @@ func TestATimeoutKillsTheWholeProcessGroup(t *testing.T) {
 	set := newSet(t, nil)
 	marker := filepath.Join(set.Dir(), "child-alive")
 
-	_, err := call(t, set, "run_command", commandInput{
-		Command: "sh -c 'sleep 3; touch " + marker + "' & sleep 30",
-		Timeout: 1,
+	_, err := call(t, set, "bash", commandInput{
+		Command:   "sh -c 'sleep 3; touch " + marker + "' & sleep 30",
+		TimeoutMs: 1000,
 	})
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -94,9 +95,9 @@ func TestAnOrphanHoldingThePipesDoesNotHangTheToolCall(t *testing.T) {
 	set := newSet(t, nil)
 
 	started := time.Now()
-	out, err := call(t, set, "run_command", commandInput{
-		Command: "setsid sh -c 'sleep 25' & sleep 30",
-		Timeout: 1,
+	out, err := call(t, set, "bash", commandInput{
+		Command:   "setsid sh -c 'sleep 25' & sleep 30",
+		TimeoutMs: 1000,
 	})
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -132,18 +133,25 @@ func TestACallerCancellationIsNotDressedUpAsATimeout(t *testing.T) {
 // negative one must not get a command that expires before it starts.
 func TestTheModelCannotRaiseTheOperatorsTimeoutCeiling(t *testing.T) {
 	ceiling := 5 * time.Minute
-	asked := map[int]time.Duration{
-		0:       ceiling,
-		-1:      ceiling,
-		30:      30 * time.Second,
-		86400:   ceiling,
-		1 << 40: ceiling,
+	asked := map[int64]time.Duration{
+		0:        ceiling,
+		-1:       ceiling,
+		30000:    30 * time.Second,
+		86400000: ceiling,
+		1 << 50:  ceiling,
 	}
 
-	for seconds, want := range asked {
-		if got := bounded(seconds, ceiling); got != want {
-			t.Errorf("bounded(%d) = %s, want %s", seconds, got, want)
+	for millis, want := range asked {
+		if got := bounded(millis, ceiling); got != want {
+			t.Errorf("bounded(%d) = %s, want %s", millis, got, want)
 		}
+	}
+}
+
+func TestCommandDecodesTheLegacyTimeoutInSeconds(t *testing.T) {
+	var in commandInput
+	if err := json.Unmarshal([]byte(`{"command":"ls","timeout":3}`), &in); err != nil || in.TimeoutMs != 3000 {
+		t.Fatalf("decoded %+v, %v", in, err)
 	}
 }
 
@@ -156,7 +164,7 @@ func TestReadOnlySetCannotWrite(t *testing.T) {
 
 	for name := range nacelle.ToolsByName(readOnly) {
 		switch name {
-		case "write_file", "edit_file", "run_command":
+		case "write_file", "edit_file", "bash":
 			t.Errorf("the read-only set offers %q", name)
 		}
 	}
@@ -174,8 +182,8 @@ func TestBashIsNotMountedUnlessAskedFor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Tools: %v", err)
 	}
-	if _, found := nacelle.ToolsByName(all)["run_command"]; found {
-		t.Error("run_command is mounted without AllowBash")
+	if _, found := nacelle.ToolsByName(all)["bash"]; found {
+		t.Error("bash is mounted without AllowBash")
 	}
 }
 

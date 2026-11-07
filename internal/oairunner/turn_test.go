@@ -65,7 +65,7 @@ func TestFinishKeepsRealToolCalls(t *testing.T) {
 				{"index": 0, "id": "a", "type": "function",
 				 "function": {"name": "read_file", "arguments": "{}"}},
 				{"index": 1, "id": "b", "type": "function",
-				 "function": {"name": "search_content", "arguments": "{\"pattern\":\"x\"}"}}
+				 "function": {"name": "grep", "arguments": "{\"pattern\":\"x\"}"}}
 			]},
 			"finish_reason": "tool_calls"
 		}]

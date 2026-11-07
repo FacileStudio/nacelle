@@ -6,7 +6,8 @@ import (
 	"strings"
 )
 
-// replaceOnce swaps old for new, requiring exactly one match.
+// replace swaps old for new, requiring exactly one match unless all is set,
+// in which case every occurrence is replaced and at least one must exist.
 //
 // The uniqueness rule is the whole safety property of this tool. A match count
 // of zero means the model is editing a file it has misremembered, and a count
@@ -14,7 +15,7 @@ import (
 // caught here, at no cost, where the alternative is a silent corruption the
 // next reader inherits. Refusing also teaches the model the fix: send more
 // surrounding context.
-func replaceOnce(content, old, new string) (string, error) {
+func replace(content, old, new string, all bool) (string, error) {
 	if old == "" {
 		return "", fmt.Errorf("the text to replace is empty; use write_file to create a file")
 	}
@@ -22,13 +23,15 @@ func replaceOnce(content, old, new string) (string, error) {
 		return "", fmt.Errorf("the replacement is identical to the original")
 	}
 
-	switch count := strings.Count(content, old); count {
-	case 1:
+	switch count := strings.Count(content, old); {
+	case count > 0 && all:
+		return strings.ReplaceAll(content, old, new), nil
+	case count == 1:
 		return strings.Replace(content, old, new, 1), nil
-	case 0:
+	case count == 0:
 		return "", fmt.Errorf("that exact text is not in the file%s", nearMiss(content, old))
 	default:
-		return "", fmt.Errorf("that text appears %d times; include more surrounding lines so it matches only the one you mean", count)
+		return "", fmt.Errorf("that text appears %d times; include more surrounding lines so it matches only the one you mean, or set replace_all", count)
 	}
 }
 

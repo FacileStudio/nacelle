@@ -24,6 +24,7 @@ var skipped = map[string]bool{
 
 type globInput struct {
 	Pattern string `json:"pattern" jsonschema:"required,description=A glob such as **/*.go or cmd/**. ** matches any number of directories"`
+	Path    string `json:"path,omitempty" jsonschema:"description=Directory to search in. Omit it for the working directory"`
 }
 
 // relativise turns a model-supplied absolute path into a relative one when it
@@ -49,23 +50,15 @@ func relativise(pattern, dir string) string {
 
 // globTool builds the file finder.
 func (s *Set) globTool() (nacelle.Tool, error) {
-	return nacelle.NewToolWithOptions("find_files",
+	return nacelle.NewToolWithOptions("glob",
 		"List files matching a glob, relative to the working directory. Use it to learn what exists before reading anything. Generated directories such as .git, node_modules and vendor are skipped.",
 		func(_ context.Context, in globInput) (string, error) {
 			pattern := strings.TrimSpace(in.Pattern)
 			if pattern == "" {
 				return "", fmt.Errorf("no pattern given")
 			}
-			pattern = relativise(pattern, s.dir)
-
 			var found []string
-			err := s.walk(func(name, rel string, _ fs.DirEntry) error {
-				if matchGlob(pattern, name) || matchGlob(pattern, rel) {
-					found = append(found, name)
-				}
-				return nil
-			})
-			if err != nil {
+			if err := s.collect(in.Path, pattern, func(name string) { found = append(found, name) }); err != nil {
 				return "", err
 			}
 			if len(found) == 0 {
@@ -79,28 +72,23 @@ func (s *Set) globTool() (nacelle.Tool, error) {
 
 type grepInput struct {
 	Pattern string `json:"pattern" jsonschema:"required,description=A Go regular expression to search for"`
+	Path    string `json:"path,omitempty" jsonschema:"description=File or directory to search in. Omit it for the working directory"`
 	Glob    string `json:"glob,omitempty" jsonschema:"description=Only search files matching this glob — for example **/*.go"`
 }
 
 // grepTool builds the content search.
 func (s *Set) grepTool() (nacelle.Tool, error) {
-	return nacelle.NewToolWithOptions("search_content",
+	return nacelle.NewToolWithOptions("grep",
 		"Search file contents with a regular expression, returning matching lines with their file and line number. Narrow it with a glob when you know the file type. Use this to find where something is defined or used, rather than reading files one at a time.",
 		func(_ context.Context, in grepInput) (string, error) {
 			expression, err := regexp.Compile(in.Pattern)
 			if err != nil {
 				return "", fmt.Errorf("that is not a valid regular expression: %w", err)
 			}
-			glob := relativise(strings.TrimSpace(in.Glob), s.dir)
-
 			var matches []string
-			err = s.walk(func(name, rel string, _ fs.DirEntry) error {
-				if glob == "" || matchGlob(glob, name) || matchGlob(glob, rel) {
-					s.grepFile(name, expression, &matches)
-				}
-				return nil
-			})
-			if err != nil {
+			if err := s.collect(in.Path, strings.TrimSpace(in.Glob), func(name string) {
+				s.grepFile(name, expression, &matches)
+			}); err != nil {
 				return "", err
 			}
 			if len(matches) == 0 {
@@ -134,19 +122,19 @@ func (s *Set) grepFile(name string, expression *regexp.Regexp, matches *[]string
 	}
 }
 
-// walk visits every file under the root, skipping generated directories.
+// walk visits every file under dir, skipping generated directories.
 //
 // It gives the visitor both the absolute path and the path relative to the
 // root, because a model-supplied glob is usually relative while WalkDir
 // yields absolute names; matching either is what lets `internal/tui/*.go`
 // find anything.
 //
-// It walks root.FS() rather than the real filesystem, so the traversal itself
-// cannot follow a symlink out of the tree. ErrSkipEntry is returned by
+// filepath.WalkDir does not follow symlinks, so the traversal itself cannot
+// leave the tree through one. ErrSkipEntry is returned by
 // visit to skip a single file without aborting the walk; other errors from
 // visit stop the walk.
-func (s *Set) walk(visit func(name, rel string, entry fs.DirEntry) error) error {
-	root, err := filepath.Abs(s.dir)
+func (s *Set) walk(dir string, visit func(name, rel string, entry fs.DirEntry) error) error {
+	root, err := filepath.Abs(dir)
 	if err != nil {
 		return err
 	}

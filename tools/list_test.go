@@ -2,10 +2,11 @@ package tools
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-// The gap this tool closes: find_files walks files only, so no glob it accepts
+// The gap this tool closes: glob walks files only, so no glob it accepts
 // ever reports that a directory is there, and a model had to infer one from a
 // path that happened to run through it. Asserting the whole rendering covers
 // the four things that matter at once — directories appear, they are marked,
@@ -34,7 +35,7 @@ func TestListShowsOneLevelWithItsDirectories(t *testing.T) {
 	}
 }
 
-// A listing that disagrees with find_files about what exists teaches the model
+// A listing that disagrees with glob about what exists teaches the model
 // something false: it would search the node_modules/ it was shown, get nothing
 // back, and conclude the directory is empty. Dotfiles are the other half — walk
 // skips dot directories only, and .gitignore is searchable and often the point.
@@ -88,4 +89,16 @@ func setDir(t *testing.T) string {
 		t.Fatal("temp dir is empty")
 	}
 	return dir
+}
+
+func TestGrepAndGlobStayUnderPath(t *testing.T) {
+	set := newSet(t, map[string]string{"a/x.txt": "needle", "b/y.txt": "needle"})
+	found, err := call(t, set, "grep", grepInput{Pattern: "needle", Path: "a"})
+	if err != nil || !strings.Contains(found, "x.txt") || strings.Contains(found, "y.txt") {
+		t.Fatalf("grep under a = %q, %v", found, err)
+	}
+	listed, err := call(t, set, "glob", globInput{Pattern: "*.txt", Path: "b"})
+	if err != nil || !strings.Contains(listed, "y.txt") || strings.Contains(listed, "x.txt") {
+		t.Fatalf("glob under b = %q, %v", listed, err)
+	}
 }

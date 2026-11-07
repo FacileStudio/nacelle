@@ -1,6 +1,7 @@
 package nacelle
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -61,9 +62,9 @@ func NewParallelSubAgentTool(cfg Config, opts ParallelSubAgentOptions) (Tool, er
 			batch: opts.Batch,
 		}
 		if opts.Detach {
-			return detachToolResult(cfg, opts, in.Tasks)
+			return detachToolResult(cfg, opts, in.prompts())
 		}
-		return parallelDelegate(ctx, config, in.Tasks, maxConcurrency)
+		return parallelDelegate(ctx, config, in.prompts(), maxConcurrency)
 	})
 }
 
@@ -101,10 +102,48 @@ func detachToolResult(cfg Config, opts ParallelSubAgentOptions, tasks []string) 
 	return string(data), nil
 }
 
-type parallelSubAgentInput struct {
-	Tasks []string `json:"tasks" jsonschema:"required,minItems=1,description=List of independent tasks to run in parallel"`
+type parallelTaskInput struct {
+	Description string `json:"description,omitempty" jsonschema:"description=A three to five word label for the task"`
+	Prompt      string `json:"prompt" jsonschema:"required,description=The complete instructions for the agent that runs this task"`
 }
 
+// UnmarshalJSON accepts a bare string as the prompt, and title and task as
+// the older spellings of description and prompt.
+func (in *parallelTaskInput) UnmarshalJSON(data []byte) error {
+	var prompt string
+	if json.Unmarshal(data, &prompt) == nil {
+		in.Prompt = prompt
+		return nil
+	}
+	var raw struct {
+		Description string `json:"description"`
+		Prompt      string `json:"prompt"`
+		Title       string `json:"title"`
+		Task        string `json:"task"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("a task must be an object with a prompt, got %s", data)
+	}
+	in.Description = cmp.Or(raw.Description, raw.Title)
+	in.Prompt = cmp.Or(raw.Prompt, raw.Task)
+	return nil
+}
+
+type parallelSubAgentInput struct {
+	Tasks []parallelTaskInput `json:"tasks" jsonschema:"required,minItems=1,description=Independent tasks to run in parallel"`
+}
+
+// prompts is what each nested agent is asked, in task order.
+func (in parallelSubAgentInput) prompts() []string {
+	prompts := make([]string, len(in.Tasks))
+	for i, task := range in.Tasks {
+		prompts[i] = task.Prompt
+	}
+	return prompts
+}
+
+// UnmarshalJSON accepts the task list as a list, as one string holding a
+// JSON-encoded list, or as a single task.
 func (in *parallelSubAgentInput) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Tasks json.RawMessage `json:"tasks"`
@@ -115,21 +154,18 @@ func (in *parallelSubAgentInput) UnmarshalJSON(data []byte) error {
 	if len(raw.Tasks) == 0 || string(raw.Tasks) == "null" {
 		return nil
 	}
-	var list []string
-	if err := json.Unmarshal(raw.Tasks, &list); err == nil {
-		in.Tasks = list
+	if json.Unmarshal(raw.Tasks, &in.Tasks) == nil {
 		return nil
 	}
 	var single string
 	if err := json.Unmarshal(raw.Tasks, &single); err != nil {
-		return fmt.Errorf("tasks must be a list of strings, got %s", raw.Tasks)
+		return fmt.Errorf("tasks must be a list of {description, prompt} objects, got %s", raw.Tasks)
 	}
 	trimmed := strings.TrimSpace(single)
-	if strings.HasPrefix(trimmed, "[") && json.Unmarshal([]byte(trimmed), &list) == nil {
-		in.Tasks = list
+	if strings.HasPrefix(trimmed, "[") && json.Unmarshal([]byte(trimmed), &in.Tasks) == nil {
 		return nil
 	}
-	in.Tasks = []string{single}
+	in.Tasks = []parallelTaskInput{{Prompt: single}}
 	return nil
 }
 

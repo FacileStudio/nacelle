@@ -128,10 +128,10 @@ func TestPlanCallsIntegratesWithRealTools(t *testing.T) {
 		{ID: "c2", Name: "read_file"},
 		{ID: "c3", Name: "edit_file"},
 		{ID: "c4", Name: "list_directory"},
-		{ID: "c5", Name: "run_command"},
-		{ID: "c6", Name: "find_files"},
+		{ID: "c5", Name: "bash"},
+		{ID: "c6", Name: "glob"},
 		{ID: "c7", Name: "web_fetch"},
-		{ID: "c8", Name: "search_content"},
+		{ID: "c8", Name: "grep"},
 		{ID: "c9", Name: "web_fetch"},
 	}
 
@@ -150,6 +150,15 @@ func TestPlanCallsIntegratesWithRealTools(t *testing.T) {
 		tool := byName[planned[i].Name]
 		if ro, ok := tool.(nacelle.ReadOnlyTool); ok && ro.IsReadOnly() {
 			t.Errorf("call %d (%s) expected mutating", i, planned[i].Name)
+		}
+	}
+}
+
+func TestLegacyToolNamesPointAtTheBuiltInTools(t *testing.T) {
+	byName := loadAllTestTools(t)
+	for old, current := range nacelle.LegacyToolNames() {
+		if _, ok := byName[current]; !ok && current != "todo_write" {
+			t.Errorf("LegacyToolNames[%q] = %q, which no built-in tool is named", old, current)
 		}
 	}
 }

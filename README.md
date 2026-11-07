@@ -218,8 +218,9 @@ defer set.Close()
 local, err := set.Tools()   // or set.ReadOnly() for an agent that only answers questions
 ```
 
-`read_file`, `write_file`, `edit_file`, `list_directory`, `find_files`, `search_content`, and
-`run_command` when `AllowBash` is set. Every file operation goes through [`os.Root`], so a path resolving outside
+`read_file`, `write_file`, `edit_file`, `list_directory`, `glob`, `grep`, and
+`bash` when `AllowBash` is set. The names and argument shapes match Claude Code, Gemini CLI and
+OpenCode, and `nacelle.LegacyToolNames()` maps the pre-v0.32 names for replaying old transcripts. Every file operation goes through [`os.Root`], so a path resolving outside
 the root is refused by a kernel-backed check rather than a string comparison — which is what
 closes symlink escapes, `..` that survives normalisation, and the check-then-use window.
 
@@ -229,11 +230,11 @@ Three rules it is worth knowing before extending it:
   or `root`, and a test enforces it. CVE-2025-59532 is why: Codex CLI accepted a
   model-generated working directory as its sandbox root, so the output being confined was also
   choosing the confinement.
-- **`edit_file` requires its target text to match exactly once.** Zero matches means the model
+- **`edit_file` requires `old_string` to match exactly once** unless `replace_all` is set. Zero matches means the model
   misremembered the file; more than one means it is about to change places it never looked at.
   Both are caught for free, and the refusal teaches the fix — send more surrounding context.
 - **This is not a sandbox and does not pretend to be.** `os.Root` concedes bind mounts, `/proc`
-  and device files; `run_command` is not confined at all and no denylist survives contact with
+  and device files; `bash` is not confined at all and no denylist survives contact with
   a shell. `AllowBash` is opt-in so that choice is made on purpose, and real isolation is a
   container's job — which is what `sandbox/` will be for.
 

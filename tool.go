@@ -59,7 +59,7 @@ type ReadOnlyTool interface {
 // OutputTool is an optional interface a Tool may implement to stream its
 // output as it is produced, rather than returning it whole at completion.
 //
-// emit is called by the tool for each fragment of output (run_command calls it
+// emit is called by the tool for each fragment of output (bash calls it
 // once per completed line). The fragments surface to the stream as
 // KindToolOutput events and are never replayed into the conversation or
 // counted in usage; the final KindToolResult still carries the complete
