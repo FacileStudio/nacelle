@@ -30,7 +30,7 @@ func (outputTool) Run(_ context.Context, _ Call, emit func(string)) (Result, err
 // the sink while the tool runs sees progress rather than only the finale.
 func TestACallStreamsOutputBeforeTheResult(t *testing.T) {
 	sink := newSink(Request{Tools: []Tool{outputTool{}}})
-	result := sink.call(context.Background(), Call{ID: "c", Name: "outputter", Index: 2, Input: json.RawMessage(`{}`)})
+	result := sink.call(context.Background(), sink.resolve(Call{ID: "c", Name: "outputter", Index: 2, Input: json.RawMessage(`{}`)}))
 	if result.Failed || result.Result != "done" {
 		t.Fatalf("call = %+v; want the complete result", result)
 	}

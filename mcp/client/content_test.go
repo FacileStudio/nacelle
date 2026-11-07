@@ -25,7 +25,7 @@ func TestTextBlocksArriveAsThemselves(t *testing.T) {
 // confidently about a screenshot it never saw.
 func TestContentTheModelCannotSeeIsAnnouncedRatherThanDropped(t *testing.T) {
 	for name, block := range map[string]sdk.Content{
-		"image":  &sdk.ImageContent{Data: []byte("0123456789"), MIMEType: "image/png"},
+		"image":  &sdk.ImageContent{Data: []byte("0123456789"), MIMEType: "image/svg+xml"},
 		"audio":  &sdk.AudioContent{Data: []byte("0123456789"), MIMEType: "audio/wav"},
 		"link":   &sdk.ResourceLink{URI: "file:///report.pdf", MIMEType: "application/pdf"},
 		"binary": &sdk.EmbeddedResource{Resource: &sdk.ResourceContents{URI: "file:///a.bin", Blob: []byte("0123456789")}},
@@ -66,7 +66,7 @@ func TestAnEmbeddedTextResourceIsPassedStraightThrough(t *testing.T) {
 // A missing MIME type must not leave the notice trailing off between two
 // commas, because the notice is the only thing the model has to go on.
 func TestANoticeReadsAsASentenceWithoutAMIMEType(t *testing.T) {
-	got := flatten(&sdk.CallToolResult{Content: []sdk.Content{&sdk.ImageContent{Data: []byte("x")}}})
+	got := render(&sdk.CallToolResult{Content: []sdk.Content{&sdk.ImageContent{Data: []byte("x")}}}).Text
 
 	if !strings.Contains(got, "unknown type") {
 		t.Errorf("flatten = %q, want the missing type named", got)
@@ -77,7 +77,7 @@ func TestANoticeReadsAsASentenceWithoutAMIMEType(t *testing.T) {
 // returning data, and answering "(no output)" to a call that produced some is
 // the same silent edit by another route.
 func TestAStructuredResultWithNoContentBlocksIsStillReported(t *testing.T) {
-	got := flatten(&sdk.CallToolResult{StructuredContent: map[string]any{"count": 3}})
+	got := render(&sdk.CallToolResult{StructuredContent: map[string]any{"count": 3}}).Text
 
 	if !strings.Contains(got, "count") {
 		t.Errorf("flatten = %q, want the structured result rendered", got)
@@ -132,3 +132,18 @@ func TestSanitiseLeavesUnknownTagsAlone(t *testing.T) {
 		t.Errorf("sanitise stripped an unknown tag: %q", got)
 	}
 }
+
+// A picture the model can look at travels as an Image beside the text, not as
+// a sentence about it.
+func TestAViewableImageTravelsAsAPicture(t *testing.T) {
+	got := render(&sdk.CallToolResult{Content: []sdk.Content{
+		&sdk.TextContent{Text: "the page"},
+		&sdk.ImageContent{Data: []byte{1, 2}, MIMEType: "image/png"},
+	}})
+	if got.Text != "the page" || len(got.Images) != 1 || got.Images[0].MediaType != "image/png" {
+		t.Errorf("render = %+v, want the text and the picture apart", got)
+	}
+}
+
+// flatten is the text the model reads from a result.
+func flatten(result *sdk.CallToolResult) string { return render(result).Text }

@@ -3,44 +3,59 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
+
+	"github.com/FacileStudio/nacelle"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// flatten renders a tool result as the single string the model reads.
+// render turns a tool result into what the model reads: the pictures it can
+// look at, and text for everything else.
 //
-// Nothing is dropped in silence, and that is the whole reason this is not a
-// two-line loop over the text parts. A model handed only the text of a result
-// that also carried an image will reason as though the image was never there
-// — it has no way to know it was edited — and will then answer confidently
-// about a screenshot it never saw. tools.truncate takes the same line for the
-// same reason: the notice matters more than the content it stands in for.
-//
-// StructuredContent is the fallback when there is no content at all. The spec
-// says a server should always populate content, but one that does not is
-// returning data, and answering "(no output)" to a call that produced some is
-// the same silent edit by another route.
-func flatten(result *sdk.CallToolResult) string {
+// Nothing is dropped in silence. A model handed only the text of a result
+// that also carried something else will reason as though it was never there,
+// so content with no slot in a Result is announced in a sentence instead.
+// StructuredContent is the fallback when there is no content at all: a server
+// that leaves content empty is returning data, and answering "(no output)" to
+// a call that produced some is the same silent edit by another route.
+func render(result *sdk.CallToolResult) nacelle.Result {
+	var rendered nacelle.Result
 	parts := make([]string, 0, len(result.Content))
 	for _, item := range result.Content {
-		if rendered := describe(item); rendered != "" {
-			parts = append(parts, rendered)
+		if image, ok := picture(item); ok {
+			rendered.Images = append(rendered.Images, image)
+			continue
+		}
+		if text := describe(item); text != "" {
+			parts = append(parts, text)
 		}
 	}
-	if len(parts) == 0 {
-		return structured(result.StructuredContent)
+	rendered.Text = strings.Join(parts, "\n")
+	if len(parts) == 0 && len(rendered.Images) == 0 {
+		rendered.Text = structured(result.StructuredContent)
 	}
-	return strings.Join(parts, "\n")
+	return rendered
 }
 
-// describe renders one content block.
+// picture is an image block a model API can take, as an Image.
+func picture(item sdk.Content) (nacelle.Image, bool) {
+	image, ok := item.(*sdk.ImageContent)
+	if !ok || !slices.Contains(viewable, image.MIMEType) {
+		return nacelle.Image{}, false
+	}
+	return nacelle.Image{MediaType: image.MIMEType, Data: image.Data}, true
+}
+
+// viewable are the image types every backend accepts.
+var viewable = []string{"image/png", "image/jpeg", "image/gif", "image/webp"}
+
+// describe renders one content block that is not a picture the model can see.
 //
 // Only text passes through as itself. Everything else becomes a sentence
-// saying what arrived, because this package's contract with the loop is a
-// string: there is no channel here for an image, and inlining a megabyte of
-// base64 would spend the context window on something the model cannot look
-// at anyway.
+// saying what arrived, because inlining a megabyte of base64 would spend the
+// context window on something the model cannot look at anyway.
 func describe(item sdk.Content) string {
 	switch item := item.(type) {
 	case *sdk.TextContent:

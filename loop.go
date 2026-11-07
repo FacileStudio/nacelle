@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"iter"
 	"slices"
-	"sync"
 )
 
 // looped is a Provider driven through the agent loop.
@@ -135,19 +134,15 @@ func (r *run) localCalls(message Message) []Call {
 // execute runs a round of calls, releasing their events as they land, and
 // returns the user message carrying every result in the model's order.
 func (r *run) execute(ctx context.Context, calls []Call) (Message, bool) {
+	targets := make([]target, len(calls))
+	for position, call := range calls {
+		targets[position] = r.sink.resolve(call)
+	}
 	results := make([]Part, len(calls))
 	finished := make(chan struct{})
 	go func() {
 		defer close(finished)
-		readers, writers := plan(calls, r.sink.tools)
-		var group sync.WaitGroup
-		for _, position := range readers {
-			group.Go(func() { results[position] = r.sink.call(ctx, calls[position]) })
-		}
-		group.Wait()
-		for _, position := range writers {
-			results[position] = r.sink.call(ctx, calls[position])
-		}
+		r.sink.round(ctx, targets, results)
 	}()
 	for {
 		select {

@@ -3,10 +3,11 @@ package nacelle
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
-// call runs one tool call through the hooks, Approve and the tool, reports
+// call runs one resolved call through the hooks, Approve and the tool, reports
 // its outcome to the sink, and returns what the model reads.
 //
 // It is the one place a tool runs, whichever provider asked for it, so a
@@ -14,14 +15,12 @@ import (
 // is reported as a failed call, not skipped in silence: a call started must
 // be closed, and Refused tells a consumer it was a policy decision. A tool
 // that returns EndTurn is recorded as a success with the result it carried.
-func (s *sink) call(ctx context.Context, call Call) ToolResult {
-	tool, known := s.tools[call.Name]
-	if !known {
-		err := fmt.Errorf("nacelle: no tool named %q is available", call.Name)
-		s.report(toolResultEvent(call, err.Error(), err))
-		return failed(call, err)
+func (s *sink) call(ctx context.Context, resolved target) ToolResult {
+	if resolved.err != nil {
+		s.report(toolResultEvent(resolved.call, resolved.err.Error(), resolved.err))
+		return failed(resolved.call, resolved.err)
 	}
-	ruled, err := s.rule(ctx, tool, call)
+	ruled, err := s.rule(ctx, resolved.tool, resolved.call)
 	if err != nil {
 		event := toolResultEvent(ruled.call, err.Error(), err)
 		event.Tool.Refused = true
@@ -40,7 +39,12 @@ func (s *sink) call(ctx context.Context, call Call) ToolResult {
 	if err != nil {
 		return failed(ruled.call, err)
 	}
-	return ToolResult{ID: call.ID, Name: ruled.call.Name, Result: result, Images: images}
+	return ToolResult{ID: ruled.call.ID, Name: ruled.call.Name, Result: result, Images: images}
+}
+
+// errNoTool is the error the model reads for a name nothing answers to.
+func errNoTool(name string) error {
+	return fmt.Errorf("nacelle: no tool named %q is available", name)
 }
 
 // failed is the answer the model reads for a call that did not succeed.
@@ -91,13 +95,27 @@ func toolResultEvent(call Call, result string, err error) Event {
 	}
 }
 
+// round runs every target, the read-only ones first and together, and
+// writes each answer at its call's position.
+func (s *sink) round(ctx context.Context, targets []target, results []Part) {
+	readers, writers := plan(targets)
+	var group sync.WaitGroup
+	for _, position := range readers {
+		group.Go(func() { results[position] = s.call(ctx, targets[position]) })
+	}
+	group.Wait()
+	for _, position := range writers {
+		results[position] = s.call(ctx, targets[position])
+	}
+}
+
 // plan splits a round's calls into the read-only ones, which run first and
 // together, and the rest, which run after them one at a time in the model's
-// order. A call to a tool this run does not have is not read-only: it has no
+// order. A call that resolved to no tool is not read-only: it has no
 // declaration to trust.
-func plan(calls []Call, tools map[string]Tool) (readers, writers []int) {
-	for position, call := range calls {
-		if tool, ok := tools[call.Name]; ok && tool.Spec().ReadOnly {
+func plan(targets []target) (readers, writers []int) {
+	for position, resolved := range targets {
+		if resolved.tool != nil && resolved.tool.Spec().ReadOnly {
 			readers = append(readers, position)
 			continue
 		}

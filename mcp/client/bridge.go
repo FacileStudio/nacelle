@@ -60,6 +60,7 @@ func bridge(ctx context.Context, session *sdk.ClientSession, about details, take
 			remote:      remote.Name,
 			description: describeTool(remote),
 			schema:      schema,
+			readOnly:    remote.Annotations != nil && remote.Annotations.ReadOnlyHint,
 			session:     session,
 			timeout:     about.timeout,
 		})
@@ -138,16 +139,17 @@ type tool struct {
 	remote      string
 	description string
 	schema      map[string]any
+	readOnly    bool
 	session     *sdk.ClientSession
 	timeout     time.Duration
 }
 
 // Spec describes the bridged tool under its composed name.
 func (t *tool) Spec() nacelle.Spec {
-	return nacelle.Spec{Name: t.name, Description: t.description, Schema: t.schema}
+	return nacelle.Spec{Name: t.name, Description: t.description, Schema: t.schema, ReadOnly: t.readOnly}
 }
 
-// Run calls the tool on the server and flattens what comes back.
+// Run calls the tool on the server and renders what comes back.
 //
 // The arguments are decoded into a map rather than forwarded as raw JSON, so
 // that a model which produced an array or a bare string is told it did, here,
@@ -177,9 +179,9 @@ func (t *tool) Run(ctx context.Context, call nacelle.Call, _ func(string)) (nace
 		return nacelle.Result{}, t.failed(ctx, err)
 	}
 
-	answer := flatten(result)
+	answer := render(result)
 	if result.IsError {
-		return nacelle.Result{}, errors.New(answer)
+		return nacelle.Result{}, errors.New(answer.Text)
 	}
-	return nacelle.Result{Text: answer}, nil
+	return answer, nil
 }
