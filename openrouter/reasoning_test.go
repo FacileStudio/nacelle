@@ -33,6 +33,10 @@ data: [DONE]
 	if len(thinking) != 1 || thinking[0].Text != "thinking about it" {
 		t.Errorf("thinking = %+v, want the reasoning delta", thinking)
 	}
+	committed := kinds(loud, nacelle.KindMessage)
+	if len(committed) != 1 || committed[0].Message.Parts[0] != (nacelle.Reasoning{Text: "thinking about it"}) {
+		t.Errorf("committed = %+v, want the shown reasoning recorded in the transcript", committed)
+	}
 }
 
 func TestDepthReachesTheRequestAndExclusionNeverDoes(t *testing.T) {
