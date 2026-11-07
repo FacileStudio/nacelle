@@ -11,19 +11,19 @@ import (
 	"github.com/FacileStudio/nacelle"
 )
 
-func awaitContexts(seen <-chan context.Context, count int, t *testing.T) []context.Context {
+func awaitAlive(alive <-chan bool, count int, t *testing.T) []bool {
 	t.Helper()
-	var ctxs []context.Context
+	var seen []bool
 	deadline := time.After(5 * time.Second)
-	for len(ctxs) < count {
+	for len(seen) < count {
 		select {
-		case c := <-seen:
-			ctxs = append(ctxs, c)
+		case ok := <-alive:
+			seen = append(seen, ok)
 		case <-deadline:
-			t.Fatalf("timed out waiting for the subagents to start")
+			t.Fatalf("timed out waiting for the subagents to stream")
 		}
 	}
-	return ctxs
+	return seen
 }
 
 func verifyCancelStub(t *testing.T, sink *nacelle.ToolSink, runErr error) {
@@ -104,13 +104,14 @@ func TestParallelSubAgentDetachStreamsResults(t *testing.T) {
 	}
 }
 
-// ctxRecord is a backend that yields one finished run and records the context
-// each stream ran on, so a test can ask afterwards whether any of those
-// contexts was cancelled. It is the lens a detached fan-out's lifetime is
-// asserted through: the subagents must not share the caller's cancellable
-// context.
+// ctxRecord is a backend whose streams wait for release, then report whether
+// their context is still alive and yield one finished run. The test releases
+// them only after cancelling the caller, so a stream that shares the caller's
+// context reports dead, while the fan-out's own context cannot have ended yet:
+// it waits for these very streams to finish.
 type ctxRecord struct {
-	seen chan context.Context
+	release chan struct{}
+	alive   chan bool
 }
 
 func (b *ctxRecord) Name() string                                                { return "ctxrecord" }
@@ -118,19 +119,22 @@ func (b *ctxRecord) Capabilities() nacelle.Capabilities                         
 func (b *ctxRecord) CountTokens(context.Context, nacelle.Request) (int64, error) { return 0, nil }
 
 func (b *ctxRecord) Stream(ctx context.Context, _ nacelle.Request) iter.Seq2[nacelle.Event, error] {
-	b.seen <- ctx
 	return func(yield func(nacelle.Event, error) bool) {
+		<-b.release
+		b.alive <- ctx.Err() == nil
 		yield(nacelle.Event{Kind: nacelle.KindText, Text: "ok"}, nil)
 		yield(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopEnd}, nil)
 	}
-} // TestParallelSubAgentDetachSurvivesParentCancel verifies that cancelling the
+}
+
+// TestParallelSubAgentDetachSurvivesParentCancel verifies that cancelling the
 // caller's context does not take a detached fan-out down with it. The parent
 // that launched the subagents sent its turn back to ready — the running agent
 // settles, which cancels the turn's context — and the work it left grinding
 // in the background has to keep going. A detached fan-out must run on its own
 // background context, never the caller's cancellable one.
 func TestParallelSubAgentDetachSurvivesParentCancel(t *testing.T) {
-	backend := &ctxRecord{seen: make(chan context.Context, 3)}
+	backend := &ctxRecord{release: make(chan struct{}), alive: make(chan bool, 3)}
 	got := make(chan nacelle.ParallelTaskResult, 3)
 
 	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
@@ -151,10 +155,10 @@ func TestParallelSubAgentDetachSurvivesParentCancel(t *testing.T) {
 	}
 
 	cancel()
+	close(backend.release)
 
-	ctxs := awaitContexts(backend.seen, 3, t)
-	for _, c := range ctxs {
-		if c.Err() != nil {
+	for _, ok := range awaitAlive(backend.alive, 3, t) {
+		if !ok {
 			t.Error("a detached subagent streamed on a cancelled context — the fan-out must outlive the parent's turn")
 		}
 	}
