@@ -33,7 +33,11 @@ func NewImageTool[In any](
 	if err != nil {
 		return nil, err
 	}
-	return &imageFunction[In]{function: base.(*function[In]), runImages: run}, nil
+	fn, ok := base.(*function[In])
+	if !ok {
+		return nil, fmt.Errorf("nacelle: tool %q is not a function tool", name)
+	}
+	return &imageFunction[In]{function: fn, runImages: run}, nil
 }
 
 // imageFunction is a function tool that also returns pictures.
