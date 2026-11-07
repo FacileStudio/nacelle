@@ -25,18 +25,6 @@ const (
 	// appended to the result the model reads.
 	AfterToolCall HookPoint = "after_tool_call"
 
-	// BeforeCompact fires before the conversation is compacted — old tool
-	// results and thinking blocks replaced with placeholders to keep the
-	// context window under budget. A hook here cannot deny the compact
-	// itself; it exists for audit, metrics, or to stash conversation state
-	// before it is trimmed.
-	BeforeCompact HookPoint = "before_compact"
-
-	// AfterCompact fires after a compaction pass finished. The conversation
-	// has been trimmed by this point. A hook here reads the post-compact
-	// size and decides what to do about it (log, alert, adjust throttle).
-	AfterCompact HookPoint = "after_compact"
-
 	// SessionStart fires once per run, before the first model call. There is
 	// no tool to gate and nothing to compact, so a hook here is an observer
 	// with one power: its Inject is appended to the conversation the model
@@ -59,10 +47,6 @@ const MaxInject = 10000
 // reports that an earlier hook already denied this same tool name during this
 // run, so a hook enforcing a policy can stand down rather than deny-loop a
 // model that keeps retrying.
-//
-// On compaction points (BeforeCompact, AfterCompact), Input carries the
-// pre-compact conversation size in tokens ("<size>") and Result carries the
-// post-compact size when available. Tool and Retry are empty.
 //
 // On SessionStart the event is empty: no tool has run, so there is no Input,
 // Result, Err or Retry to report.
@@ -98,8 +82,7 @@ type HookResult struct {
 	// Deny, when non-empty, blocks a BeforeToolCall. The string is the
 	// reason the model reads in place of a tool result. On AfterToolCall
 	// it is too late to block anything and a Deny is ignored. On
-	// compaction points (BeforeCompact, AfterCompact) and SessionStart,
-	// a Deny is always ignored.
+	// SessionStart a Deny is always ignored.
 	Deny string
 
 	// Inject is text appended to what the model sees. On BeforeToolCall

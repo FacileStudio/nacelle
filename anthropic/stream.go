@@ -3,7 +3,6 @@ package anthropic
 import (
 	"context"
 	"iter"
-	"strings"
 
 	"github.com/FacileStudio/nacelle"
 
@@ -11,25 +10,17 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
+// BetaCompaction is the beta header that turns on server-side compaction.
 const BetaCompaction = "compact-2026-01-12"
 
-func isCompactRequested(ctx context.Context, b *Backend) bool {
+// compactRequested reports whether this run asks for server-side compaction,
+// either from Config.Compact or from a context built by WithCompact.
+func compactRequested(ctx context.Context, b *Backend) bool {
 	if b.compact {
 		return true
 	}
-	if v, ok := ctx.Value(compactKey{}).(bool); ok && v {
-		return true
-	}
-	if v, ok := ctx.Value("compact").(bool); ok && v {
-		return true
-	}
-	if v, ok := ctx.Value("compact-2026-01-12").(bool); ok && v {
-		return true
-	}
-	if v, ok := ctx.Value("anthropic-beta").(string); ok && strings.Contains(v, BetaCompaction) {
-		return true
-	}
-	return false
+	v, _ := ctx.Value(compactKey{}).(bool)
+	return v
 }
 
 // session is what every turn of one run needs and none of it changes: the
@@ -59,7 +50,7 @@ func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2
 			opts:     append([]option.RequestOption(nil), b.options...),
 		}
 		state.out = &emitter{yield: yield, sink: state.sink}
-		if isCompactRequested(ctx, b) {
+		if compactRequested(ctx, b) {
 			state.base.Betas = append(state.base.Betas, sdk.AnthropicBeta(BetaCompaction))
 			state.opts = append(state.opts, option.WithHeaderAdd("anthropic-beta", BetaCompaction))
 		}

@@ -19,10 +19,6 @@ import (
 // reported as a KindToolResult carrying it and handed back to the model, which
 // is better placed than the caller to decide whether the task can still be
 // finished. An error out of this sequence means the run itself failed.
-//
-// The conversation is passed by reference and may be compacted by the backend
-// if it exceeds the budget. The caller should use the returned conversation
-// from any compaction hook for subsequent turns.
 func (a *Agent) Stream(ctx context.Context, conversation []Message) iter.Seq2[Event, error] {
 	if err := validateRoles(conversation); err != nil {
 		return func(yield func(Event, error) bool) { yield(Event{}, err) }
@@ -37,8 +33,7 @@ func (a *Agent) Stream(ctx context.Context, conversation []Message) iter.Seq2[Ev
 // model call. Injection reuses the after_tool_call rule — each hook's Inject
 // is capped at MaxInject and the texts join with newlines — except there is
 // no tool result to amend, so what they say rides into the conversation as a
-// user message instead. A Deny has nothing to stop and is ignored, as on the
-// compaction points; a hook that panics is heard as silence, as after a
+// user message instead. A Deny has nothing to stop and is ignored; a hook that panics is heard as silence, as after a
 // tool. The caller's slice is left alone: the backend gets a copy ending in
 // the injection, or the conversation unchanged when nothing was injected.
 func (a *Agent) fireSessionStart(ctx context.Context, conversation []Message) []Message {
@@ -72,76 +67,6 @@ func (a *Agent) CountTokens(ctx context.Context, conversation []Message) (int64,
 	request := a.request
 	request.Messages = conversation
 	return a.backend.CountTokens(ctx, request)
-}
-
-// CompactConversation trims a conversation to fit within a token budget,
-// firing BeforeCompact and AfterCompact hooks if registered in the agent's
-// hook configuration. It returns the compacted conversation and the number
-// of tokens it would use.
-//
-// This is a convenience for consumers that want to run compaction explicitly
-// (e.g., pre-flight in a UI) without delegating to the backend. The hooks
-// receive the pre- and post-compaction token counts via HookEvent.Input and
-// HookEvent.Result as stringified numbers.
-func (a *Agent) CompactConversation(ctx context.Context, conversation []Message, maxTokens int64) ([]Message, int64, error) {
-	if hooks := a.request.Hooks[BeforeCompact]; len(hooks) > 0 {
-		ev := HookEvent{
-			Point: BeforeCompact,
-			Input: fmt.Sprintf("%d", maxTokens),
-		}
-		for _, hook := range hooks {
-			hook(ctx, ev)
-		}
-	}
-
-	kept, count, err := a.binarySearchCompact(ctx, conversation, maxTokens)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	if hooks := a.request.Hooks[AfterCompact]; len(hooks) > 0 {
-		ev := HookEvent{
-			Point:  AfterCompact,
-			Input:  fmt.Sprintf("%d", maxTokens),
-			Result: fmt.Sprintf("%d", count),
-		}
-		for _, hook := range hooks {
-			hook(ctx, ev)
-		}
-	}
-	return kept, count, nil
-}
-
-func (a *Agent) binarySearchCompact(ctx context.Context, conversation []Message, maxTokens int64) ([]Message, int64, error) {
-	lo, hi := 0, len(conversation)
-	lastProbe := -1
-	var lastCount int64
-
-	for lo < hi {
-		mid := (lo + hi + 1) / 2
-		kept, _ := Trim(conversation, mid)
-		count, err := a.CountTokens(ctx, kept)
-		if err != nil {
-			return nil, 0, err
-		}
-		if count <= maxTokens {
-			lo = mid
-			lastCount = count
-			lastProbe = mid
-		} else {
-			hi = mid - 1
-		}
-	}
-
-	kept, _ := Trim(conversation, lo)
-	if lo == lastProbe {
-		return kept, lastCount, nil
-	}
-	count, err := a.CountTokens(ctx, kept)
-	if err != nil {
-		return nil, 0, err
-	}
-	return kept, count, nil
 }
 
 // validateRoles refuses a conversation where a part sits on the wrong side of
