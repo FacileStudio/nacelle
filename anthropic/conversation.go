@@ -33,34 +33,38 @@ func toParams(conversation []nacelle.Message) []sdk.BetaMessageParam {
 
 // blocksOf renders one message's parts as content blocks.
 //
-// Three of the seven parts have no block to render into, and each is dropped for
-// its own reason. Reasoning would need the signature it was issued with, which
-// the stream never carries, so sending it back is a rejected request. Finish is
-// this package's own bookkeeping and has no field in the wire format. And a
-// tool call still streaming has a truncated JSON object for arguments, which is
-// a rejected request rather than a partial one — the run it belongs to was
-// abandoned, so nothing is waiting on it either.
+// Reasoning has no block of its own: the signed thinking block it came with
+// travels as a Native part, and only that is sent back. Finish is this
+// package's own bookkeeping and has no field in the wire format. A tool call
+// still streaming has a truncated JSON object for arguments, which is a
+// rejected request rather than a partial one, so it is left out too.
 func blocksOf(parts []nacelle.Part) []sdk.BetaContentBlockParamUnion {
 	blocks := make([]sdk.BetaContentBlockParamUnion, 0, len(parts))
 	for _, part := range parts {
-		switch part := part.(type) {
-		case nacelle.Text:
-			if part.Text != "" {
-				blocks = append(blocks, sdk.NewBetaTextBlock(part.Text))
-			}
-		case nacelle.ToolCall:
-			if part.Finished {
-				blocks = append(blocks, sdk.NewBetaToolUseBlock(part.ID, toolInput(part.Input), part.Name))
-			}
-		case nacelle.ToolResult:
-			blocks = append(blocks, toolResultBlock(part))
-		case nacelle.Image:
-			blocks = append(blocks, imageBlock(part))
-		case nacelle.Document:
-			blocks = append(blocks, documentBlock(part))
+		if block, ok := blockOf(part); ok {
+			blocks = append(blocks, block)
 		}
 	}
 	return blocks
+}
+
+// blockOf renders one part, or reports false for a part with no block.
+func blockOf(part nacelle.Part) (sdk.BetaContentBlockParamUnion, bool) {
+	switch part := part.(type) {
+	case nacelle.Text:
+		return sdk.NewBetaTextBlock(part.Text), part.Text != ""
+	case nacelle.ToolCall:
+		return sdk.NewBetaToolUseBlock(part.ID, toolInput(part.Input), part.Name), part.Finished
+	case nacelle.ToolResult:
+		return toolResultBlock(part), true
+	case nacelle.Image:
+		return imageBlock(part), true
+	case nacelle.Document:
+		return documentBlock(part), true
+	case nacelle.Native:
+		return nativeBlock(part)
+	}
+	return sdk.BetaContentBlockParamUnion{}, false
 }
 
 // imageBlock is an Image as a base64 image block.

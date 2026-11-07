@@ -59,7 +59,7 @@ func TestToolNeedsANameAndDescription(t *testing.T) {
 	}
 }
 
-func TestRunToolReportsThroughTheSink(t *testing.T) {
+func TestACallIsReportedOnTheStream(t *testing.T) {
 	tool, err := nacelle.NewTool("search", "Find things", func(_ context.Context, in searchInput) (string, error) {
 		return "found " + in.Query, nil
 	})
@@ -67,30 +67,26 @@ func TestRunToolReportsThroughTheSink(t *testing.T) {
 		t.Fatalf("NewTool: %v", err)
 	}
 
-	sink := &nacelle.ToolSink{}
-	result, err := nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "call_1"}, json.RawMessage(`{"query":"x"}`), sink)
-	if err != nil || result != "found x" {
-		t.Fatalf("RunTool = %q, %v", result, err)
+	got := runTool(t, context.Background(), nacelle.Request{}, tool, `{"query":"x"}`)
+	if got.err != nil || got.result != "found x" {
+		t.Fatalf("ran = %q, %v", got.result, got.err)
 	}
 
-	events := sink.Drain()
+	events := got.toolEvents()
 	if len(events) != 1 {
-		t.Fatalf("drained %d events, want 1", len(events))
+		t.Fatalf("saw %d tool events, want 1", len(events))
 	}
 	reported := events[0].Tool
-	if reported.ID != "call_1" || reported.Name != "search" || reported.Result != "found x" {
+	if reported.ID == "" || reported.Name != "search" || reported.Result != "found x" {
 		t.Errorf("reported = %+v, want the call identified and its result", reported)
 	}
 	if reported.Duration <= 0 {
 		t.Error("no duration was recorded")
 	}
-	if len(sink.Drain()) != 0 {
-		t.Error("a second drain returned events")
-	}
 }
 
 // A tool failure is handed back to the model rather than ending the run.
-func TestRunToolReportsAFailure(t *testing.T) {
+func TestAFailedCallIsReported(t *testing.T) {
 	boom := errors.New("no such entity")
 	tool, err := nacelle.NewTool("lookup", "Look things up", func(context.Context, searchInput) (string, error) {
 		return "", boom
@@ -99,12 +95,9 @@ func TestRunToolReportsAFailure(t *testing.T) {
 		t.Fatalf("NewTool: %v", err)
 	}
 
-	sink := &nacelle.ToolSink{}
-	if _, err := nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink); err == nil {
-		t.Fatal("RunTool swallowed the error")
-	}
-	if events := sink.Drain(); len(events) != 1 || !errors.Is(events[0].Tool.Err, boom) {
-		t.Errorf("the failure was not reported: %+v", events)
+	got := runTool(t, context.Background(), nacelle.Request{}, tool, `{"query":"x"}`)
+	if !errors.Is(got.err, boom) || got.result != boom.Error() {
+		t.Errorf("the failure was not reported: %+v", got.tool)
 	}
 }
 
@@ -133,10 +126,9 @@ func TestANilApproveRunsEveryCallUnasked(t *testing.T) {
 		t.Fatalf("NewTool: %v", err)
 	}
 
-	sink := &nacelle.ToolSink{}
-	result, err := nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink)
-	if err != nil || result != "found x" {
-		t.Fatalf("RunTool = %q, %v, want it to run without being asked", result, err)
+	got := runTool(t, context.Background(), nacelle.Request{}, tool, `{"query":"x"}`)
+	if got.err != nil || got.result != "found x" {
+		t.Fatalf("ran = %q, %v, want it to run without being asked", got.result, got.err)
 	}
 }
 
@@ -155,16 +147,15 @@ func TestARefusedCallNeverRunsAndIsReportedAsRefused(t *testing.T) {
 	}
 
 	deny := nacelle.ApproveBool(func(context.Context, string, json.RawMessage) bool { return false })
-	sink := &nacelle.ToolSink{Approve: deny}
-	result, err := nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink)
+	got := runTool(t, context.Background(), nacelle.Request{Approve: deny}, tool, `{"query":"x"}`)
 
 	if ran {
 		t.Fatal("the tool ran despite being refused")
 	}
-	if err == nil || result != "" {
-		t.Errorf("RunTool = %q, %v, want an error and no result", result, err)
+	if got.err == nil || got.result != got.err.Error() {
+		t.Errorf("ran = %q, %v, want the model to read the refusal", got.result, got.err)
 	}
-	events := sink.Drain()
+	events := got.toolEvents()
 	if len(events) != 1 || !events[0].Tool.Refused {
 		t.Fatalf("events = %+v, want exactly one, marked Refused", events)
 	}
@@ -191,9 +182,8 @@ func TestApproveSeesTheToolNameAndInput(t *testing.T) {
 		return nacelle.Decision{}
 	}
 
-	sink := &nacelle.ToolSink{Approve: approve}
-	if _, err := nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink); err != nil {
-		t.Fatalf("RunTool: %v", err)
+	if got := runTool(t, context.Background(), nacelle.Request{Approve: approve}, tool, `{"query":"x"}`); got.err != nil {
+		t.Fatalf("ran: %v", got.err)
 	}
 	if gotName != "search" {
 		t.Errorf("name = %q, want search", gotName)

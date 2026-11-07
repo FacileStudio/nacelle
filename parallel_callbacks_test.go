@@ -12,7 +12,7 @@ import (
 
 func collectChannel(calls <-chan string, count int) map[string]int {
 	got := make(map[string]int)
-	for timeout := 0; timeout < 100; timeout++ {
+	for range 100 {
 		select {
 		case c := <-calls:
 			got[c] = 1
@@ -45,9 +45,7 @@ func TestParallelSubAgentReportsToolCalls(t *testing.T) {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
 
-	sink := &nacelle.ToolSink{}
-	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
-		json.RawMessage(`{"tasks":["t0","t1"]}`), sink)
+	sink := runTool(t, context.Background(), nacelle.Request{}, sub, `{"tasks":["t0","t1"]}`)
 	drainToolResult(t, sink)
 
 	got := collectChannel(calls, 2)
@@ -85,9 +83,7 @@ func TestParallelSubAgentReportsToolDone(t *testing.T) {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
 
-	sink := &nacelle.ToolSink{}
-	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
-		json.RawMessage(`{"tasks":["t0"]}`), sink)
+	sink := runTool(t, context.Background(), nacelle.Request{}, sub, `{"tasks":["t0"]}`)
 	drainToolResult(t, sink)
 
 	if !awaitKey(t, done, "0:echo:ok") {
@@ -119,9 +115,7 @@ func TestParallelSubAgentReportsToolFailure(t *testing.T) {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
 
-	sink := &nacelle.ToolSink{}
-	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
-		json.RawMessage(`{"tasks":["t0"]}`), sink)
+	sink := runTool(t, context.Background(), nacelle.Request{}, sub, `{"tasks":["t0"]}`)
 	drainToolResult(t, sink)
 
 	if !awaitKey(t, done, "0:nope:fail") {
@@ -133,7 +127,7 @@ func TestParallelSubAgentReportsToolFailure(t *testing.T) {
 // runs out. It returns whether the value was seen.
 func awaitKey(t *testing.T, c <-chan string, want string) bool {
 	var got []string
-	for timeout := 0; timeout < 200; timeout++ {
+	for range 200 {
 		select {
 		case v := <-c:
 			if v == want {
@@ -180,9 +174,7 @@ func TestParallelSubAgentReportsLiveUsage(t *testing.T) {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
 
-	sink := &nacelle.ToolSink{}
-	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
-		json.RawMessage(`{"tasks":["t0","t1"]}`), sink)
+	sink := runTool(t, context.Background(), nacelle.Request{}, sub, `{"tasks":["t0","t1"]}`)
 	drainToolResult(t, sink)
 
 	got := collectChannel(reports, 2)

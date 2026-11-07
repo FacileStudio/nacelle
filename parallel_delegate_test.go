@@ -27,9 +27,7 @@ func TestParallelSubAgentMaxConcurrencyClamped(t *testing.T) {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
 
-	sink := &nacelle.ToolSink{}
-	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
-		json.RawMessage(`{"tasks":["a"]}`), sink)
+	sink := runTool(t, context.Background(), nacelle.Request{}, sub, `{"tasks":["a"]}`)
 
 	result := drainToolResult(t, sink)
 	if !strings.Contains(result, "ok") {
@@ -61,10 +59,13 @@ func (b *parallelConcurrencyTracker) Stream(ctx context.Context, _ nacelle.Reque
 		}
 		<-b.release
 		b.active.Add(-1)
-		yield(nacelle.Event{Kind: nacelle.KindText, Text: "ok"}, nil)
-		yield(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopEnd}, nil)
+		if yield(nacelle.Event{Kind: nacelle.KindText, Text: "ok"}, nil) {
+			yield(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopEnd}, nil)
+		}
 	}
-} // TestParallelSubAgentConcurrentFanOut verifies that 8 or more agents
+}
+
+// TestParallelSubAgentConcurrentFanOut verifies that 8 or more agents
 // run concurrently.
 func TestParallelSubAgentConcurrentFanOut(t *testing.T) {
 	backend := &parallelConcurrencyTracker{release: make(chan struct{})}
@@ -82,9 +83,8 @@ func TestParallelSubAgentConcurrentFanOut(t *testing.T) {
 		close(backend.release)
 	}()
 
-	sink := &nacelle.ToolSink{}
 	tasks := `{"tasks":["t1","t2","t3","t4","t5","t6","t7","t8","t9","t10"]}`
-	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"}, json.RawMessage(tasks), sink)
+	sink := runTool(t, context.Background(), nacelle.Request{}, sub, tasks)
 
 	var resp struct {
 		Tasks map[string]string `json:"tasks"`
@@ -95,7 +95,9 @@ func TestParallelSubAgentConcurrentFanOut(t *testing.T) {
 	if len(resp.Tasks) != 10 || backend.maxActive.Load() < 8 {
 		t.Errorf("got %d tasks, max active %d", len(resp.Tasks), backend.maxActive.Load())
 	}
-} // TestParallelSubAgentConcurrency verifies that the concurrency semaphore
+}
+
+// TestParallelSubAgentConcurrency verifies that the concurrency semaphore
 // actually limits how many tasks run simultaneously. It uses a backend that
 // records the wall time of each call and checks that no two calls overlap.
 func TestParallelSubAgentConcurrency(t *testing.T) {
@@ -109,9 +111,7 @@ func TestParallelSubAgentConcurrency(t *testing.T) {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
 
-	sink := &nacelle.ToolSink{}
-	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
-		json.RawMessage(`{"tasks":["t1","t2","t3","t4","t5","t6","t7","t8","t9","t10","t11","t12"]}`), sink)
+	sink := runTool(t, context.Background(), nacelle.Request{}, sub, `{"tasks":["t1","t2","t3","t4","t5","t6","t7","t8","t9","t10","t11","t12"]}`)
 
 	result := drainToolResult(t, sink)
 
@@ -132,7 +132,9 @@ func TestParallelSubAgentConcurrency(t *testing.T) {
 			t.Errorf("calls %d and %d overlapped — concurrency limit not enforced", i, i+1)
 		}
 	}
-} // TestDelegateParallelStreamsResults verifies the detached surface posts one
+}
+
+// TestDelegateParallelStreamsResults verifies the detached surface posts one
 // result per task through the channel, keyed by the task's index so the caller
 // can reunite them with the list it gave regardless of completion order.
 
@@ -170,7 +172,9 @@ func TestDelegateParallelStreamsResults(t *testing.T) {
 			t.Errorf("result set %q missing %q", joined, want)
 		}
 	}
-} // TestDelegateParallelEmptyTasksErrors verifies the detached surface rejects an
+}
+
+// TestDelegateParallelEmptyTasksErrors verifies the detached surface rejects an
 // empty task list, matching the tool's own failure.
 func TestDelegateParallelEmptyTasksErrors(t *testing.T) {
 	_, err := nacelle.DelegateParallel(context.Background(), nacelle.Config{

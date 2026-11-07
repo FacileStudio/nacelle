@@ -78,11 +78,13 @@ func (d *details) observe(chunk openai.ChatCompletionChunk) {
 	}
 }
 
-func (d *details) attach(assistant openai.ChatCompletionMessageParamUnion) openai.ChatCompletionMessageParamUnion {
-	if len(d.blocks) > 0 && assistant.OfAssistant != nil {
-		assistant.OfAssistant.SetExtraFields(map[string]any{"reasoning_details": d.blocks})
+// extra is the reasoning to send back on the turn's assistant message, or
+// nothing when the turn carried none.
+func (d *details) extra() map[string]any {
+	if len(d.blocks) == 0 {
+		return nil
 	}
-	return assistant
+	return map[string]any{"reasoning_details": d.blocks}
 }
 
 func extraField(fields map[string]respjson.Field, name string) (json.RawMessage, bool) {

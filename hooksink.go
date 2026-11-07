@@ -22,16 +22,16 @@ type ruling struct {
 // Hooks fire before Approve so a deny holds even when the caller configured
 // an approval gate that would have said yes: the hook is the policy, the
 // approval is the person, and the policy outranks the exception.
-func (s *ToolSink) rule(ctx context.Context, tool Tool, call Call) (ruling, error) {
+func (s *sink) rule(ctx context.Context, tool Tool, call Call) (ruling, error) {
 	call, reason, denied := s.runBeforeHooks(ctx, call)
 	ruled := ruling{tool: tool, call: call}
 	if denied {
 		return ruled, fmt.Errorf("nacelle: %q denied by hook: %s", call.Name, reason)
 	}
-	if s.Approve == nil {
+	if s.approve == nil {
 		return ruled, nil
 	}
-	decision := s.Approve(ctx, call)
+	decision := s.approve(ctx, call)
 	if decision.Deny != "" {
 		return ruled, fmt.Errorf("nacelle: %q was refused: %s", call.Name, decision.Deny)
 	}
@@ -42,7 +42,7 @@ func (s *ToolSink) rule(ctx context.Context, tool Tool, call Call) (ruling, erro
 	if decision.Name == "" || decision.Name == call.Name {
 		return ruled, nil
 	}
-	next, ok := s.Tools[decision.Name]
+	next, ok := s.tools[decision.Name]
 	if !ok {
 		return ruled, fmt.Errorf("nacelle: %q was redirected to %q, which is not available", call.Name, decision.Name)
 	}
@@ -54,8 +54,8 @@ func (s *ToolSink) rule(ctx context.Context, tool Tool, call Call) (ruling, erro
 // that returns Input replaces the call's input for every later hook and for
 // Approve. A panic out of a hook denies rather than waves the call through; a
 // guard that crashed has stopped guarding.
-func (s *ToolSink) runBeforeHooks(ctx context.Context, call Call) (Call, string, bool) {
-	hooks := s.Hooks[BeforeToolCall]
+func (s *sink) runBeforeHooks(ctx context.Context, call Call) (Call, string, bool) {
+	hooks := s.hooks[BeforeToolCall]
 	retry := len(hooks) > 0 && s.wasDenied(call.Name)
 	for _, hook := range hooks {
 		res := recoverHook(hook)(ctx, HookEvent{Point: BeforeToolCall, Call: call, Retry: retry})
@@ -74,8 +74,8 @@ func (s *ToolSink) runBeforeHooks(ctx context.Context, call Call) (Call, string,
 // for cleanup symmetry, and appends what they inject to the result the model
 // reads. Injection is the only effect here: a Deny this late has nothing left
 // to stop and is ignored.
-func (s *ToolSink) runAfterHooks(ctx context.Context, call Call, result string, toolErr error) string {
-	hooks := s.Hooks[AfterToolCall]
+func (s *sink) runAfterHooks(ctx context.Context, call Call, result string, toolErr error) string {
+	hooks := s.hooks[AfterToolCall]
 	if len(hooks) == 0 {
 		return result
 	}
@@ -95,14 +95,14 @@ func (s *ToolSink) runAfterHooks(ctx context.Context, call Call, result string, 
 }
 
 // wasDenied reports whether a hook already refused this tool name this run.
-func (s *ToolSink) wasDenied(name string) bool {
+func (s *sink) wasDenied(name string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.denied[name]
 }
 
 // markDenied remembers a refusal for the next call to wasDenied.
-func (s *ToolSink) markDenied(name string) {
+func (s *sink) markDenied(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.denied == nil {

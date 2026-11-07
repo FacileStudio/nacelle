@@ -29,6 +29,7 @@ type sorted struct {
 	media   bool
 	calls   []oai.ChatCompletionMessageToolCallUnionParam
 	results []oai.ChatCompletionMessageParamUnion
+	extra   map[string]any
 }
 
 func (b *Backend) sift(parts []nacelle.Part) (sorted, error) {
@@ -48,6 +49,8 @@ func (b *Backend) sift(parts []nacelle.Part) (sorted, error) {
 				return out, &nacelle.Unsupported{Backend: b.Options.Name, Feature: "Document parts"}
 			}
 			out.addMedia(filePart(part))
+		case nacelle.Native:
+			out.addNative(b.Options.Name, part)
 		}
 	}
 	return out, nil
@@ -74,7 +77,7 @@ func (b *Backend) convert(message nacelle.Message) ([]oai.ChatCompletionMessageP
 	text := strings.Join(parts.text, "\n")
 
 	if message.Role == nacelle.RoleAssistant {
-		return append(assistantTurn(text, parts.calls), parts.results...), nil
+		return append(assistantTurn(text, parts.calls, parts.extra), parts.results...), nil
 	}
 	if parts.media {
 		return append(parts.results, oai.UserMessage(parts.content)), nil
@@ -85,13 +88,16 @@ func (b *Backend) convert(message nacelle.Message) ([]oai.ChatCompletionMessageP
 	return parts.results, nil
 }
 
-func assistantTurn(text string, calls []oai.ChatCompletionMessageToolCallUnionParam) []oai.ChatCompletionMessageParamUnion {
+func assistantTurn(text string, calls []oai.ChatCompletionMessageToolCallUnionParam, extra map[string]any) []oai.ChatCompletionMessageParamUnion {
 	if text == "" && len(calls) == 0 {
 		return nil
 	}
 	assistant := oai.ChatCompletionAssistantMessageParam{ToolCalls: calls}
 	if text != "" {
 		assistant.Content.OfString = oai.String(text)
+	}
+	if len(extra) > 0 {
+		assistant.SetExtraFields(extra)
 	}
 	return []oai.ChatCompletionMessageParamUnion{{OfAssistant: &assistant}}
 }

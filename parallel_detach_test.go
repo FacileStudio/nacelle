@@ -2,7 +2,6 @@ package nacelle_test
 
 import (
 	"context"
-	"encoding/json"
 	"iter"
 	"strings"
 	"testing"
@@ -26,7 +25,7 @@ func awaitAlive(alive <-chan bool, count int, t *testing.T) []bool {
 	return seen
 }
 
-func verifyCancelStub(t *testing.T, sink *nacelle.ToolSink, runErr error) {
+func verifyCancelStub(t *testing.T, sink ran, runErr error) {
 	t.Helper()
 	stub := drainToolResult(t, sink)
 	if !strings.Contains(stub, `"started":3`) {
@@ -71,9 +70,8 @@ func TestParallelSubAgentDetachStreamsResults(t *testing.T) {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
 
-	sink := &nacelle.ToolSink{}
-	_, runErr := nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
-		json.RawMessage(`{"tasks":["task1","task2","task3"]}`), sink)
+	sink := runTool(t, context.Background(), nacelle.Request{}, sub, `{"tasks":["task1","task2","task3"]}`)
+	runErr := sink.err
 
 	verifyCancelStub(t, sink, runErr)
 
@@ -103,8 +101,9 @@ func (b *ctxRecord) Stream(ctx context.Context, _ nacelle.Request) iter.Seq2[nac
 	return func(yield func(nacelle.Event, error) bool) {
 		<-b.release
 		b.alive <- ctx.Err() == nil
-		yield(nacelle.Event{Kind: nacelle.KindText, Text: "ok"}, nil)
-		yield(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopEnd}, nil)
+		if yield(nacelle.Event{Kind: nacelle.KindText, Text: "ok"}, nil) {
+			yield(nacelle.Event{Kind: nacelle.KindDone, Stop: nacelle.StopEnd}, nil)
+		}
 	}
 }
 
@@ -126,9 +125,7 @@ func TestParallelSubAgentDetachSurvivesParentCancel(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sink := &nacelle.ToolSink{}
-	nacelle.RunTool(ctx, sub, nacelle.Invocation{ID: "x"},
-		json.RawMessage(`{"tasks":["task1","task2","task3"]}`), sink)
+	sink := runTool(t, ctx, nacelle.Request{}, sub, `{"tasks":["task1","task2","task3"]}`)
 
 	stub := drainToolResult(t, sink)
 	if !strings.Contains(stub, `"started":3`) {

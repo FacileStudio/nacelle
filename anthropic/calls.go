@@ -26,17 +26,14 @@ type callTracker struct {
 	next     int
 }
 
-// localCalls hands the turn's local calls to the loop and clears the queue.
-//
-// It is called once, at the end of the turn, the first moment the batch is
-// final — a fallback block can still have discarded it — and it is the only
-// way a call reaches execution. The loop runs these exactly once, in the order
-// the model asked, pairing each by its id rather than by a name-and-arguments
-// heuristic, because it already holds the whole Invocation.
-func (c *callTracker) localCalls() []*nacelle.ToolEvent {
-	calls := c.queued
-	c.queued = nil
-	return calls
+// local returns the queued local call with this id, if the turn kept one.
+func (c *callTracker) local(id string) (*nacelle.ToolEvent, bool) {
+	for _, call := range c.queued {
+		if call.ID == id {
+			return call, true
+		}
+	}
+	return nil, false
 }
 
 // openCall is a content block still streaming, and which side of the request

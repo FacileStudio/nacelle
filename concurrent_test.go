@@ -89,11 +89,9 @@ func askTogether(t *testing.T, agent *nacelle.Agent, callers int) ([]string, []e
 
 	var waiting sync.WaitGroup
 	for i := range callers {
-		waiting.Add(1)
-		go func() {
-			defer waiting.Done()
+		waiting.Go(func() {
 			answers[i], failures[i] = ask(t, agent, fmt.Sprintf("caller-%d", i))
-		}()
+		})
 	}
 	waiting.Wait()
 	return answers, failures

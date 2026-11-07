@@ -125,7 +125,21 @@ type ToolResult struct {
 // format has a field for it, so no backend sends it.
 type Finish struct{ Stop Stop }
 
+// Native is a piece of an assistant turn in the wire form of the provider
+// that wrote it, for what the parts above cannot say: a signed thinking
+// block, a remote MCP exchange, a compaction block, a gateway's reasoning
+// details.
+//
+// Provider names who wrote it. That provider sends it back exactly as it
+// came, which is what keeps a signature valid and a cached prefix whole;
+// every other provider leaves it out, as it leaves out Reasoning.
+type Native struct {
+	Provider string
+	Data     json.RawMessage
+}
+
 func (Text) part()       {}
+func (Native) part()     {}
 func (Reasoning) part()  {}
 func (ToolCall) part()   {}
 func (ToolResult) part() {}

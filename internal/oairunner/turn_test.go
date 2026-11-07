@@ -10,7 +10,7 @@ import (
 )
 
 // chunkFromJSON unmarshals the chunk the way the streaming client does, so the
-// accumulated tool-call unions carry the raw JSON that ToParam replays.
+// accumulated tool-call unions carry the raw JSON the client produced.
 func chunkFromJSON(t *testing.T, raw string) oai.ChatCompletionChunk {
 	t.Helper()
 	var chunk oai.ChatCompletionChunk
@@ -20,12 +20,35 @@ func chunkFromJSON(t *testing.T, raw string) oai.ChatCompletionChunk {
 	return chunk
 }
 
+// finished seals a turn built from one chunk and returns its message.
+func finished(t *testing.T, chunk string) nacelle.Message {
+	t.Helper()
+	state := turnStream{backend: &Backend{}, stop: nacelle.StopTools}
+	state.accumulator.AddChunk(chunkFromJSON(t, chunk))
+	events, err := state.finish()
+	if err != nil {
+		t.Fatalf("finish: %v", err)
+	}
+	last := events[len(events)-1]
+	if last.Kind != nacelle.KindMessage {
+		t.Fatalf("finish ended on %q, want the turn's message", last.Kind)
+	}
+	return *last.Message
+}
+
+// callsIn lists the tool calls a message carries.
+func callsIn(message nacelle.Message) []nacelle.ToolCall {
+	var calls []nacelle.ToolCall
+	for _, part := range message.Parts {
+		if call, ok := part.(nacelle.ToolCall); ok {
+			calls = append(calls, call)
+		}
+	}
+	return calls
+}
+
 func TestFinishDropsEmptyToolCallEntries(t *testing.T) {
-	var state turnStream
-	state.backend = &Backend{}
-	state.stop = nacelle.StopTools
-	state.total = &nacelle.Usage{}
-	state.accumulator.AddChunk(chunkFromJSON(t, `{
+	message := finished(t, `{
 		"choices": [{
 			"delta": {"tool_calls": [
 				{"index": 0, "id": "call_real", "type": "function",
@@ -34,32 +57,23 @@ func TestFinishDropsEmptyToolCallEntries(t *testing.T) {
 			]},
 			"finish_reason": "tool_calls"
 		}]
-	}`))
-
-	out := &emitter{yield: func(nacelle.Event, error) bool { return true }}
-	result, err := state.finish(out)
-	if err != nil {
-		t.Fatalf("finish: %v", err)
-	}
-	if len(result.calls) != 1 || result.calls[0].name != "read_file" {
-		t.Fatalf("calls = %+v, want only the real call", result.calls)
+	}`)
+	calls := callsIn(message)
+	if len(calls) != 1 || calls[0].Name != "read_file" {
+		t.Fatalf("calls = %+v, want only the real call", calls)
 	}
 
-	param, err := json.Marshal(result.assistant)
+	replayed, err := (&Backend{}).convert(message)
 	if err != nil {
-		t.Fatalf("marshalling the replayed assistant: %v", err)
+		t.Fatalf("convert: %v", err)
 	}
-	if len(result.assistant.OfAssistant.ToolCalls) != 1 {
-		t.Fatalf("replayed assistant = %s, want exactly one tool call", param)
+	if len(replayed) != 1 || len(replayed[0].OfAssistant.ToolCalls) != 1 {
+		t.Fatalf("replayed = %+v, want one assistant message with one tool call", replayed)
 	}
 }
 
 func TestFinishKeepsRealToolCalls(t *testing.T) {
-	var state turnStream
-	state.backend = &Backend{}
-	state.stop = nacelle.StopTools
-	state.total = &nacelle.Usage{}
-	state.accumulator.AddChunk(chunkFromJSON(t, `{
+	message := finished(t, `{
 		"choices": [{
 			"delta": {"tool_calls": [
 				{"index": 0, "id": "a", "type": "function",
@@ -69,14 +83,8 @@ func TestFinishKeepsRealToolCalls(t *testing.T) {
 			]},
 			"finish_reason": "tool_calls"
 		}]
-	}`))
-
-	out := &emitter{yield: func(nacelle.Event, error) bool { return true }}
-	result, err := state.finish(out)
-	if err != nil {
-		t.Fatalf("finish: %v", err)
-	}
-	if len(result.calls) != 2 {
-		t.Fatalf("calls = %+v, want both real calls kept", result.calls)
+	}`)
+	if calls := callsIn(message); len(calls) != 2 {
+		t.Fatalf("calls = %+v, want both real calls kept", calls)
 	}
 }

@@ -21,9 +21,10 @@ import (
 	"github.com/FacileStudio/nacelle"
 	"github.com/FacileStudio/nacelle/internal/oairunner"
 
+	"iter"
+
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
-	"iter"
 )
 
 // DefaultBaseURL is OpenRouter's API root.
@@ -137,36 +138,36 @@ func (b *Backend) Model() string { return b.model }
 // cheap one.
 func (b *Backend) Capabilities() nacelle.Capabilities {
 	return nacelle.Capabilities{
-		MCP:             false,
-		Thinking:        true,
-		Effort:          true,
-		Cost:            true,
-		TokenCounting:   false,
-		ToolCallPlanner: true,
-		ContextWindow:   0,
+		MCP:           false,
+		Thinking:      true,
+		Effort:        true,
+		Cost:          true,
+		TokenCounting: false,
+		ContextWindow: 0,
 	}
 }
 
-// Stream delegates to the shared OpenAI runner.
+// Stream runs the conversation on nacelle's agent loop.
 func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error] {
-	var reasoning details
-	opts := oairunner.Options{
-		RequestOptions: b.requestOptions,
-		ClassifyError:  classify,
-		Name:           "openrouter",
-		Documents:      true,
-		ResetTurn:      func() { reasoning = details{} },
-		ObserveChunk:   reasoning.observe,
-		FinishExtra: func(_ openai.ChatCompletionMessage, a openai.ChatCompletionMessageParamUnion) openai.ChatCompletionMessageParamUnion {
-			return reasoning.attach(a)
-		},
-	}
+	return nacelle.NewBackend(b).Stream(ctx, request)
+}
+
+// Turn streams one assistant turn through the shared OpenAI runner,
+// collecting the turn's reasoning details so the next turn sends them back.
+func (b *Backend) Turn(ctx context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error] {
+	reasoning := &details{}
 	return (&oairunner.Backend{
-		Client:   b.client,
-		Model:    b.model,
-		Provider: b.provider,
-		Options:  opts,
-	}).Stream(ctx, request)
+		Client: b.client,
+		Model:  b.model,
+		Options: oairunner.Options{
+			RequestOptions: b.requestOptions,
+			ClassifyError:  classify,
+			Name:           "openrouter",
+			Documents:      true,
+			ObserveChunk:   reasoning.observe,
+			Extra:          reasoning.extra,
+		},
+	}).Turn(ctx, request)
 }
 
 // CountTokens delegates to the shared OpenAI runner.
@@ -174,39 +175,6 @@ func (b *Backend) CountTokens(ctx context.Context, request nacelle.Request) (int
 	return (&oairunner.Backend{
 		Client:         b.client,
 		Model:          b.model,
-		Provider:       b.provider,
 		RequestOptions: b.requestOptions,
 	}).CountTokens(ctx, request)
-}
-
-func (b *Backend) requestOptions(request nacelle.Request) []option.RequestOption {
-	var options []option.RequestOption
-	if len(b.provider) > 0 {
-		options = append(options, option.WithJSONSet("provider", b.provider))
-	}
-	if reasoning := reasoningParam(request.Thinking); reasoning != nil {
-		options = append(options, option.WithJSONSet("reasoning", reasoning))
-	}
-	return options
-}
-
-func reasoningParam(thinking nacelle.Thinking) map[string]any {
-	if thinking.Effort == nacelle.EffortNone {
-		return map[string]any{"enabled": false}
-	}
-
-	reasoning := map[string]any{}
-	switch {
-	case thinking.Budget > 0:
-		reasoning["max_tokens"] = thinking.Budget
-	case thinking.Effort != "":
-		reasoning["effort"] = string(thinking.Effort)
-	}
-	if len(reasoning) == 0 {
-		if !thinking.Show {
-			return nil
-		}
-		reasoning["enabled"] = true
-	}
-	return reasoning
 }

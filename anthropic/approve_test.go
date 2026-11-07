@@ -8,7 +8,7 @@ import (
 	"github.com/FacileStudio/nacelle"
 )
 
-// A refusal is enforced in one place, RunTool, which means a refused call must
+// A refusal is enforced in one place, the agent loop, so a refused call must
 // never reach the tool body and must still surface as a KindToolResult carrying
 // an error — the pairing contract a consumer builds on.
 func TestARefusedCallNeverReachesTheTool(t *testing.T) {

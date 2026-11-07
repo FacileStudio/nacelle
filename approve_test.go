@@ -26,17 +26,17 @@ func echoInput(t *testing.T, name string) nacelle.Tool {
 // result event names what actually ran.
 func TestADecisionRedirectsEditsAndNotes(t *testing.T) {
 	search, draft := echoInput(t, "search"), echoInput(t, "draft")
-	sink := &nacelle.ToolSink{
-		Tools: nacelle.ToolsByName([]nacelle.Tool{search, draft}),
+	request := nacelle.Request{
+		Tools: []nacelle.Tool{search, draft},
 		Approve: func(_ context.Context, call nacelle.Call) nacelle.Decision {
 			return nacelle.Decision{Name: "draft", Input: json.RawMessage(`{"query":"edited"}`), Note: "edited by the user"}
 		},
 	}
-	result, err := nacelle.RunTool(context.Background(), search, nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink)
-	if err != nil || result != "edited by the user\n\ndraft:edited" {
-		t.Fatalf("RunTool = %q, %v", result, err)
+	got := runTool(t, context.Background(), request, search, `{"query":"x"}`)
+	if got.err != nil || got.result != "edited by the user\n\ndraft:edited" {
+		t.Fatalf("ran = %q, %v", got.result, got.err)
 	}
-	events := sink.Drain()
+	events := got.toolEvents()
 	if len(events) != 1 || events[0].Tool.Name != "draft" || events[0].Tool.Input != `{"query":"edited"}` {
 		t.Fatalf("events = %+v, want one result naming the redirected call", events)
 	}
@@ -45,12 +45,12 @@ func TestADecisionRedirectsEditsAndNotes(t *testing.T) {
 // A redirect to a tool nobody registered refuses the call rather than running
 // the original one.
 func TestARedirectToAnUnknownToolIsRefused(t *testing.T) {
-	sink := &nacelle.ToolSink{Approve: func(context.Context, nacelle.Call) nacelle.Decision {
+	request := nacelle.Request{Approve: func(context.Context, nacelle.Call) nacelle.Decision {
 		return nacelle.Decision{Name: "missing"}
 	}}
-	_, err := nacelle.RunTool(context.Background(), echoInput(t, "search"), nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink)
-	if err == nil || !sink.Drain()[0].Tool.Refused {
-		t.Fatalf("err = %v, want a refusal", err)
+	got := runTool(t, context.Background(), request, echoInput(t, "search"), `{"query":"x"}`)
+	if got.err == nil || !got.tool.Refused {
+		t.Fatalf("err = %v, want a refusal", got.err)
 	}
 }
 
@@ -61,21 +61,21 @@ func TestABeforeHookRewritesTheInput(t *testing.T) {
 	rewrite := func(context.Context, nacelle.HookEvent) nacelle.HookResult {
 		return nacelle.HookResult{Input: json.RawMessage(`{"query":"hooked"}`)}
 	}
-	sink := &nacelle.ToolSink{
+	request := nacelle.Request{
 		Hooks: map[nacelle.HookPoint][]nacelle.Hook{nacelle.BeforeToolCall: {rewrite}},
 		Approve: func(_ context.Context, call nacelle.Call) nacelle.Decision {
 			approved = string(call.Input)
 			return nacelle.Decision{}
 		},
 	}
-	result, err := nacelle.RunTool(context.Background(), echoInput(t, "search"), nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink)
-	if err != nil || result != "search:hooked" || approved != `{"query":"hooked"}` {
-		t.Fatalf("RunTool = %q, %v; Approve saw %s", result, err, approved)
+	got := runTool(t, context.Background(), request, echoInput(t, "search"), `{"query":"x"}`)
+	if got.err != nil || got.result != "search:hooked" || approved != `{"query":"hooked"}` {
+		t.Fatalf("ran = %q, %v; Approve saw %s", got.result, got.err, approved)
 	}
 }
 
-// EndTurn is recorded as a success carrying its result, and marks the sink as
-// yielded so the backend stops after the round.
+// EndTurn is recorded as a success carrying its result, and ends the run with
+// StopYield after the round.
 func TestEndTurnIsASuccessThatYields(t *testing.T) {
 	tool, err := nacelle.NewTool("ask", "Ask", func(context.Context, struct{}) (string, error) {
 		return "", nacelle.EndTurn("asked the user")
@@ -83,19 +83,17 @@ func TestEndTurnIsASuccessThatYields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTool: %v", err)
 	}
-	sink := &nacelle.ToolSink{}
-	result, err := nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "c"}, nil, sink)
-	if err != nil || result != "asked the user" || !sink.Yielded() {
-		t.Fatalf("RunTool = %q, %v, yielded %v", result, err, sink.Yielded())
+	got := runTool(t, context.Background(), nacelle.Request{}, tool, ``)
+	if got.err != nil || got.result != "asked the user" || got.stop != nacelle.StopYield {
+		t.Fatalf("ran = %q, %v, stop %q", got.result, got.err, got.stop)
 	}
 }
 
 // ApproveBool turns a refusal into a Deny the model can read.
 func TestApproveBoolDenies(t *testing.T) {
 	approve := nacelle.ApproveBool(func(context.Context, string, json.RawMessage) bool { return false })
-	sink := &nacelle.ToolSink{Approve: approve}
-	_, err := nacelle.RunTool(context.Background(), echoInput(t, "search"), nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink)
-	if err == nil || !strings.Contains(err.Error(), "not approved") {
-		t.Fatalf("err = %v, want a not-approved refusal", err)
+	got := runTool(t, context.Background(), nacelle.Request{Approve: approve}, echoInput(t, "search"), `{"query":"x"}`)
+	if got.err == nil || !strings.Contains(got.err.Error(), "not approved") {
+		t.Fatalf("err = %v, want a not-approved refusal", got.err)
 	}
 }

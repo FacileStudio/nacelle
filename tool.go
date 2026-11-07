@@ -45,12 +45,8 @@ type Tool interface {
 }
 
 // ReadOnlyTool is an optional interface a Tool may implement to declare
-// that it never mutates state. Backends that support the ToolCallPlanner
-// capability use this to sequence read-only calls before write calls,
-// reducing context bloat by batching independent tools into fewer turns.
-//
-// If a tool does not implement this interface, it is treated as potentially
-// mutating and will be run after all read-only tools in the batch.
+// that it never mutates state. The agent loop runs a round's read-only calls
+// first and together, and every other call after them, one at a time.
 type ReadOnlyTool interface {
 	// IsReadOnly reports whether this tool only reads and never writes.
 	IsReadOnly() bool
@@ -88,8 +84,8 @@ func NewTool[In any](name, description string, run func(ctx context.Context, in 
 
 // ToolOptions configures optional behavior for a tool created with NewToolWithOptions.
 type ToolOptions struct {
-	// ReadOnly declares that this tool never mutates state. Backends with
-	// the ToolCallPlanner capability use this to batch and sequence calls.
+	// ReadOnly declares that this tool never mutates state, so the loop may
+	// run it beside other read-only calls.
 	ReadOnly bool
 }
 

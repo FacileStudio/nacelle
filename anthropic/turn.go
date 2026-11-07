@@ -6,46 +6,17 @@ import (
 	sdk "github.com/anthropics/anthropic-sdk-go"
 )
 
-// outcome is what a run accumulated: what it cost, and why it ended.
-//
-// The two travel together because they are filled from the same event and
-// reported on the same one. message_delta carries the turn's usage and its
-// stop reason, and KindDone carries the run's total of the first and the last
-// value of the second.
-type outcome struct {
-	usage nacelle.Usage
-	stop  nacelle.Stop
-}
-
 // turnEnd reports what a turn cost and why it ended, once the turn is over.
 // Anything that is not the end of a turn adds nothing.
-func turnEnd(event sdk.BetaRawMessageStreamEventUnion, run *outcome) []nacelle.Event {
+func turnEnd(event sdk.BetaRawMessageStreamEventUnion) []nacelle.Event {
 	if event.Type != "message_delta" {
 		return nil
 	}
-	usage := usageOf(event.Usage)
-	run.usage = run.usage.Add(usage)
-	run.stop = stopOf(event.Delta.StopReason)
-	return []nacelle.Event{{Kind: nacelle.KindTurn, Usage: usage, Stop: run.stop}}
-}
-
-// finalStop is why the run ended, which is not always why its last turn did.
-//
-// They differ in one case and it is the one worth catching. A run stops making
-// API calls once MaxIterations is reached, and it stops between turns, so the
-// last call it did make ended with the model still asking for tools that will
-// never run. Left alone that reports StopTools, which promises more turns and
-// is the documented one reason a run never ends with. A run that merely used
-// its last permitted iteration to finish is not capped, which is why the
-// pending tools are half of the test rather than the count alone.
-//
-// Hitting the cap is unfinished work and not a failure, so it is a stop
-// reason rather than an error out of the stream.
-func finalStop(toolUse bool, stop nacelle.Stop, iterations, cap int) nacelle.Stop {
-	if toolUse && cap > 0 && iterations >= cap {
-		return nacelle.StopIterations
-	}
-	return stop
+	return []nacelle.Event{{
+		Kind:  nacelle.KindTurn,
+		Usage: usageOf(event.Usage),
+		Stop:  stopOf(event.Delta.StopReason),
+	}}
 }
 
 // usageOf converts the API's per-turn accounting into ours.

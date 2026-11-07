@@ -2,7 +2,9 @@ package oairunner
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"maps"
 
 	"github.com/FacileStudio/nacelle"
 
@@ -33,7 +35,11 @@ func dataURI(mediaType string, data []byte) string {
 }
 
 func (s *sorted) addResult(result nacelle.ToolResult) {
-	s.results = append(s.results, oai.ToolMessage(result.Result, result.ID))
+	text := result.Result
+	if result.Failed {
+		text = "the tool failed: " + text
+	}
+	s.results = append(s.results, oai.ToolMessage(text, result.ID))
 	for _, part := range toolImageParts(result.ID, result.Name, result.Images) {
 		s.addMedia(part)
 	}
@@ -50,4 +56,17 @@ func toolImageParts(id, name string, images []nacelle.Image) []oai.ChatCompletio
 		parts = append(parts, imagePart(image))
 	}
 	return parts
+}
+
+// addNative merges the extra fields this provider wrote on an assistant turn.
+// A part another provider wrote is not this one's to send.
+func (s *sorted) addNative(name string, part nacelle.Native) {
+	var extra map[string]any
+	if part.Provider != name || json.Unmarshal(part.Data, &extra) != nil {
+		return
+	}
+	if s.extra == nil {
+		s.extra = map[string]any{}
+	}
+	maps.Copy(s.extra, extra)
 }

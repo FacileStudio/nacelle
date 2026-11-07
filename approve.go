@@ -34,14 +34,14 @@ type Decision struct {
 }
 
 // Approve decides whether a tool call may run, and in what form, asked once
-// per call before RunTool ever calls Run.
+// per call before the agent loop runs the tool.
 //
 // Nil is the default and means every call runs unasked. Most consumers (a
 // server, a CI job, an unattended run) have nobody to ask, and a package that
 // refused by default would make every one of them write a rubber-stamp
 // callback just to get back to how every tool already worked.
 //
-// It is asked with the same context RunTool receives, so cancelling a run
+// It is asked with the run's own context, so cancelling a run
 // unblocks anyone waiting on an answer that is never coming.
 //
 // It may be asked from several goroutines at once, for the reason Tool.Run
@@ -80,13 +80,4 @@ func endedTurn(err error) (string, bool) {
 		return ended.result, true
 	}
 	return "", false
-}
-
-// Yielded reports whether a tool returned EndTurn during this run. A backend
-// checks it after a round of calls has finished and, when true, ends the run
-// with StopYield instead of asking the model for another turn.
-func (s *ToolSink) Yielded() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.yielded
 }

@@ -19,7 +19,7 @@ import (
 // requestBody runs one turn against a server that keeps the request body, and
 // returns the JSON the SDK actually put on the socket.
 //
-// thinking_test.go already asserts the sdk.BetaToolRunnerParams this package
+// thinking_test.go already asserts the request parameters this package
 // builds, and that is a weaker claim than it looks. It proves what this
 // package intends, not what the SDK serialises, and a provider validates the
 // second. The OpenRouter backend shipped a request the live gateway refused

@@ -98,9 +98,11 @@ func TestAFallbackDiscardsTheCallsBeforeIt(t *testing.T) {
 	if !discarded[0].Tool.Discarded {
 		t.Errorf("close for %+v was not marked Discarded, so a consumer would replay a call that never ran", discarded[0].Tool)
 	}
-	local := tracker.localCalls()
-	if len(local) != 1 || local[0].ID != "retried" {
-		t.Errorf("queued = %+v, want only the block after the fallback; the skipped one was left queued", local)
+	if _, kept := tracker.local("refused"); kept {
+		t.Error("the refused call is still queued, so the loop would run a call that was skipped")
+	}
+	if _, kept := tracker.local("retried"); !kept {
+		t.Error("the call after the fallback was not queued")
 	}
 }
 

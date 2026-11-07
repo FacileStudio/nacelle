@@ -7,14 +7,12 @@ import (
 	"github.com/FacileStudio/nacelle/mcp"
 )
 
-// Backend is a model this package can run an agent on.
+// Backend is a model this package can run an agent on, loop included.
 //
-// The seam is at the whole loop rather than at a single request, because the
-// loop is exactly what differs. Anthropic ships one in its SDK and executes
-// remote MCP servers on its own side of the request; an OpenAI-schema backend
-// has neither and must drive the conversation itself. An interface at the
-// request level would have forced the Anthropic path to give up the tested
-// loop it gets for free, to look symmetrical with one that cannot have it.
+// Every Backend this module ships is a Provider driven by NewBackend, so the
+// agent loop — the iteration cap, tool execution, hooks, Approve and EndTurn —
+// exists once. The interface stays at the whole run so a consumer can wrap
+// one, as Retry does, without knowing how the run is put together.
 type Backend interface {
 	// Name identifies the backend in errors and logs.
 	Name() string
@@ -24,12 +22,8 @@ type Backend interface {
 	// quietly running with less.
 	Capabilities() Capabilities
 
-	// Stream runs the conversation to completion, yielding events.
-	//
-	// Implementations must end with a KindDone carrying the run's total
-	// usage, or with an error. They must report tool results through
-	// RunTool and a ToolSink so that every backend's stream looks the same
-	// to a consumer.
+	// Stream runs the conversation to completion, yielding events. It ends
+	// with a KindDone carrying the run's total usage, or with an error.
 	Stream(ctx context.Context, request Request) iter.Seq2[Event, error]
 
 	// CountTokens reports how many tokens this request would use if sent as
@@ -39,6 +33,35 @@ type Backend interface {
 	// a number anyone should budget against.
 	CountTokens(ctx context.Context, request Request) (int64, error)
 }
+
+// Provider is one model API, one assistant turn at a time.
+//
+// Turn sends request.Messages as they are and streams the answer: KindText,
+// KindThinking, a KindToolCall for every call once its input is whole,
+// KindToolResult only for a call the provider executed on its own side (a
+// remote MCP tool) or discarded, exactly one KindTurn carrying the turn's
+// usage and stop, and last a KindMessage carrying the assistant Message. A
+// Provider never runs a local tool: NewBackend does, between turns.
+type Provider interface {
+	// Name identifies the provider in errors and logs.
+	Name() string
+
+	// Capabilities reports what the provider can do.
+	Capabilities() Capabilities
+
+	// Turn streams one assistant turn for request.
+	Turn(ctx context.Context, request Request) iter.Seq2[Event, error]
+
+	// CountTokens reports how many tokens request would use; see
+	// Backend.CountTokens.
+	CountTokens(ctx context.Context, request Request) (int64, error)
+}
+
+// NewBackend drives p through the agent loop: it asks for a turn, runs the
+// local tool calls that turn made (read-only ones first and together, the
+// rest after them in order), feeds the results back and asks again, until the
+// model answers, the iteration cap is reached or a tool calls EndTurn.
+func NewBackend(p Provider) Backend { return looped{Provider: p} }
 
 // Capabilities is what a backend supports.
 //
@@ -84,12 +107,6 @@ type Capabilities struct {
 	// will produce, so a backend without an endpoint for it has nothing
 	// honest to estimate with.
 	TokenCounting bool
-
-	// ToolCallPlanner reports whether the backend supports batching
-	// independent tool calls into a single turn and sequencing read-only
-	// calls before write calls. This reduces context bloat by executing
-	// multiple tools in one round trip rather than one turn per tool.
-	ToolCallPlanner bool
 
 	// ContextWindow is the total context window token limit of the model,
 	// or zero when unconstrained or unknown.

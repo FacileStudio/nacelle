@@ -19,14 +19,14 @@ func TestWithTimeoutFailsClosedOnABeforeHook(t *testing.T) {
 		}
 	})
 	started := time.Now()
-	_, _, err := runHookTool(t, map[nacelle.HookPoint][]nacelle.Hook{
+	err := runHookTool(t, map[nacelle.HookPoint][]nacelle.Hook{
 		nacelle.BeforeToolCall: {slow},
-	})
+	}).err
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("err = %v; want a timeout denial", err)
 	}
 	if elapsed := time.Since(started); elapsed > time.Second {
-		t.Fatalf("RunTool took %s; the timeout should have cut in far earlier", elapsed)
+		t.Fatalf("the call took %s; the timeout should have cut in far earlier", elapsed)
 	}
 }
 

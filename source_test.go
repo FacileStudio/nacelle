@@ -1,8 +1,9 @@
 package nacelle_test
 
 import (
-	"github.com/FacileStudio/nacelle"
 	"testing"
+
+	"github.com/FacileStudio/nacelle"
 )
 
 func TestSourceZeroConstant(t *testing.T) {

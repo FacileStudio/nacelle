@@ -1,10 +1,7 @@
-// Package oairunner runs agents on OpenAI-compatible APIs.
 package oairunner
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"slices"
 	"strings"
 
@@ -13,92 +10,32 @@ import (
 	oai "github.com/openai/openai-go/v3"
 )
 
-type toolCall struct {
-	id        string
-	name      string
-	arguments string
-}
-
-func (c toolCall) event(index int) nacelle.Event {
+// toolCallEvent announces a call whose arguments are whole.
+func toolCallEvent(call nacelle.ToolCall, index int) nacelle.Event {
 	return nacelle.Event{
 		Kind: nacelle.KindToolCall,
-		Tool: &nacelle.ToolEvent{ID: c.id, Index: index, Name: c.name, Input: c.arguments},
+		Tool: &nacelle.ToolEvent{ID: call.ID, Index: index, Name: call.Name, Input: string(call.Input)},
 	}
 }
 
-type callContext struct {
-	tools  []oai.ChatCompletionToolUnionParam
-	byName map[string]nacelle.Tool
-	sink   *nacelle.ToolSink
-	out    *emitter
-}
-
-func planCalls(calls []toolCall, byName map[string]nacelle.Tool) ([]toolCall, []int) {
-	if len(calls) <= 1 {
-		indices := make([]int, len(calls))
-		for i := range indices {
-			indices[i] = i
-		}
-		return calls, indices
-	}
-	invocations := make([]nacelle.Invocation, len(calls))
-	for i, c := range calls {
-		invocations[i] = nacelle.Invocation{ID: c.id, Name: c.name, Index: i}
-	}
-	planned := nacelle.PlanCalls(invocations, byName)
-	order := make([]toolCall, len(planned))
-	indices := make([]int, len(planned))
-	for i, p := range planned {
-		order[i] = calls[p.Index]
-		indices[i] = p.Index
-	}
-	return order, indices
-}
-
-func runCalls(ctx context.Context, calls []toolCall, call callContext) ([]oai.ChatCompletionMessageParamUnion, error) {
-	order, indices := planCalls(calls, call.byName)
-	results := make([]oai.ChatCompletionMessageParamUnion, 0, len(order)+1)
-	var pictures []oai.ChatCompletionContentPartUnionParam
-	for i, invocation := range order {
-		origIndex := indices[i]
-		if !call.out.send(invocation.event(origIndex)) {
-			return nil, errStopped
-		}
-		message, images := runCall(ctx, invocation, origIndex, call)
-		results = append(results, message)
-		pictures = append(pictures, toolImageParts(invocation.id, invocation.name, images)...)
-	}
-
-	if !call.out.flushTools() {
-		return nil, errStopped
-	}
-	if len(pictures) > 0 {
-		results = append(results, oai.UserMessage(pictures))
-	}
-	return results, nil
-}
-
-func runCall(ctx context.Context, invocation toolCall, index int, call callContext) (oai.ChatCompletionMessageParamUnion, []nacelle.Image) {
-	tool, known := call.byName[invocation.name]
-	if !known {
-		err := fmt.Errorf("nacelle: no tool named %q is available", invocation.name)
-		call.sink.Report(nacelle.Event{
-			Kind: nacelle.KindToolResult,
-			Tool: &nacelle.ToolEvent{
-				ID: invocation.id, Index: index, Name: invocation.name,
-				Input: invocation.arguments, Result: err.Error(), Err: err,
-			},
+// toolCallsOf reads the calls off an accumulated message, dropping the empty
+// entries a provider can close a stream with.
+func toolCallsOf(message oai.ChatCompletionMessage) []nacelle.ToolCall {
+	kept := slices.DeleteFunc(message.ToolCalls, func(call oai.ChatCompletionMessageToolCallUnion) bool {
+		return call.ID == "" && call.Function.Name == "" && call.Function.Arguments == ""
+	})
+	calls := make([]nacelle.ToolCall, 0, len(kept))
+	for _, call := range kept {
+		calls = append(calls, nacelle.ToolCall{
+			ID: call.ID, Name: call.Function.Name,
+			Input: json.RawMessage(call.Function.Arguments), Finished: true,
 		})
-		return oai.ToolMessage(fmt.Sprintf("no tool named %q is available", invocation.name), invocation.id), nil
 	}
-
-	result, images, err := nacelle.RunToolImages(ctx, tool, nacelle.Invocation{ID: invocation.id, Name: invocation.name, Index: index}, json.RawMessage(invocation.arguments), call.sink)
-	if err != nil {
-		return oai.ToolMessage("the tool failed: "+err.Error(), invocation.id), nil
-	}
-	return oai.ToolMessage(result, invocation.id), images
+	return calls
 }
 
+// toolParams declares the tools, sorted by name so the request prefix is
+// stable from one turn to the next.
 func toolParams(tools []nacelle.Tool) []oai.ChatCompletionToolUnionParam {
 	if len(tools) == 0 {
 		return nil

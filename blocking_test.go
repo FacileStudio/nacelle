@@ -2,7 +2,6 @@ package nacelle_test
 
 import (
 	"context"
-	"encoding/json"
 	"iter"
 	"strings"
 	"testing"
@@ -40,18 +39,15 @@ func TestDelegateHonoursACancelledContext(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	sink := &nacelle.ToolSink{}
-	done := make(chan struct{})
-	go func() {
-		nacelle.RunTool(ctx, tool, nacelle.Invocation{ID: "x"}, json.RawMessage(`{"tasks":["work"]}`), sink)
-		close(done)
-	}()
+	done := make(chan ran, 1)
+	go func() { done <- runTool(t, ctx, nacelle.Request{}, tool, `{"tasks":["work"]}`) }()
+	var got ran
 	select {
-	case <-done:
+	case got = <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("the delegation ignored the cancelled context")
 	}
-	events := sink.Drain()
+	events := got.toolEvents()
 	if len(events) == 0 || events[len(events)-1].Tool == nil {
 		t.Fatalf("events = %v, want a tool result carrying the cancellation", events)
 	}

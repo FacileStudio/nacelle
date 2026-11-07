@@ -156,8 +156,8 @@ func TestParallelSubAgentNonStringTasks(t *testing.T) {
 	}
 }
 
-// TestParallelSubAgentDirectCall verifies parallel delegation via direct
-// RunTool call, bypassing the parent stream to avoid the loop backend mutex.
+// TestParallelSubAgentDirectCall verifies parallel delegation with the parent
+// on its own script, so the loop backend serves only the nested runs.
 func TestParallelSubAgentDirectCall(t *testing.T) {
 	backend := newLoop(
 		[]step{toolStep("echo", `{}`), textStep("result1")},
@@ -173,9 +173,7 @@ func TestParallelSubAgentDirectCall(t *testing.T) {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
 
-	sink := &nacelle.ToolSink{}
-	nacelle.RunTool(context.Background(), sub, nacelle.Invocation{ID: "x"},
-		json.RawMessage(`{"tasks":["task1","task2","task3"]}`), sink)
+	sink := runTool(t, context.Background(), nacelle.Request{}, sub, `{"tasks":["task1","task2","task3"]}`)
 
 	result := drainToolResult(t, sink)
 
@@ -215,11 +213,11 @@ func runParent(t *testing.T, parent *nacelle.Agent, prompt string, onEvent func(
 	}
 }
 
-func drainToolResult(t *testing.T, sink *nacelle.ToolSink) string {
+func drainToolResult(t *testing.T, sink ran) string {
 	t.Helper()
 
 	var result string
-	for _, event := range sink.Drain() {
+	for _, event := range sink.toolEvents() {
 		if event.Tool == nil {
 			continue
 		}

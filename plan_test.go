@@ -2,103 +2,105 @@ package nacelle_test
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/FacileStudio/nacelle"
 	"github.com/FacileStudio/nacelle/tools"
 )
 
-func TestPlanCallsSequencesReadOnlyBeforeWrite(t *testing.T) {
-	readTool, err := nacelle.NewToolWithOptions("search", "Find things",
-		func(context.Context, struct{}) (string, error) { return "", nil },
-		nacelle.ToolOptions{ReadOnly: true})
+// rendezvous is two read-only tools that each wait for the other, so they can
+// only both finish when the loop runs them at the same time, and a write tool
+// that records whether both reads had finished when it ran.
+type rendezvous struct {
+	mu        sync.Mutex
+	arrived   chan struct{}
+	reads     int
+	readsSeen int
+}
+
+func (r *rendezvous) read(ctx context.Context, _ struct{}) (string, error) {
+	select {
+	case r.arrived <- struct{}{}:
+	case <-r.arrived:
+	case <-time.After(5 * time.Second):
+		return "", errors.New("the other read never ran beside this one")
+	}
+	r.mu.Lock()
+	r.reads++
+	r.mu.Unlock()
+	return "read", nil
+}
+
+func (r *rendezvous) write(context.Context, struct{}) (string, error) {
+	r.mu.Lock()
+	r.readsSeen = r.reads
+	r.mu.Unlock()
+	return "wrote", nil
+}
+
+func (r *rendezvous) tools(t *testing.T) []nacelle.Tool {
+	t.Helper()
+	readOnly := nacelle.ToolOptions{ReadOnly: true}
+	first, err := nacelle.NewToolWithOptions("read_a", "Read", r.read, readOnly)
 	if err != nil {
 		t.Fatalf("NewToolWithOptions: %v", err)
 	}
-	writeTool, err := nacelle.NewTool("run", "Do something",
-		func(context.Context, struct{}) (string, error) { return "", nil })
+	second, err := nacelle.NewToolWithOptions("read_b", "Read", r.read, readOnly)
+	if err != nil {
+		t.Fatalf("NewToolWithOptions: %v", err)
+	}
+	write, err := nacelle.NewTool("write", "Write", r.write)
 	if err != nil {
 		t.Fatalf("NewTool: %v", err)
 	}
+	return []nacelle.Tool{first, second, write}
+}
 
-	byName := nacelle.ToolsByName([]nacelle.Tool{readTool, writeTool})
-	calls := []nacelle.Invocation{
-		{ID: "run"},
-		{ID: "search"},
-		{ID: "run"},
-	}
+func call(id, name string) nacelle.ToolCall {
+	return nacelle.ToolCall{ID: id, Name: name, Input: json.RawMessage(`{}`), Finished: true}
+}
 
-	planned := nacelle.PlanCalls(calls, byName)
-	if len(planned) != 3 {
-		t.Fatalf("len(planned) = %d, want 3", len(planned))
-	}
-	if planned[0].ID != "search" {
-		t.Errorf("planned[0].ID = %q, want %q", planned[0].ID, "search")
-	}
-	for i, call := range planned[1:] {
-		if call.ID == "search" {
-			t.Errorf("planned[%d] = %q, expected write tool", i+1, call.ID)
+// The model asked for the write first; the loop still runs both reads first,
+// together, and the write after them, and answers in the model's order.
+func TestReadOnlyCallsRunFirstAndTogether(t *testing.T) {
+	r := &rendezvous{arrived: make(chan struct{})}
+	available := r.tools(t)
+	got := runSteps(t, context.Background(), nacelle.Request{Tools: available}, available[0],
+		roundStep(call("w", "write"), call("a", "read_a"), call("b", "read_b")), textStep("done"))
+
+	for _, event := range got.toolEvents() {
+		if event.Tool.Err != nil {
+			t.Fatalf("%s failed: %v", event.Tool.Name, event.Tool.Err)
 		}
 	}
-}
-
-func TestPlanCallsUnknownToolsGoToWrite(t *testing.T) {
-	readTool, err := nacelle.NewToolWithOptions("search", "Find things",
-		func(context.Context, struct{}) (string, error) { return "", nil },
-		nacelle.ToolOptions{ReadOnly: true})
-	if err != nil {
-		t.Fatalf("NewToolWithOptions: %v", err)
+	if r.readsSeen != 2 {
+		t.Errorf("the write saw %d reads finished, want both", r.readsSeen)
 	}
-
-	byName := nacelle.ToolsByName([]nacelle.Tool{readTool})
-	calls := []nacelle.Invocation{
-		{ID: "unknown"},
-		{ID: "search"},
-		{ID: "unknown"},
-	}
-
-	planned := nacelle.PlanCalls(calls, byName)
-	if len(planned) != 3 {
-		t.Fatalf("len(planned) = %d, want 3", len(planned))
-	}
-	if planned[0].ID != "search" {
-		t.Errorf("planned[0].ID = %q, want %q", planned[0].ID, "search")
+	results := lastResults(got.events)
+	if len(results) != 3 || results[0].ID != "w" || results[1].ID != "a" || results[2].ID != "b" {
+		t.Errorf("results = %+v, want them in the order the model asked", results)
 	}
 }
 
-func TestPlanCallsUsesNameWithFallbackToID(t *testing.T) {
-	readTool, err := nacelle.NewToolWithOptions("search", "Find things",
-		func(context.Context, struct{}) (string, error) { return "", nil },
-		nacelle.ToolOptions{ReadOnly: true})
-	if err != nil {
-		t.Fatalf("NewToolWithOptions: %v", err)
+// lastResults are the tool results of the last result message committed.
+func lastResults(events []nacelle.Event) []nacelle.ToolResult {
+	var results []nacelle.ToolResult
+	for _, event := range events {
+		if event.Kind != nacelle.KindMessage || event.Message.Role != nacelle.RoleUser {
+			continue
+		}
+		results = results[:0]
+		for _, part := range event.Message.Parts {
+			if result, ok := part.(nacelle.ToolResult); ok {
+				results = append(results, result)
+			}
+		}
 	}
-	writeTool, err := nacelle.NewTool("run", "Do something",
-		func(context.Context, struct{}) (string, error) { return "", nil })
-	if err != nil {
-		t.Fatalf("NewTool: %v", err)
-	}
-
-	byName := nacelle.ToolsByName([]nacelle.Tool{readTool, writeTool})
-	calls := []nacelle.Invocation{
-		{ID: "call_1", Name: "run"},
-		{ID: "call_2", Name: "search"},
-		{ID: "run"},
-	}
-
-	planned := nacelle.PlanCalls(calls, byName)
-	if len(planned) != 3 {
-		t.Fatalf("len(planned) = %d, want 3", len(planned))
-	}
-	if planned[0].ID != "call_2" {
-		t.Errorf("planned[0].ID = %q, want %q", planned[0].ID, "call_2")
-	}
-	if planned[1].ID != "call_1" {
-		t.Errorf("planned[1].ID = %q, want %q", planned[1].ID, "call_1")
-	}
-	if planned[2].ID != "run" {
-		t.Errorf("planned[2].ID = %q, want %q", planned[2].ID, "run")
-	}
+	return results
 }
 
 func loadAllTestTools(t *testing.T) map[string]nacelle.Tool {
@@ -121,35 +123,22 @@ func loadAllTestTools(t *testing.T) map[string]nacelle.Tool {
 	return nacelle.ToolsByName(allTools)
 }
 
-func TestPlanCallsIntegratesWithRealTools(t *testing.T) {
+// The built-in tools that only read say so, and the ones that write do not.
+func TestBuiltInToolsDeclareWhetherTheyOnlyRead(t *testing.T) {
 	byName := loadAllTestTools(t)
-	calls := []nacelle.Invocation{
-		{ID: "c1", Name: "write_file"},
-		{ID: "c2", Name: "read_file"},
-		{ID: "c3", Name: "edit_file"},
-		{ID: "c4", Name: "list_directory"},
-		{ID: "c5", Name: "bash"},
-		{ID: "c6", Name: "glob"},
-		{ID: "c7", Name: "web_fetch"},
-		{ID: "c8", Name: "grep"},
-		{ID: "c9", Name: "web_fetch"},
+	wanted := map[string]bool{
+		"read_file": true, "list_directory": true, "glob": true, "grep": true, "web_fetch": true,
+		"write_file": false, "edit_file": false, "bash": false,
 	}
-
-	planned := nacelle.PlanCalls(calls, byName)
-	if len(planned) != len(calls) {
-		t.Fatalf("len(planned) = %d, want %d", len(planned), len(calls))
-	}
-
-	for i := 0; i < 6; i++ {
-		tool := byName[planned[i].Name]
-		if ro, ok := tool.(nacelle.ReadOnlyTool); !ok || !ro.IsReadOnly() {
-			t.Errorf("call %d (%s) expected read-only", i, planned[i].Name)
+	for name, readOnly := range wanted {
+		tool, ok := byName[name]
+		if !ok {
+			t.Errorf("no built-in tool is named %q", name)
+			continue
 		}
-	}
-	for i := 6; i < len(planned); i++ {
-		tool := byName[planned[i].Name]
-		if ro, ok := tool.(nacelle.ReadOnlyTool); ok && ro.IsReadOnly() {
-			t.Errorf("call %d (%s) expected mutating", i, planned[i].Name)
+		ro, declared := tool.(nacelle.ReadOnlyTool)
+		if got := declared && ro.IsReadOnly(); got != readOnly {
+			t.Errorf("%s read-only = %v, want %v", name, got, readOnly)
 		}
 	}
 }

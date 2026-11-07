@@ -13,8 +13,7 @@ import (
 // truncated answer from a finished one and will present half a sentence as
 // the result.
 func TestATruncatedTurnDoesNotClaimToBeComplete(t *testing.T) {
-	var run outcome
-	events := turnEnd(raw(t, `{"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":9}}`), &run)
+	events := turnEnd(raw(t, `{"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":9}}`))
 
 	if len(events) != 1 || events[0].Kind != nacelle.KindTurn {
 		t.Fatalf("the end of a turn emitted %+v, want one KindTurn", events)
@@ -24,9 +23,6 @@ func TestATruncatedTurnDoesNotClaimToBeComplete(t *testing.T) {
 	}
 	if events[0].Stop.Complete() {
 		t.Error("a turn the output ceiling cut off reports itself as a finished answer")
-	}
-	if run.stop != nacelle.StopMaxTokens {
-		t.Errorf("the run kept %q, want the turn's reason so KindDone can carry it", run.stop)
 	}
 }
 

@@ -21,7 +21,9 @@ func (t *turns) CountTokens(context.Context, nacelle.Request) (int64, error) {
 }
 func (t *turns) Stream(context.Context, nacelle.Request) iter.Seq2[nacelle.Event, error] {
 	return func(yield func(nacelle.Event, error) bool) {
-		yield(nacelle.Event{Kind: nacelle.KindText, Text: "answer"}, nil)
+		if !yield(nacelle.Event{Kind: nacelle.KindText, Text: "answer"}, nil) {
+			return
+		}
 		if !yield(nacelle.Event{Kind: nacelle.KindTurn, Usage: t.spent}, nil) {
 			return
 		}
@@ -39,9 +41,8 @@ func TestParallelSubAgentReportsTurnUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
-	sink := &nacelle.ToolSink{}
-	nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "x"}, json.RawMessage(`{"tasks":["work"]}`), sink)
-	for _, event := range sink.Drain() {
+	sink := runTool(t, context.Background(), nacelle.Request{}, tool, `{"tasks":["work"]}`)
+	for _, event := range sink.toolEvents() {
 		if event.Tool != nil && event.Tool.Err != nil {
 			t.Fatalf("delegation failed: %v", event.Tool.Err)
 		}
@@ -61,11 +62,10 @@ func TestParallelSubAgentResponseCarriesPerTaskUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
-	sink := &nacelle.ToolSink{}
-	nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "x"}, json.RawMessage(`{"tasks":["one","two"]}`), sink)
+	sink := runTool(t, context.Background(), nacelle.Request{}, tool, `{"tasks":["one","two"]}`)
 
 	var result string
-	for _, event := range sink.Drain() {
+	for _, event := range sink.toolEvents() {
 		if event.Tool != nil && event.Tool.Err != nil {
 			t.Fatalf("delegation failed: %v", event.Tool.Err)
 		}

@@ -208,7 +208,7 @@ func testOrderTools(t *testing.T, order *[]string) (nacelle.Tool, nacelle.Tool) 
 	return readTool, writeTool
 }
 
-func TestPlanCallsOrdersReadOnlyBeforeWriteInStream(t *testing.T) {
+func TestReadOnlyCallsRunBeforeWritesInStream(t *testing.T) {
 	var executionOrder []string
 	readTool, writeTool := testOrderTools(t, &executionOrder)
 

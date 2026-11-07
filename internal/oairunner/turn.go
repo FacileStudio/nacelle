@@ -1,10 +1,10 @@
-// Package oairunner runs agents on OpenAI-compatible APIs.
 package oairunner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"slices"
+	"strings"
 
 	"github.com/FacileStudio/nacelle"
 
@@ -12,20 +12,18 @@ import (
 	"github.com/openai/openai-go/v3/option"
 )
 
-type turnResult struct {
-	assistant oai.ChatCompletionMessageParamUnion
-	calls     []toolCall
-	stop      nacelle.Stop
-}
-
+// turnStream is one turn in flight: the accumulator that builds its message,
+// the stop and usage the chunks have reported, and the reasoning shown.
 type turnStream struct {
 	accumulator oai.ChatCompletionAccumulator
 	backend     *Backend
 	stop        nacelle.Stop
 	usage       nacelle.Usage
-	total       *nacelle.Usage
+	thinking    bool
+	reasoning   strings.Builder
 }
 
+// requestOptions returns the per-request options the provider asked for.
 func (b *Backend) requestOptions(request nacelle.Request) []option.RequestOption {
 	if b.RequestOptions != nil {
 		return b.RequestOptions(request)
@@ -36,41 +34,55 @@ func (b *Backend) requestOptions(request nacelle.Request) []option.RequestOption
 	return nil
 }
 
+// turn streams one request, yielding its deltas as they arrive, and returns
+// the events that close it: the calls, the turn's cost and its message.
 func (b *Backend) turn(
 	ctx context.Context,
 	messages []oai.ChatCompletionMessageParamUnion,
 	request nacelle.Request,
-	call callContext,
-	total *nacelle.Usage,
-) (*turnResult, error) {
-	if b.Options.ResetTurn != nil {
-		b.Options.ResetTurn()
-	}
+	yield func(nacelle.Event, error) bool,
+) ([]nacelle.Event, error) {
 	params := oai.ChatCompletionNewParams{
 		Model:     b.Model,
 		Messages:  messages,
 		MaxTokens: oai.Int(request.MaxTokens),
 	}
-	if len(call.tools) > 0 {
-		params.Tools = call.tools
+	if tools := toolParams(request.Tools); len(tools) > 0 {
+		params.Tools = tools
 	}
 	stream := b.Client.Chat.Completions.NewStreaming(ctx, params, b.requestOptions(request)...)
 	defer func() { _ = stream.Close() }()
 
-	state := &turnStream{backend: b, stop: nacelle.StopOther, total: total}
+	state := &turnStream{backend: b, stop: nacelle.StopOther, thinking: request.Thinking.Show}
 	for stream.Next() {
-		chunk := stream.Current()
-		state.observe(chunk)
-		if !state.emit(chunk, request.Thinking.Show, call.out) {
-			return nil, errStopped
+		if !state.forward(stream.Current(), yield) {
+			return nil, nil
 		}
 	}
 	if err := stream.Err(); err != nil {
 		return nil, err
 	}
-	return state.finish(call.out)
+	return state.finish()
 }
 
+// forward folds a chunk into the turn and yields the deltas it carries.
+func (t *turnStream) forward(chunk oai.ChatCompletionChunk, yield func(nacelle.Event, error) bool) bool {
+	t.observe(chunk)
+	if len(chunk.Choices) == 0 {
+		return true
+	}
+	for _, event := range deltaEvents(chunk.Choices[0].Delta, t.thinking) {
+		if event.Kind == nacelle.KindThinking {
+			t.reasoning.WriteString(event.Text)
+		}
+		if !yield(event, nil) {
+			return false
+		}
+	}
+	return true
+}
+
+// observe folds a chunk into the accumulator, usage and stop reason.
 func (t *turnStream) observe(chunk oai.ChatCompletionChunk) {
 	t.accumulator.AddChunk(chunk)
 	if t.backend.Options.ObserveChunk != nil {
@@ -87,54 +99,48 @@ func (t *turnStream) observe(chunk oai.ChatCompletionChunk) {
 	}
 }
 
-func (t *turnStream) emit(chunk oai.ChatCompletionChunk, thinking bool, out *emitter) bool {
-	if !out.flushTools() {
-		return false
-	}
-	if len(chunk.Choices) == 0 {
-		return true
-	}
-	return out.sendAll(deltaEvents(chunk.Choices[0].Delta, thinking))
-}
-
-// finish seals the turn: it reports the usage, and hands back the assistant
-// message to replay and the tool calls to run. A provider can close a turn
-// with a tool-call entry that carries no id, name or arguments: the
-// accumulator files the delta under its index and nothing ever fills it.
-// Replaying it sends tool_calls: [{}] and the provider answers 400, so the
-// empty entry is dropped from both the calls the runner would execute and
-// the assistant message it replays.
-func (t *turnStream) finish(out *emitter) (*turnResult, error) {
-	*t.total = t.total.Add(t.usage)
-	if !out.send(nacelle.Event{Kind: nacelle.KindTurn, Usage: t.usage, Stop: t.stop}) {
-		return nil, errStopped
-	}
+// finish seals the turn: a KindToolCall per call, the turn's cost, and the
+// assistant message. A provider can close a turn with a tool-call entry that
+// carries no id, name or arguments; replaying it sends tool_calls: [{}] and
+// the provider answers 400, so the empty entry is dropped.
+func (t *turnStream) finish() ([]nacelle.Event, error) {
 	if len(t.accumulator.Choices) == 0 {
 		return nil, fmt.Errorf("nacelle: the response carried no choices")
 	}
 	message := t.accumulator.Choices[0].Message
+	calls := toolCallsOf(message)
 
-	message.ToolCalls = slices.DeleteFunc(message.ToolCalls, func(call oai.ChatCompletionMessageToolCallUnion) bool {
-		return call.ID == "" && call.Function.Name == "" && call.Function.Arguments == ""
-	})
-
-	calls := make([]toolCall, 0, len(message.ToolCalls))
-	for _, call := range message.ToolCalls {
-		calls = append(calls, toolCall{
-			id:        call.ID,
-			name:      call.Function.Name,
-			arguments: call.Function.Arguments,
-		})
+	assistant := nacelle.Message{Role: nacelle.RoleAssistant}
+	if t.reasoning.Len() > 0 {
+		assistant.Parts = append(assistant.Parts, nacelle.Reasoning{Text: t.reasoning.String()})
 	}
-
-	assistant := message.ToParam()
-	if t.backend.Options.FinishExtra != nil {
-		assistant = t.backend.Options.FinishExtra(message, assistant)
+	if message.Content != "" {
+		assistant.Parts = append(assistant.Parts, nacelle.Text{Text: message.Content})
 	}
+	events := make([]nacelle.Event, 0, len(calls)+2)
+	for index, call := range calls {
+		assistant.Parts = append(assistant.Parts, call)
+		events = append(events, toolCallEvent(call, index))
+	}
+	assistant.Parts = append(assistant.Parts, t.native()...)
+	return append(events,
+		nacelle.Event{Kind: nacelle.KindTurn, Usage: t.usage, Stop: t.stop},
+		nacelle.Event{Kind: nacelle.KindMessage, Message: &assistant},
+	), nil
+}
 
-	return &turnResult{
-		assistant: assistant,
-		calls:     calls,
-		stop:      t.stop,
-	}, nil
+// native is the provider's extra fields for this turn, as a Native part.
+func (t *turnStream) native() []nacelle.Part {
+	if t.backend.Options.Extra == nil {
+		return nil
+	}
+	extra := t.backend.Options.Extra()
+	if len(extra) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(extra)
+	if err != nil {
+		return nil
+	}
+	return []nacelle.Part{nacelle.Native{Provider: t.backend.Options.Name, Data: data}}
 }

@@ -78,24 +78,28 @@ func (b *Backend) Model() string { return b.model }
 // Capabilities reports what this backend can do.
 func (b *Backend) Capabilities() nacelle.Capabilities {
 	return nacelle.Capabilities{
-		MCP:             false,
-		Thinking:        true,
-		Effort:          true,
-		Cost:            false,
-		TokenCounting:   false,
-		ToolCallPlanner: true,
-		ContextWindow:   1000000,
+		MCP:           false,
+		Thinking:      true,
+		Effort:        true,
+		Cost:          false,
+		TokenCounting: false,
+		ContextWindow: 1000000,
 	}
 }
 
-// Stream delegates to the shared OpenAI runner.
+// Stream runs the conversation on nacelle's agent loop.
 func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error] {
+	return nacelle.NewBackend(b).Stream(ctx, request)
+}
+
+// Turn streams one assistant turn through the shared OpenAI runner.
+func (b *Backend) Turn(ctx context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error] {
 	return (&oairunner.Backend{
 		Client:         b.client,
 		Model:          b.model,
 		RequestOptions: b.requestOptions,
 		Options:        oairunner.Options{Name: "google"},
-	}).Stream(ctx, request)
+	}).Turn(ctx, request)
 }
 
 // CountTokens delegates to the shared OpenAI runner.

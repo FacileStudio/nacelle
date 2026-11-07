@@ -94,9 +94,9 @@ func validateRoles(messages []Message) error {
 func partsMatchRole(message Message) error {
 	for _, part := range message.Parts {
 		switch part.(type) {
-		case ToolCall:
+		case ToolCall, Native:
 			if message.Role != RoleAssistant {
-				return fmt.Errorf("a ToolCall belongs on an assistant message, not %s", message.Role)
+				return fmt.Errorf("a %T belongs on an assistant message, not %s", part, message.Role)
 			}
 		case ToolResult, Image, Document:
 			if message.Role != RoleUser {
