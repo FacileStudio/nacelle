@@ -72,6 +72,11 @@ const (
 	// for tools. The work is unfinished and nothing went wrong.
 	StopIterations Stop = "iterations"
 
+	// StopYield is a tool having ended the run through EndTurn. The
+	// work is not finished: the run is waiting on something outside it,
+	// usually an answer from the user, and resumes with a new run.
+	StopYield Stop = "yield"
+
 	// StopOther is a reason this package does not have a name for. It is
 	// not an error, and a consumer should treat it as unfinished.
 	StopOther Stop = "other"
@@ -137,11 +142,14 @@ type ToolEvent struct {
 	Index int
 
 	// Name is the tool's name. For a tool reached over MCP it is the name
-	// the server exposes.
+	// the server exposes. On KindToolResult it is the tool that ran, which
+	// differs from the call's when Approve redirected it.
 	Name string
 
 	// Input is the raw JSON the model produced. It is not decoded here
-	// because the core does not know any tool's schema.
+	// because the core does not know any tool's schema. On KindToolResult
+	// it is the input the tool ran with, after any hook or Approve
+	// replaced it.
 	Input string
 
 	// Result is what the tool returned, on KindToolResult only.

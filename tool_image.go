@@ -58,45 +58,66 @@ func (f *imageFunction[In]) RunImages(ctx context.Context, input json.RawMessage
 //
 // Backends call this instead of calling Run directly, so that a tool result
 // reaches the event stream the same way whichever backend executed it, and so
-// that timing is measured in one place. It is also the one place that checks
-// sink.Approve, so a refusal looks the same regardless of which backend asked.
-// A refusal is reported as a failed call, not skipped in silence, and Refused
-// tells a consumer it was a policy decision rather than the tool breaking.
+// that timing is measured in one place. It is also the one place that runs
+// the BeforeToolCall hooks and sink.Approve, so a refusal, an edited input or
+// a redirect looks the same regardless of which backend asked. A refusal is
+// reported as a failed call, not skipped in silence, and Refused tells a
+// consumer it was a policy decision rather than the tool breaking.
+//
+// A tool that returns EndTurn is recorded as a success with the result it
+// carried, and sink.Yielded reports true from then on.
 func RunToolImages(ctx context.Context, tool Tool, call Invocation, input json.RawMessage, sink *ToolSink) (string, []Image, error) {
-	if denied, reason := sink.runBeforeHooks(ctx, tool.Name(), input); denied {
-		return "", nil, refuse(sink, tool, call, input, fmt.Errorf("nacelle: %q denied by hook: %s", tool.Name(), reason))
-	}
-	if sink.Approve != nil && !sink.Approve(ctx, tool.Name(), input) {
-		return "", nil, refuse(sink, tool, call, input, fmt.Errorf("nacelle: %q was not approved to run", tool.Name()))
+	ruled, err := sink.rule(ctx, tool, Call{ID: call.ID, Name: tool.Name(), Index: call.Index, Input: input})
+	if err != nil {
+		return "", nil, refuse(sink, ruled.call, err)
 	}
 
 	started := time.Now()
-	result, images, err := invokeTool(ctx, tool, call, input, sink)
-	result = sink.runAfterHooks(ctx, tool.Name(), input, result, err)
-	event := toolResultEvent(tool, call, input, result, err)
+	result, images, err := invokeTool(ctx, ruled.tool, ruled.call, sink)
+	result, err = sink.settle(result, err, ruled.note)
+	result = sink.runAfterHooks(ctx, ruled.call, result, err)
+	event := toolResultEvent(ruled.call, result, err)
 	event.Tool.Duration = time.Since(started)
 	sink.Report(event)
 	return result, images, err
 }
 
+// settle turns an EndTurn into the successful result it carries, marking the
+// run as yielded, and prepends the reviewer's note to what the model reads.
+func (s *ToolSink) settle(result string, err error, note string) (string, error) {
+	if ended, ok := endedTurn(err); ok {
+		result, err = ended, nil
+		s.mu.Lock()
+		s.yielded = true
+		s.mu.Unlock()
+	}
+	switch {
+	case note == "":
+		return result, err
+	case err != nil:
+		return result, fmt.Errorf("%s\n\n%w", note, err)
+	}
+	return note + "\n\n" + result, nil
+}
+
 // invokeTool runs the tool through the richest interface it implements.
-func invokeTool(ctx context.Context, tool Tool, call Invocation, input json.RawMessage, sink *ToolSink) (string, []Image, error) {
+func invokeTool(ctx context.Context, tool Tool, call Call, sink *ToolSink) (string, []Image, error) {
 	switch tool := tool.(type) {
 	case ImageTool:
-		return tool.RunImages(ctx, input)
+		return tool.RunImages(ctx, call.Input)
 	case OutputTool:
-		result, err := tool.RunOutput(ctx, input, func(fragment string) {
+		result, err := tool.RunOutput(ctx, call.Input, func(fragment string) {
 			if fragment == "" {
 				return
 			}
 			sink.Report(Event{
 				Kind: KindToolOutput,
-				Tool: &ToolEvent{ID: call.ID, Index: call.Index, Name: tool.Name()},
+				Tool: &ToolEvent{ID: call.ID, Index: call.Index, Name: call.Name},
 				Text: fragment,
 			})
 		})
 		return result, nil, err
 	}
-	result, err := tool.Run(ctx, input)
+	result, err := tool.Run(ctx, call.Input)
 	return result, nil, err
 }

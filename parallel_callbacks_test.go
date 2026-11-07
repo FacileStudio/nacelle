@@ -78,7 +78,7 @@ func TestParallelSubAgentReportsToolDone(t *testing.T) {
 	sub, err := nacelle.NewParallelSubAgentTool(nacelle.Config{
 		Backend: backend, System: "s", Tools: []nacelle.Tool{echo},
 	}, nacelle.ParallelSubAgentOptions{
-		Approve:   func(context.Context, string, json.RawMessage) bool { return true },
+		Approve:   nacelle.ApproveBool(func(context.Context, string, json.RawMessage) bool { return true }),
 		Callbacks: nacelle.ParallelSubAgentCallbacks{ToolDone: cb},
 	})
 	if err != nil {

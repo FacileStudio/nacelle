@@ -49,7 +49,7 @@ func TestSessionStartInjectionReachesTheModel(t *testing.T) {
 	conversation := []nacelle.Message{nacelle.UserText("hello")}
 	drainStream(t, agent, conversation)
 
-	if seen.Point != nacelle.SessionStart || seen.Tool != "" || seen.Input != "" || seen.Result != "" || seen.Err != nil {
+	if seen.Point != nacelle.SessionStart || seen.Call.Name != "" || seen.Call.Input != nil || seen.Result != "" || seen.Err != nil {
 		t.Errorf("event = %+v; want an empty session_start event", seen)
 	}
 	if len(conversation) != 1 {

@@ -41,7 +41,7 @@ func (b *Backend) converse(ctx context.Context, request nacelle.Request, out *em
 	}
 	call := callContext{
 		tools:  toolParams(request.Tools),
-		byName: nacelle.ToolsByName(request.Tools),
+		byName: sink.Tools,
 		sink:   sink,
 		out:    out,
 	}
@@ -60,6 +60,9 @@ func (b *Backend) converse(ctx context.Context, request nacelle.Request, out *em
 		if err != nil {
 			return total, nacelle.StopOther, err
 		}
+		if sink.Yielded() {
+			return total, nacelle.StopYield, nil
+		}
 	}
 }
 
@@ -74,7 +77,7 @@ func answer(ctx context.Context, messages []oai.ChatCompletionMessageParamUnion,
 // Stream runs the conversation, yielding events.
 func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2[nacelle.Event, error] {
 	return func(yield func(nacelle.Event, error) bool) {
-		sink := &nacelle.ToolSink{Approve: request.Approve, Hooks: request.Hooks}
+		sink := &nacelle.ToolSink{Approve: request.Approve, Hooks: request.Hooks, Tools: nacelle.ToolsByName(request.Tools)}
 		out := &emitter{yield: yield, sink: sink}
 
 		total, stop, err := b.converse(ctx, request, out, sink)

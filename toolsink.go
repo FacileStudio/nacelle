@@ -27,6 +27,13 @@ type ToolSink struct {
 	Approve Approve
 	Hooks   map[HookPoint][]Hook
 
+	// Tools is the registry a Decision.Name redirect is resolved against.
+	// A redirect to a name missing here refuses the call.
+	Tools map[string]Tool
+
+	// yielded records that a tool returned EndTurn this run. Guarded by mu.
+	yielded bool
+
 	// denied remembers the tool names a hook has turned down this run, so
 	// the next hook to see one of them can tell a first refusal from a
 	// model retrying — the difference between enforcing a policy and
@@ -46,6 +53,15 @@ func (s *ToolSink) Report(event Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pending = append(s.pending, event)
+}
+
+// Yielded reports whether a tool returned EndTurn during this run. A backend
+// checks it after a round of calls has finished and, when true, ends the run
+// with StopYield instead of asking the model for another turn.
+func (s *ToolSink) Yielded() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.yielded
 }
 
 // Drain returns everything reported since the last call, in the order the
@@ -134,21 +150,22 @@ func RunTool(ctx context.Context, tool Tool, call Invocation, input json.RawMess
 // contract (a call started must be closed) is the same one Discarded exists
 // for. Refused is what tells a consumer this was a policy decision, not the
 // tool breaking.
-func refuse(sink *ToolSink, tool Tool, call Invocation, input json.RawMessage, err error) error {
-	event := toolResultEvent(tool, call, input, err.Error(), err)
+func refuse(sink *ToolSink, call Call, err error) error {
+	event := toolResultEvent(call, err.Error(), err)
 	event.Tool.Refused = true
 	sink.Report(event)
 	return err
 }
 
 // toolResultEvent builds the one event shape every outcome of a tool call
-// arrives as. The refusal path mutates Refused on its copy.
-func toolResultEvent(tool Tool, call Invocation, input json.RawMessage, result string, err error) Event {
+// arrives as, naming the tool and input that actually ran. The refusal path
+// mutates Refused on its copy.
+func toolResultEvent(call Call, result string, err error) Event {
 	return Event{
 		Kind: KindToolResult,
 		Tool: &ToolEvent{
-			ID: call.ID, Index: call.Index, Name: tool.Name(),
-			Input: string(input), Result: result, Err: err,
+			ID: call.ID, Index: call.Index, Name: call.Name,
+			Input: string(call.Input), Result: result, Err: err,
 		},
 	}
 }

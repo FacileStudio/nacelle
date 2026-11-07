@@ -154,7 +154,7 @@ func TestARefusedCallNeverRunsAndIsReportedAsRefused(t *testing.T) {
 		t.Fatalf("NewTool: %v", err)
 	}
 
-	deny := func(context.Context, string, json.RawMessage) bool { return false }
+	deny := nacelle.ApproveBool(func(context.Context, string, json.RawMessage) bool { return false })
 	sink := &nacelle.ToolSink{Approve: deny}
 	result, err := nacelle.RunTool(context.Background(), tool, nacelle.Invocation{ID: "c"}, json.RawMessage(`{"query":"x"}`), sink)
 
@@ -186,9 +186,9 @@ func TestApproveSeesTheToolNameAndInput(t *testing.T) {
 
 	var gotName string
 	var gotInput json.RawMessage
-	approve := func(_ context.Context, name string, input json.RawMessage) bool {
-		gotName, gotInput = name, input
-		return true
+	approve := func(_ context.Context, call nacelle.Call) nacelle.Decision {
+		gotName, gotInput = call.Name, call.Input
+		return nacelle.Decision{}
 	}
 
 	sink := &nacelle.ToolSink{Approve: approve}

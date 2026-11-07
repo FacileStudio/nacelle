@@ -2,7 +2,6 @@ package nacelle
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -66,7 +65,9 @@ func subAgentConfig(cfg Config, opts SubAgentOptions, name string) Config {
 	thinking.Show = false
 	approve := opts.Approve
 	if approve == nil {
-		approve = func(context.Context, string, json.RawMessage) bool { return false }
+		approve = func(context.Context, Call) Decision {
+			return Decision{Deny: "a sub-agent runs no tool unless SubAgentOptions.Approve allows it"}
+		}
 	}
 	return Config{
 		Backend:       cfg.Backend,

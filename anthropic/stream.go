@@ -45,7 +45,7 @@ func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2
 	return func(yield func(nacelle.Event, error) bool) {
 		state := &session{
 			thinking: request.Thinking.Show,
-			sink:     &nacelle.ToolSink{Approve: request.Approve, Hooks: request.Hooks},
+			sink:     &nacelle.ToolSink{Approve: request.Approve, Hooks: request.Hooks, Tools: nacelle.ToolsByName(request.Tools)},
 			base:     b.params(request),
 			opts:     append([]option.RequestOption(nil), b.options...),
 		}
@@ -68,7 +68,8 @@ func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2
 //
 // Each iteration streams one assistant turn, then decides by its stop reason:
 // a tool_use turn hands its local calls to execution on the next pass, and a
-// terminal turn ends the run. The pending batch is checked against the
+// terminal turn ends the run. A round in which a tool returned EndTurn ends
+// the run with StopYield once every call in it has finished. The pending batch is checked against the
 // iteration cap before it runs, which is what turns a capped run into a
 // StopIterations instead of a finished one.
 func (b *Backend) loop(ctx context.Context, request nacelle.Request, s *session) (outcome, bool) {
@@ -82,10 +83,14 @@ func (b *Backend) loop(ctx context.Context, request nacelle.Request, s *session)
 			run.stop = stop
 			return run, true
 		}
-		if history2, ok := runPending(ctx, request, s, history, pending); ok {
+		if history2, ok := runPending(ctx, s, history, pending); ok {
 			history = history2
 		} else {
 			return run, false
+		}
+		if s.sink.Yielded() {
+			run.stop = nacelle.StopYield
+			return run, true
 		}
 
 		iterations++
@@ -115,12 +120,12 @@ func capped(request nacelle.Request, pending []*nacelle.ToolEvent, iterations in
 
 // runPending executes a turn's queued local calls and appends their results to
 // the conversation, returning the grown history and whether the batch survived.
-func runPending(ctx context.Context, request nacelle.Request, s *session, history []sdk.BetaMessageParam, pending []*nacelle.ToolEvent) ([]sdk.BetaMessageParam, bool) {
+func runPending(ctx context.Context, s *session, history []sdk.BetaMessageParam, pending []*nacelle.ToolEvent) ([]sdk.BetaMessageParam, bool) {
 	if len(pending) == 0 {
 		return history, true
 	}
 	s.base.Messages = history
-	results, ok := runCalls(ctx, pending, s, nacelle.ToolsByName(request.Tools))
+	results, ok := runCalls(ctx, pending, s, s.sink.Tools)
 	if !ok {
 		return history, false
 	}

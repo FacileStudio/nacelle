@@ -42,7 +42,7 @@ func TestBeforeHookDenialStopsTheTool(t *testing.T) {
 	}
 	sink, result, err := runHookTool(t, hooks)
 
-	if seen.Point != nacelle.BeforeToolCall || seen.Tool != "search" || seen.Input != `{"query":"x"}` {
+	if seen.Point != nacelle.BeforeToolCall || seen.Call.Name != "search" || string(seen.Call.Input) != `{"query":"x"}` {
 		t.Errorf("event = %+v", seen)
 	}
 	assertDenied(t, refusal{sink: sink, result: result, err: err}, "not on my machine")

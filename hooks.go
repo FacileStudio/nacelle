@@ -2,6 +2,7 @@ package nacelle
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -42,13 +43,13 @@ const MaxInject = 10000
 
 // HookEvent is what a hook is told about the moment it fired.
 //
-// On tool-related points (BeforeToolCall, AfterToolCall), Input is raw JSON
-// exactly as the model produced it and Result is the tool's output. Retry
+// On tool-related points (BeforeToolCall, AfterToolCall), Call is the call
+// about to run or just finished, and Result is the tool's output. Retry
 // reports that an earlier hook already denied this same tool name during this
 // run, so a hook enforcing a policy can stand down rather than deny-loop a
 // model that keeps retrying.
 //
-// On SessionStart the event is empty: no tool has run, so there is no Input,
+// On SessionStart the event is empty: no tool has run, so there is no Call,
 // Result, Err or Retry to report.
 type HookEvent struct {
 	// Point is which moment fired. A hook registered at one point can be
@@ -56,11 +57,11 @@ type HookEvent struct {
 	// reasoning about a Result that will never arrive.
 	Point HookPoint
 
-	// Tool is the name of the tool about to run, or just finished.
-	Tool string
-
-	// Input is the raw JSON the model sent, on both points.
-	Input string
+	// Call is the tool call about to run, or just finished. On
+	// BeforeToolCall its Input already carries any replacement an earlier
+	// hook returned; on AfterToolCall it is the call as it actually ran,
+	// after Approve.
+	Call Call
 
 	// Result is what the tool returned, on AfterToolCall only.
 	Result string
@@ -74,7 +75,7 @@ type HookEvent struct {
 	Retry bool
 }
 
-// HookResult is what a hook decides. Both fields zero means allow, say
+// HookResult is what a hook decides. Every field zero means allow, say
 // nothing — the common case, and the reason the struct returns rather than
 // the hook returning two values: a future decision kind should not move
 // every hook's signature.
@@ -94,6 +95,11 @@ type HookResult struct {
 	// alternative — refusing the whole injection over a long tail —
 	// punishes the useful first 9,999 characters for the last one.
 	Inject string
+
+	// Input, when non-nil on BeforeToolCall, replaces the call's input
+	// for every later hook, for Approve and for the tool. It is ignored
+	// on every other point.
+	Input json.RawMessage
 }
 
 // Hook is one consumer decision at one point of the run. It holds its own
@@ -131,7 +137,7 @@ func WithTimeout(d time.Duration, h Hook) Hook {
 		case <-timer.C:
 			cancel()
 			if ev.Point == BeforeToolCall {
-				return HookResult{Deny: fmt.Sprintf("hook watching %q timed out after %s", ev.Tool, d)}
+				return HookResult{Deny: fmt.Sprintf("hook watching %q timed out after %s", ev.Call.Name, d)}
 			}
 			return HookResult{}
 		}

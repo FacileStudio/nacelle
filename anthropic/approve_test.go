@@ -32,7 +32,7 @@ func TestARefusedCallNeverReachesTheTool(t *testing.T) {
 		sse(t, messageStart(), messageDelta("end_turn"), `{"type":"message_stop"}`),
 	)})
 
-	deny := func(context.Context, string, json.RawMessage) bool { return false }
+	deny := nacelle.ApproveBool(func(context.Context, string, json.RawMessage) bool { return false })
 	events := collect(t, backend, nacelle.Request{
 		Tools:         []nacelle.Tool{tool},
 		Approve:       deny,
@@ -81,7 +81,7 @@ func TestAnApprovedCallReachesTheTool(t *testing.T) {
 		sse(t, messageStart(), messageDelta("end_turn"), `{"type":"message_stop"}`),
 	)})
 
-	allow := func(context.Context, string, json.RawMessage) bool { return true }
+	allow := nacelle.ApproveBool(func(context.Context, string, json.RawMessage) bool { return true })
 	events := collect(t, backend, nacelle.Request{
 		Tools:         []nacelle.Tool{tool},
 		Approve:       allow,
