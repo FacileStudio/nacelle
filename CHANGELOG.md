@@ -6,6 +6,12 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+## [0.32.1] - 2026-11-07
+
+### Fixed
+- `NewImageTool` checks its internal function assertion and returns an error instead of panicking.
+- `TestParallelSubAgentDetachSurvivesParentCancel` no longer depends on when the detached fan-out ends.
+
 ## [0.32.0] - 2026-11-07
 
 ### Added
