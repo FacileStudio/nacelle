@@ -71,7 +71,7 @@ func TestAnIsolatedSubprocessSeesWhatItWasGivenAndNothingElse(t *testing.T) {
 	}
 	defer func() { _ = set.Close() }()
 
-	got, err := find(t, set.Tools(), "helper_environment").Run(t.Context(), nil)
+	got, err := callTool(t.Context(), find(t, set.Tools(), "helper_environment"), nil)
 	if err != nil {
 		t.Fatalf("Run = %v, want it to succeed", err)
 	}
@@ -95,7 +95,7 @@ func TestASubprocessByDefaultInheritsTheParentEnvironment(t *testing.T) {
 	}
 	defer func() { _ = set.Close() }()
 
-	got, err := find(t, set.Tools(), "helper_environment").Run(t.Context(), nil)
+	got, err := callTool(t.Context(), find(t, set.Tools(), "helper_environment"), nil)
 	if err != nil {
 		t.Fatalf("Run = %v, want it to succeed", err)
 	}

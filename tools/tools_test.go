@@ -47,7 +47,7 @@ func call(t *testing.T, set *Set, name string, args any) (string, error) {
 	if err != nil {
 		t.Fatalf("encoding arguments: %v", err)
 	}
-	return tool.Run(context.Background(), encoded)
+	return callTool(context.Background(), tool, encoded)
 }
 
 // The model can use absolute paths and symlinks, which now resolve through the
@@ -189,13 +189,13 @@ func TestNoToolLetsTheModelChooseItsOwnRoot(t *testing.T) {
 
 	forbidden := map[string]bool{"root": true, "cwd": true, "dir": true, "directory": true, "workspace": true}
 	for _, tool := range all {
-		properties, ok := tool.Schema()["properties"].(map[string]any)
+		properties, ok := tool.Spec().Schema["properties"].(map[string]any)
 		if !ok {
 			continue
 		}
 		for field := range properties {
 			if forbidden[strings.ToLower(field)] {
-				t.Errorf("tool %q accepts a %q argument; the boundary must come from the host", tool.Name(), field)
+				t.Errorf("tool %q accepts a %q argument; the boundary must come from the host", tool.Spec().Name, field)
 			}
 		}
 	}
@@ -214,8 +214,7 @@ func TestLocalToolsReadOnlyDeclarations(t *testing.T) {
 		if !ok {
 			t.Fatalf("missing expected tool %q", name)
 		}
-		ro, ok := tool.(nacelle.ReadOnlyTool)
-		if !ok || !ro.IsReadOnly() {
+		if !tool.Spec().ReadOnly {
 			t.Errorf("tool %q expected read-only", name)
 		}
 	}
@@ -225,7 +224,7 @@ func TestLocalToolsReadOnlyDeclarations(t *testing.T) {
 		if !ok {
 			t.Fatalf("missing expected tool %q", name)
 		}
-		if ro, ok := tool.(nacelle.ReadOnlyTool); ok && ro.IsReadOnly() {
+		if tool.Spec().ReadOnly {
 			t.Errorf("tool %q expected mutating", name)
 		}
 	}
@@ -236,7 +235,13 @@ func TestWebToolsReadOnlyDeclarations(t *testing.T) {
 	if err != nil || len(fetchTools) != 1 {
 		t.Fatalf("WebFetch: %v, len %d", err, len(fetchTools))
 	}
-	if ro, ok := fetchTools[0].(nacelle.ReadOnlyTool); !ok || !ro.IsReadOnly() {
-		t.Errorf("web_fetch does not satisfy ReadOnlyTool")
+	if !fetchTools[0].Spec().ReadOnly {
+		t.Errorf("web_fetch is not declared read-only")
 	}
+}
+
+// callTool runs tool once outside the loop and returns the text it answered.
+func callTool(ctx context.Context, tool nacelle.Tool, input json.RawMessage) (string, error) {
+	result, err := tool.Run(ctx, nacelle.Call{Name: tool.Spec().Name, Input: input}, nil)
+	return result.Text, err
 }

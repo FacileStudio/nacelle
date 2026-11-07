@@ -18,7 +18,7 @@ import (
 // run that follows it will actually send.
 func sortedByName(tools []nacelle.Tool) []nacelle.Tool {
 	return slices.SortedFunc(slices.Values(tools), func(a, b nacelle.Tool) int {
-		return strings.Compare(a.Name(), b.Name())
+		return strings.Compare(a.Spec().Name, b.Spec().Name)
 	})
 }
 
@@ -33,11 +33,12 @@ func toolParams(tools []nacelle.Tool) []sdk.BetaToolUnionParam {
 	}
 	params := make([]sdk.BetaToolUnionParam, 0, len(tools))
 	for _, tool := range sortedByName(tools) {
+		spec := tool.Spec()
 		params = append(params, sdk.BetaToolUnionParam{
 			OfTool: &sdk.BetaToolParam{
-				Name:        tool.Name(),
-				Description: sdk.String(tool.Description()),
-				InputSchema: toolInputSchema(tool),
+				Name:        spec.Name,
+				Description: sdk.String(spec.Description),
+				InputSchema: toolInputSchema(spec),
 			},
 		})
 	}
@@ -48,8 +49,8 @@ func toolParams(tools []nacelle.Tool) []sdk.BetaToolUnionParam {
 // the caller is the request itself or tokens.go asking what it would cost to
 // declare it — neither reads anything on the tool but its name, description
 // and schema, so the same conversion serves both.
-func toolInputSchema(tool nacelle.Tool) sdk.BetaToolInputSchemaParam {
-	schema := tool.Schema()
+func toolInputSchema(spec nacelle.Spec) sdk.BetaToolInputSchemaParam {
+	schema := spec.Schema
 	input := sdk.BetaToolInputSchemaParam{}
 	if properties, ok := schema["properties"]; ok {
 		input.Properties = properties

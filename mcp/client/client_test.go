@@ -66,7 +66,7 @@ func TestARealSubprocessServerIsStartedAndItsToolsWork(t *testing.T) {
 	}
 	defer func() { _ = set.Close() }()
 
-	got, err := find(t, set.Tools(), "helper_echo").Run(t.Context(), json.RawMessage(`{"text":"over a pipe"}`))
+	got, err := callTool(t.Context(), find(t, set.Tools(), "helper_echo"), json.RawMessage(`{"text":"over a pipe"}`))
 	if err != nil {
 		t.Fatalf("Run = %v, want it to succeed", err)
 	}

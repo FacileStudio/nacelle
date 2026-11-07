@@ -13,23 +13,19 @@ func finished(index int, name string) Event {
 	return Event{Kind: KindToolResult, Tool: &ToolEvent{Index: index, Name: name}}
 }
 
-// outputTool is a Tool that also implements OutputTool, emitting each fragment
-// it is handed and returning a fixed result.
+// outputTool emits each fragment it is handed and returns a fixed result.
 type outputTool struct{}
 
-func (outputTool) Name() string           { return "outputter" }
-func (outputTool) Description() string    { return "an output-streaming tool" }
-func (outputTool) Schema() map[string]any { return nil }
-func (outputTool) Run(_ context.Context, _ json.RawMessage) (string, error) {
-	return "done", nil
+func (outputTool) Spec() Spec {
+	return Spec{Name: "outputter", Description: "an output-streaming tool"}
 }
-func (outputTool) RunOutput(_ context.Context, _ json.RawMessage, emit func(string)) (string, error) {
+func (outputTool) Run(_ context.Context, _ Call, emit func(string)) (Result, error) {
 	emit("one")
 	emit("two")
-	return "done", nil
+	return Result{Text: "done"}, nil
 }
 
-// A tool that implements OutputTool reports each emitted fragment as a
+// A tool that emits output reports each emitted fragment as a
 // KindToolOutput event ahead of its KindToolResult, so a consumer that drains
 // the sink while the tool runs sees progress rather than only the finale.
 func TestACallStreamsOutputBeforeTheResult(t *testing.T) {

@@ -34,7 +34,7 @@ func TestParallelCancelToolResponds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewParallelCancelTool: %v", err)
 	}
-	if tool.Name() != ParallelCancelToolName {
-		t.Errorf("name = %q, want %q", tool.Name(), ParallelCancelToolName)
+	if tool.Spec().Name != ParallelCancelToolName {
+		t.Errorf("name = %q, want %q", tool.Spec().Name, ParallelCancelToolName)
 	}
 }

@@ -35,7 +35,7 @@ func TestOneServerAnswersManyCallersWithoutCrossingThem(t *testing.T) {
 	for i := range callers {
 		waiting.Go(func() {
 			asked := fmt.Sprintf("caller-%d", i)
-			answers[i], failures[i] = echo.Run(t.Context(), json.RawMessage(`{"text":"`+asked+`"}`))
+			answers[i], failures[i] = callTool(t.Context(), echo, json.RawMessage(`{"text":"`+asked+`"}`))
 		})
 	}
 	waiting.Wait()

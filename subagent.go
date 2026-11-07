@@ -166,7 +166,7 @@ func finish(answer string, stop Stop) string {
 func withoutTool(tools []Tool, name string) []Tool {
 	kept := make([]Tool, 0, len(tools))
 	for _, tool := range tools {
-		if tool.Name() != name {
+		if tool.Spec().Name != name {
 			kept = append(kept, tool)
 		}
 	}

@@ -108,7 +108,7 @@ func TestDenialMarksTheNextCallAsARetry(t *testing.T) {
 		}},
 	}
 	tool := hookTool(t)
-	call := toolStep(tool.Name(), `{"query":"x"}`)
+	call := toolStep(tool.Spec().Name, `{"query":"x"}`)
 	runSteps(t, context.Background(), nacelle.Request{Hooks: hooks}, tool, call, call, textStep("done"))
 	if len(saw) != 2 || saw[0] || !saw[1] {
 		t.Fatalf("retry flags = %v; want [false true]", saw)
@@ -197,7 +197,7 @@ func TestConcurrentRunsShareTheSinkSafely(t *testing.T) {
 	for i := range inputs {
 		inputs[i] = fmt.Sprintf(`{"query":"%c"}`, 'a'+i)
 	}
-	got := runSteps(t, context.Background(), nacelle.Request{Hooks: hooks}, tool, toolStep(tool.Name(), inputs...), textStep("done"))
+	got := runSteps(t, context.Background(), nacelle.Request{Hooks: hooks}, tool, toolStep(tool.Spec().Name, inputs...), textStep("done"))
 	if race := got.toolEvents(); len(race) != 16 {
 		t.Fatalf("saw %d results, want 16", len(race))
 	}

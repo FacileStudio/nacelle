@@ -9,9 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"iter"
+
 	"github.com/FacileStudio/nacelle"
 	"github.com/FacileStudio/nacelle/openai"
-	"iter"
 )
 
 func collectStream(t *testing.T, stream iter.Seq2[nacelle.Event, error]) (string, bool, nacelle.Usage) {
@@ -208,24 +209,22 @@ func TestBackendStreamText(t *testing.T) {
 
 type testEchoTool struct{}
 
-func (testEchoTool) Name() string        { return "echo" }
-func (testEchoTool) Description() string { return "echo input" }
-func (testEchoTool) Schema() map[string]any {
-	return map[string]any{
+func (testEchoTool) Spec() nacelle.Spec {
+	return nacelle.Spec{Name: "echo", Description: "echo input", Schema: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"msg": map[string]any{"type": "string"},
 		},
-	}
+	}}
 }
-func (testEchoTool) Run(ctx context.Context, input json.RawMessage) (string, error) {
+func (testEchoTool) Run(_ context.Context, call nacelle.Call, _ func(string)) (nacelle.Result, error) {
 	var payload struct {
 		Msg string `json:"msg"`
 	}
-	if err := json.Unmarshal(input, &payload); err != nil {
-		return "", err
+	if err := json.Unmarshal(call.Input, &payload); err != nil {
+		return nacelle.Result{}, err
 	}
-	return "echo: " + payload.Msg, nil
+	return nacelle.Result{Text: "echo: " + payload.Msg}, nil
 }
 
 func TestBackendStreamToolCalling(t *testing.T) {

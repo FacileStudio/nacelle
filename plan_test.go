@@ -136,8 +136,7 @@ func TestBuiltInToolsDeclareWhetherTheyOnlyRead(t *testing.T) {
 			t.Errorf("no built-in tool is named %q", name)
 			continue
 		}
-		ro, declared := tool.(nacelle.ReadOnlyTool)
-		if got := declared && ro.IsReadOnly(); got != readOnly {
+		if got := tool.Spec().ReadOnly; got != readOnly {
 			t.Errorf("%s read-only = %v, want %v", name, got, readOnly)
 		}
 	}

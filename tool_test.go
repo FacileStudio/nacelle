@@ -22,7 +22,7 @@ func TestToolSchemaComesFromTheStructTags(t *testing.T) {
 		t.Fatalf("NewTool: %v", err)
 	}
 
-	schema := tool.Schema()
+	schema := tool.Spec().Schema
 	properties, ok := schema["properties"].(map[string]any)
 	if !ok {
 		t.Fatalf("schema has no properties: %#v", schema)
@@ -110,7 +110,7 @@ func TestBadArgumentsAreReturnedNotPanicked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTool: %v", err)
 	}
-	if _, err := tool.Run(context.Background(), json.RawMessage(`{"query": 12}`)); err == nil {
+	if _, err := callTool(context.Background(), tool, json.RawMessage(`{"query": 12}`)); err == nil {
 		t.Fatal("arguments that do not match the schema were accepted")
 	}
 }

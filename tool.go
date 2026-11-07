@@ -4,66 +4,48 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"reflect"
-
-	"github.com/invopop/jsonschema"
 )
+
+// Spec is everything the model and the loop know about a tool before it runs.
+//
+// Description is prompt engineering, not documentation: write it for a model
+// that has never seen the codebase, and say what the tool is for rather than
+// what it returns. Schema is the JSON Schema of the input, as a decoded
+// object. ReadOnly declares that the tool never changes anything, which lets
+// the loop run it beside other read-only calls.
+type Spec struct {
+	Name        string
+	Description string
+	Schema      map[string]any
+	ReadOnly    bool
+}
+
+// Result is what a tool returned: the text the model reads and any pictures
+// it reads beside it, such as a screenshot.
+type Result struct {
+	Text   string
+	Images []Image
+}
+
+// RunFunc runs one call. emit streams a fragment of output while the call
+// runs; each one reaches the stream as KindToolOutput and is never replayed
+// into the conversation. emit is never nil when the loop calls it.
+type RunFunc func(ctx context.Context, call Call, emit func(string)) (Result, error)
 
 // Tool is something the model can call.
 //
 // The interface is this package's own rather than any SDK's, because a tool
-// has to be callable by every backend. An Anthropic-shaped tool type in the
-// core would mean the OpenRouter backend converting from a vocabulary that has
-// nothing to do with it.
-type Tool interface {
-	// Name is what the model calls. It must be unique within one agent.
-	Name() string
-
-	// Description is prompt engineering, not documentation. Write it for a
-	// model that has never seen the codebase, and say what the tool is for
-	// rather than what it returns.
-	Description() string
-
-	// Schema is the JSON Schema of the tool's input, as a decoded object.
-	Schema() map[string]any
-
-	// Run executes the tool. The string it returns is what the model reads,
-	// so it should be text a reader could follow, not a debug dump.
-	//
-	// An error is not fatal: it is reported to the caller and handed back to
-	// the model, which is usually better placed to decide whether the task
-	// can still be finished.
-	//
-	// Run may be called from several goroutines at once, and an
-	// implementation has to be ready for it. A model can ask for two tools
-	// in one turn and a backend runs those together, so this happens on a
-	// single conversation before anything shares an Agent between
-	// requests. A tool that keeps a field between calls needs its own
-	// lock; a tool that only reads what it was built with needs nothing,
-	// which is why every tool in tools/ and mcp/client is the second kind.
-	Run(ctx context.Context, input json.RawMessage) (string, error)
-}
-
-// ReadOnlyTool is an optional interface a Tool may implement to declare
-// that it never mutates state. The agent loop runs a round's read-only calls
-// first and together, and every other call after them, one at a time.
-type ReadOnlyTool interface {
-	// IsReadOnly reports whether this tool only reads and never writes.
-	IsReadOnly() bool
-}
-
-// OutputTool is an optional interface a Tool may implement to stream its
-// output as it is produced, rather than returning it whole at completion.
+// has to be callable by every backend. Every capability a tool has is in its
+// Spec or its Result, so a decorator built with Wrap keeps all of them.
 //
-// emit is called by the tool for each fragment of output (bash calls it
-// once per completed line). The fragments surface to the stream as
-// KindToolOutput events and are never replayed into the conversation or
-// counted in usage; the final KindToolResult still carries the complete
-// return value, exactly as for a plain Tool. A consumer that does not want the
-// live stream simply ignores KindToolOutput and reads the result.
-type OutputTool interface {
-	Tool
-	RunOutput(ctx context.Context, input json.RawMessage, emit func(string)) (string, error)
+// Run reads call.Input, the raw JSON the model wrote. An error is not fatal:
+// it is reported and handed back to the model, which is usually better placed
+// to decide whether the task can still be finished. Run may be called from
+// several goroutines at once: read-only calls in one round run together, and
+// an Agent may be shared between requests.
+type Tool interface {
+	Spec() Spec
+	Run(ctx context.Context, call Call, emit func(string)) (Result, error)
 }
 
 // NewTool builds a tool from a Go function.
@@ -91,77 +73,75 @@ type ToolOptions struct {
 
 // NewToolWithOptions builds a tool from a Go function with additional options.
 func NewToolWithOptions[In any](name, description string, run func(ctx context.Context, in In) (string, error), opts ToolOptions) (Tool, error) {
+	return newFunction(name, description, opts, func(ctx context.Context, in In, _ func(string)) (Result, error) {
+		text, err := run(ctx, in)
+		return Result{Text: text}, err
+	})
+}
+
+// NewImageTool builds a tool whose answer includes pictures, such as a
+// browser screenshot, with the schema generated from In as NewTool does.
+func NewImageTool[In any](
+	name, description string,
+	run func(ctx context.Context, in In) (string, []Image, error),
+	opts ToolOptions,
+) (Tool, error) {
+	return newFunction(name, description, opts, func(ctx context.Context, in In, _ func(string)) (Result, error) {
+		text, images, err := run(ctx, in)
+		return Result{Text: text, Images: images}, err
+	})
+}
+
+// NewOutputTool builds a tool that streams its output as it is produced.
+// Each fragment it emits reaches the stream as KindToolOutput; the complete
+// return value still arrives whole on KindToolResult.
+func NewOutputTool[In any](name, description string, run func(ctx context.Context, in In, emit func(string)) (string, error)) (Tool, error) {
+	return newFunction(name, description, ToolOptions{}, func(ctx context.Context, in In, emit func(string)) (Result, error) {
+		text, err := run(ctx, in, emit)
+		return Result{Text: text}, err
+	})
+}
+
+// newFunction validates a function tool's name and description and reflects
+// its schema.
+func newFunction[In any](name, description string, opts ToolOptions, run func(context.Context, In, func(string)) (Result, error)) (Tool, error) {
 	if name == "" {
 		return nil, fmt.Errorf("nacelle: a tool needs a name")
 	}
 	if description == "" {
 		return nil, fmt.Errorf("nacelle: tool %q needs a description, which is what the model chooses it by", name)
 	}
-
 	schema, err := schemaOf[In]()
 	if err != nil {
 		return nil, fmt.Errorf("nacelle: tool %q: %w", name, err)
 	}
-
-	return &function[In]{name: name, description: description, schema: schema, run: run, readOnly: opts.ReadOnly}, nil
-}
-
-// schemaOf reflects In into a JSON Schema object.
-//
-// The reflector is told not to hoist definitions into $defs and not to add a
-// $ref indirection: a tool schema is sent inline in a request, and a document
-// whose real content sits behind a reference to a sibling definition is one
-// more thing between the model and the argument names.
-func schemaOf[In any]() (map[string]any, error) {
-	var zero In
-	if kind := reflect.TypeOf(&zero).Elem().Kind(); kind != reflect.Struct {
-		return nil, fmt.Errorf("input must be a struct, not %s: a model names its arguments", kind)
-	}
-
-	reflector := jsonschema.Reflector{
-		DoNotReference:             true,
-		AllowAdditionalProperties:  false,
-		RequiredFromJSONSchemaTags: true,
-	}
-	encoded, err := json.Marshal(reflector.Reflect(&zero))
-	if err != nil {
-		return nil, fmt.Errorf("encoding the input schema: %w", err)
-	}
-
-	schema := map[string]any{}
-	if err := json.Unmarshal(encoded, &schema); err != nil {
-		return nil, fmt.Errorf("decoding the input schema: %w", err)
-	}
-	delete(schema, "$schema")
-	delete(schema, "$id")
-	return schema, nil
+	spec := Spec{Name: name, Description: description, Schema: schema, ReadOnly: opts.ReadOnly}
+	return &function[In]{spec: spec, run: run}, nil
 }
 
 // function is a Tool backed by a Go func.
 type function[In any] struct {
-	name        string
-	description string
-	schema      map[string]any
-	run         func(ctx context.Context, in In) (string, error)
-	readOnly    bool
+	spec Spec
+	run  func(ctx context.Context, in In, emit func(string)) (Result, error)
 }
 
-func (f *function[In]) Name() string           { return f.name }
-func (f *function[In]) Description() string    { return f.description }
-func (f *function[In]) Schema() map[string]any { return f.schema }
-func (f *function[In]) IsReadOnly() bool       { return f.readOnly }
+// Spec describes the function tool.
+func (f *function[In]) Spec() Spec { return f.spec }
 
 // Run decodes the model's arguments and calls the function.
 //
 // A decode failure is returned rather than panicking through the backend: the
 // model produced the arguments, so the model is who needs to hear that they
 // did not fit, and it can usually fix them on the next turn.
-func (f *function[In]) Run(ctx context.Context, input json.RawMessage) (string, error) {
+func (f *function[In]) Run(ctx context.Context, call Call, emit func(string)) (Result, error) {
 	var decoded In
-	if len(input) > 0 {
-		if err := json.Unmarshal(input, &decoded); err != nil {
-			return "", fmt.Errorf("the arguments did not match the schema: %w", err)
+	if len(call.Input) > 0 {
+		if err := json.Unmarshal(call.Input, &decoded); err != nil {
+			return Result{}, fmt.Errorf("the arguments did not match the schema: %w", err)
 		}
 	}
-	return f.run(ctx, decoded)
+	if emit == nil {
+		emit = func(string) {}
+	}
+	return f.run(ctx, decoded, emit)
 }

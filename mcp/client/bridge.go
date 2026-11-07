@@ -142,9 +142,10 @@ type tool struct {
 	timeout     time.Duration
 }
 
-func (t *tool) Name() string           { return t.name }
-func (t *tool) Description() string    { return t.description }
-func (t *tool) Schema() map[string]any { return t.schema }
+// Spec describes the bridged tool under its composed name.
+func (t *tool) Spec() nacelle.Spec {
+	return nacelle.Spec{Name: t.name, Description: t.description, Schema: t.schema}
+}
 
 // Run calls the tool on the server and flattens what comes back.
 //
@@ -160,11 +161,11 @@ func (t *tool) Schema() map[string]any { return t.schema }
 // An error result comes back as a Go error, which is exactly what
 // nacelle.Tool.Run documents an error for: it is handed to the model, and the
 // model is usually the one best placed to fix an argument and try again.
-func (t *tool) Run(ctx context.Context, input json.RawMessage) (string, error) {
+func (t *tool) Run(ctx context.Context, call nacelle.Call, _ func(string)) (nacelle.Result, error) {
 	arguments := map[string]any{}
-	if len(input) > 0 {
-		if err := json.Unmarshal(input, &arguments); err != nil {
-			return "", fmt.Errorf("the arguments did not match the schema: %w", err)
+	if len(call.Input) > 0 {
+		if err := json.Unmarshal(call.Input, &arguments); err != nil {
+			return nacelle.Result{}, fmt.Errorf("the arguments did not match the schema: %w", err)
 		}
 	}
 
@@ -173,12 +174,12 @@ func (t *tool) Run(ctx context.Context, input json.RawMessage) (string, error) {
 
 	result, err := t.session.CallTool(ctx, &sdk.CallToolParams{Name: t.remote, Arguments: arguments})
 	if err != nil {
-		return "", t.failed(ctx, err)
+		return nacelle.Result{}, t.failed(ctx, err)
 	}
 
 	answer := flatten(result)
 	if result.IsError {
-		return "", errors.New(answer)
+		return nacelle.Result{}, errors.New(answer)
 	}
-	return answer, nil
+	return nacelle.Result{Text: answer}, nil
 }

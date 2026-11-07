@@ -64,26 +64,19 @@ func (s *sink) settle(result string, err error, note string) (string, error) {
 	return note + "\n\n" + result, nil
 }
 
-// invoke runs the tool through the richest interface it implements.
+// invoke runs the tool, routing what it emits to the stream as output.
 func (s *sink) invoke(ctx context.Context, tool Tool, call Call) (string, []Image, error) {
-	switch tool := tool.(type) {
-	case ImageTool:
-		return tool.RunImages(ctx, call.Input)
-	case OutputTool:
-		result, err := tool.RunOutput(ctx, call.Input, func(fragment string) {
-			if fragment == "" {
-				return
-			}
-			s.report(Event{
-				Kind: KindToolOutput,
-				Tool: &ToolEvent{ID: call.ID, Index: call.Index, Name: call.Name},
-				Text: fragment,
-			})
+	result, err := tool.Run(ctx, call, func(fragment string) {
+		if fragment == "" {
+			return
+		}
+		s.report(Event{
+			Kind: KindToolOutput,
+			Tool: &ToolEvent{ID: call.ID, Index: call.Index, Name: call.Name},
+			Text: fragment,
 		})
-		return result, nil, err
-	}
-	result, err := tool.Run(ctx, call.Input)
-	return result, nil, err
+	})
+	return result.Text, result.Images, err
 }
 
 // toolResultEvent builds the one event shape every outcome of a tool call
@@ -104,7 +97,7 @@ func toolResultEvent(call Call, result string, err error) Event {
 // declaration to trust.
 func plan(calls []Call, tools map[string]Tool) (readers, writers []int) {
 	for position, call := range calls {
-		if ro, ok := tools[call.Name].(ReadOnlyTool); ok && ro.IsReadOnly() {
+		if tool, ok := tools[call.Name]; ok && tool.Spec().ReadOnly {
 			readers = append(readers, position)
 			continue
 		}

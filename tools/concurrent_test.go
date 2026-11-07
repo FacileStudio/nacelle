@@ -1,6 +1,7 @@
 package tools_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -73,7 +74,7 @@ func readTogether(t *testing.T, read nacelle.Tool, callers int) ([]string, []err
 	for i := range callers {
 		waiting.Go(func() {
 			asked := fmt.Sprintf(`{"path":"file-%d.txt"}`, i)
-			answers[i], failures[i] = read.Run(t.Context(), json.RawMessage(asked))
+			answers[i], failures[i] = call(t.Context(), read, json.RawMessage(asked))
 		})
 	}
 	waiting.Wait()
@@ -86,10 +87,16 @@ func named(t *testing.T, built []nacelle.Tool, name string) nacelle.Tool {
 	t.Helper()
 
 	for _, tool := range built {
-		if tool.Name() == name {
+		if tool.Spec().Name == name {
 			return tool
 		}
 	}
 	t.Fatalf("no tool named %q", name)
 	return nil
+}
+
+// call runs tool once outside the loop and returns the text it answered.
+func call(ctx context.Context, tool nacelle.Tool, input json.RawMessage) (string, error) {
+	result, err := tool.Run(ctx, nacelle.Call{Name: tool.Spec().Name, Input: input}, nil)
+	return result.Text, err
 }

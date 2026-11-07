@@ -105,7 +105,7 @@ func (s *sink) hasYielded() bool {
 func ToolsByName(tools []Tool) map[string]Tool {
 	index := make(map[string]Tool, len(tools))
 	for _, tool := range tools {
-		index[tool.Name()] = tool
+		index[tool.Spec().Name] = tool
 	}
 	return index
 }

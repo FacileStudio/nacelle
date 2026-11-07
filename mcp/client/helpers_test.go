@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"maps"
 	"os"
@@ -141,7 +142,7 @@ func find(t *testing.T, tools []nacelle.Tool, name string) nacelle.Tool {
 	t.Helper()
 
 	for _, tool := range tools {
-		if tool.Name() == name {
+		if tool.Spec().Name == name {
 			return tool
 		}
 	}
@@ -153,7 +154,7 @@ func find(t *testing.T, tools []nacelle.Tool, name string) nacelle.Tool {
 func names(tools []nacelle.Tool) []string {
 	found := make([]string, 0, len(tools))
 	for _, tool := range tools {
-		found = append(found, tool.Name())
+		found = append(found, tool.Spec().Name)
 	}
 	return found
 }
@@ -213,4 +214,10 @@ func waitGone(pid int) bool {
 		time.Sleep(10 * time.Millisecond)
 	}
 	return false
+}
+
+// callTool runs tool once outside the loop and returns the text it answered.
+func callTool(ctx context.Context, tool nacelle.Tool, input json.RawMessage) (string, error) {
+	result, err := tool.Run(ctx, nacelle.Call{Name: tool.Spec().Name, Input: input}, nil)
+	return result.Text, err
 }

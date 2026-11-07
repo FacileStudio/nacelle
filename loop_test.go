@@ -161,7 +161,7 @@ type ran struct {
 // policy request carries. request.Tools defaults to tool alone.
 func runTool(t *testing.T, ctx context.Context, request nacelle.Request, tool nacelle.Tool, input string) ran {
 	t.Helper()
-	return runSteps(t, ctx, request, tool, toolStep(tool.Name(), input), textStep("done"))
+	return runSteps(t, ctx, request, tool, toolStep(tool.Spec().Name, input), textStep("done"))
 }
 
 // runSteps plays steps through the loop with tool available, and records the
@@ -208,4 +208,10 @@ func (r ran) toolEvents() []nacelle.Event {
 		}
 	}
 	return events
+}
+
+// callTool runs tool once outside the loop and returns the text it answered.
+func callTool(ctx context.Context, tool nacelle.Tool, input json.RawMessage) (string, error) {
+	result, err := tool.Run(ctx, nacelle.Call{Name: tool.Spec().Name, Input: input}, nil)
+	return result.Text, err
 }

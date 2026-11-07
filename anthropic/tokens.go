@@ -43,11 +43,12 @@ func countableTools(tools []nacelle.Tool) []sdk.BetaMessageCountTokensParamsTool
 	}
 	adapted := make([]sdk.BetaMessageCountTokensParamsToolUnion, 0, len(tools))
 	for _, tool := range sortedByName(tools) {
+		spec := tool.Spec()
 		adapted = append(adapted, sdk.BetaMessageCountTokensParamsToolUnion{
 			OfTool: &sdk.BetaToolParam{
-				Name:        tool.Name(),
-				Description: sdk.String(tool.Description()),
-				InputSchema: toolInputSchema(tool),
+				Name:        spec.Name,
+				Description: sdk.String(spec.Description),
+				InputSchema: toolInputSchema(spec),
 			},
 		})
 	}

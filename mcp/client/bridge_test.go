@@ -108,7 +108,7 @@ func TestATitleStandsInForAMissingDescription(t *testing.T) {
 	}
 	tools := bridgeTools(t, Command{Name: "s"}, mount)
 
-	if got := find(t, tools, "s_titled").Description(); got != "Look something up." {
+	if got := find(t, tools, "s_titled").Spec().Description; got != "Look something up." {
 		t.Errorf("Description() = %q, want the title", got)
 	}
 }
@@ -118,7 +118,7 @@ func TestATitleStandsInForAMissingDescription(t *testing.T) {
 func TestArgumentsReachTheServerAndTheAnswerComesBack(t *testing.T) {
 	tools := bridgeTools(t, Command{Name: "helper"}, register)
 
-	got, err := find(t, tools, "helper_echo").Run(t.Context(), json.RawMessage(`{"text":"round trip"}`))
+	got, err := callTool(t.Context(), find(t, tools, "helper_echo"), json.RawMessage(`{"text":"round trip"}`))
 	if err != nil {
 		t.Fatalf("Run = %v, want it to succeed", err)
 	}
@@ -139,7 +139,7 @@ func TestAToolErrorComesBackAsAGoError(t *testing.T) {
 	}
 	tools := bridgeTools(t, Command{Name: "s"}, mount)
 
-	got, err := find(t, tools, "s_fail").Run(t.Context(), nil)
+	got, err := callTool(t.Context(), find(t, tools, "s_fail"), nil)
 	if err == nil {
 		t.Fatalf("Run = %q, want an error", got)
 	}
@@ -153,7 +153,7 @@ func TestAToolErrorComesBackAsAGoError(t *testing.T) {
 func TestArgumentsThatAreNotAnObjectAreRefusedBeforeTheCall(t *testing.T) {
 	tools := bridgeTools(t, Command{Name: "helper"}, register)
 
-	if _, err := find(t, tools, "helper_echo").Run(t.Context(), json.RawMessage(`["round trip"]`)); err == nil {
+	if _, err := callTool(t.Context(), find(t, tools, "helper_echo"), json.RawMessage(`["round trip"]`)); err == nil {
 		t.Fatal("Run accepted a JSON array as arguments")
 	}
 }
@@ -170,7 +170,7 @@ func TestAServerThatNeverAnswersLosesTheCallAndNotTheAgent(t *testing.T) {
 	waiting := find(t, built, "s_wait")
 	done := make(chan error, 1)
 	go func() {
-		_, err := waiting.Run(context.Background(), nil)
+		_, err := callTool(context.Background(), waiting, nil)
 		done <- err
 	}()
 

@@ -222,7 +222,7 @@ func supports(cfg Config) error {
 func validateTools(tools []Tool) error {
 	seen := make(map[string]bool, len(tools))
 	for _, tool := range tools {
-		name := tool.Name()
+		name := tool.Spec().Name
 		if name == "" {
 			return fmt.Errorf("nacelle: a tool has no name")
 		}

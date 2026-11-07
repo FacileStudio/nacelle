@@ -87,7 +87,7 @@ func TestParallelSubAgentEmptyTasks(t *testing.T) {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
 
-	_, err = sub.Run(context.Background(), json.RawMessage(`{"tasks":[]}`))
+	_, err = callTool(context.Background(), sub, json.RawMessage(`{"tasks":[]}`))
 	if err == nil {
 		t.Error("an empty task list was accepted")
 	}
@@ -122,7 +122,7 @@ func runLenient(t *testing.T, input string, want int) {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
 
-	result, err := sub.Run(context.Background(), json.RawMessage(input))
+	result, err := callTool(context.Background(), sub, json.RawMessage(input))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestParallelSubAgentNonStringTasks(t *testing.T) {
 		t.Fatalf("NewParallelSubAgentTool: %v", err)
 	}
 
-	_, err = sub.Run(context.Background(), json.RawMessage(`{"tasks":42}`))
+	_, err = callTool(context.Background(), sub, json.RawMessage(`{"tasks":42}`))
 	if err == nil {
 		t.Error("a numeric tasks field was accepted")
 	}

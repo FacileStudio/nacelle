@@ -2,7 +2,6 @@ package openai_test
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,15 +16,14 @@ type testPlannedTool struct {
 	onRun    func()
 }
 
-func (t testPlannedTool) Name() string           { return t.name }
-func (t testPlannedTool) Description() string    { return t.name }
-func (t testPlannedTool) Schema() map[string]any { return map[string]any{"type": "object"} }
-func (t testPlannedTool) IsReadOnly() bool       { return t.readOnly }
-func (t testPlannedTool) Run(_ context.Context, _ json.RawMessage) (string, error) {
+func (t testPlannedTool) Spec() nacelle.Spec {
+	return nacelle.Spec{Name: t.name, Description: t.name, Schema: map[string]any{"type": "object"}, ReadOnly: t.readOnly}
+}
+func (t testPlannedTool) Run(context.Context, nacelle.Call, func(string)) (nacelle.Result, error) {
 	if t.onRun != nil {
 		t.onRun()
 	}
-	return t.name + " ok", nil
+	return nacelle.Result{Text: t.name + " ok"}, nil
 }
 
 func newPlanningServer() *httptest.Server {

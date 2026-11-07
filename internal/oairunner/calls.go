@@ -42,15 +42,16 @@ func toolParams(tools []nacelle.Tool) []oai.ChatCompletionToolUnionParam {
 	}
 	ordered := slices.Clone(tools)
 	slices.SortStableFunc(ordered, func(a, b nacelle.Tool) int {
-		return strings.Compare(a.Name(), b.Name())
+		return strings.Compare(a.Spec().Name, b.Spec().Name)
 	})
 
 	params := make([]oai.ChatCompletionToolUnionParam, 0, len(tools))
 	for _, tool := range ordered {
+		spec := tool.Spec()
 		params = append(params, oai.ChatCompletionFunctionTool(oai.FunctionDefinitionParam{
-			Name:        tool.Name(),
-			Description: oai.String(tool.Description()),
-			Parameters:  oai.FunctionParameters(tool.Schema()),
+			Name:        spec.Name,
+			Description: oai.String(spec.Description),
+			Parameters:  oai.FunctionParameters(spec.Schema),
 		}))
 	}
 	return params

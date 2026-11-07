@@ -62,7 +62,7 @@ func TestARemoteServersToolsAreCallableOverHTTP(t *testing.T) {
 	}
 	defer func() { _ = set.Close() }()
 
-	answer, err := find(t, set.Tools(), "docs_echo").Run(t.Context(), json.RawMessage(`{"text":"over the wire"}`))
+	answer, err := callTool(t.Context(), find(t, set.Tools(), "docs_echo"), json.RawMessage(`{"text":"over the wire"}`))
 	if err != nil {
 		t.Fatalf("Run = %v, want the echo back", err)
 	}

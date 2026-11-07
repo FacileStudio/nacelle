@@ -2,16 +2,16 @@ package google_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"iter"
+
 	"github.com/FacileStudio/nacelle"
 	"github.com/FacileStudio/nacelle/google"
-	"iter"
 )
 
 func collectStream(t *testing.T, stream iter.Seq2[nacelle.Event, error]) (string, bool, nacelle.Usage) {
@@ -211,18 +211,16 @@ func TestBackendStreamText(t *testing.T) {
 
 type testGoogleTool struct{}
 
-func (testGoogleTool) Name() string        { return "calc" }
-func (testGoogleTool) Description() string { return "calculate" }
-func (testGoogleTool) Schema() map[string]any {
-	return map[string]any{
+func (testGoogleTool) Spec() nacelle.Spec {
+	return nacelle.Spec{Name: "calc", Description: "calculate", Schema: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"expr": map[string]any{"type": "string"},
 		},
-	}
+	}}
 }
-func (testGoogleTool) Run(ctx context.Context, input json.RawMessage) (string, error) {
-	return "42", nil
+func (testGoogleTool) Run(context.Context, nacelle.Call, func(string)) (nacelle.Result, error) {
+	return nacelle.Result{Text: "42"}, nil
 }
 
 func TestBackendStreamToolCalling(t *testing.T) {
