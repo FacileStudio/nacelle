@@ -32,11 +32,11 @@ The tronc shape — flat packages at the root, one module, heavy dependencies pu
 separate submodules so they land only on the apps that want them.
 
 ```
-nacelle/                 core: Agent, Backend seam, events, tools, usage   [built]
-  anthropic/             backend: SDK tool runner + server-side MCP        [built]
+nacelle/                 core: Agent, the one agent loop, events, tools    [built]
+  anthropic/             provider: Messages API + server-side MCP          [built]
   google/                backend: Google Gemini via OpenAI-compat endpoint [built]
   openai/                backend: OpenAI API with reasoning & tool support [built]
-  openrouter/            backend: hand-rolled loop, 400+ models, real cost [built]
+  openrouter/            provider: 400+ models, real cost                  [built]
   mcp/                   MCP server connections and credentials            [built]
   tools/                 local tool set: read, write, edit, find, search, run [built]
   sandbox/    (submodule) container and microVM execution for Atelier
@@ -117,7 +117,7 @@ line in the configuration, and this is a multi-model SDK.
 
 | | `anthropic` | `openrouter` |
 |---|---|---|
-| Tool loop | the SDK's runner | hand-rolled here |
+| Tool loop | nacelle's, shared | nacelle's, shared |
 | Remote MCP servers | ✅ the API calls them itself | ❌ no equivalent in the schema |
 | Streamed reasoning | ✅ | ✅ `delta.reasoning` |
 | Effort | ✅ | ✅ mapped to `reasoning.effort` |
@@ -282,10 +282,10 @@ Three things that are not negotiable, because they are what makes the core embed
 | Decision | Why |
 |---|---|
 | Go, and the suite conventions | Every consumer is a Go service; tronc and porte set the shape |
-| The SDK's tool runner, not a hand-rolled loop | `anthropic-sdk-go` ships `toolrunner`; hand-rolling is strictly more code and more bugs |
+| One agent loop for every provider | Two hand-written loops drifted: one planned read-only calls and one did not. `NewBackend` owns the cap, tool execution, hooks and Approve once; a provider streams one turn |
 | The API's MCP connector for remote servers, not an MCP client | `mcp_servers` + `mcp_toolset` calls remote servers server-side; the client half is only needed for stdio servers |
 | `claude-opus-5`, adaptive thinking, no `budget_tokens` | `budget_tokens` is a 400 on Opus 5; `output_config.effort` replaces it |
-| The backend seam is the whole loop, not one request | Anthropic ships a runner and server-side MCP; a backend without them must drive the loop itself. A request-level seam would have forced the Anthropic path to give up a tested loop to look symmetrical with one that cannot have it |
+| The provider seam is one turn; `Backend` stays the whole run | Server-side MCP runs inside Anthropic's turn, so a turn-level seam costs it nothing, and consumers still wrap a whole run (`Retry`) |
 | Capabilities are named features, not tiers | A consumer needs to know MCP specifically is missing, not that a backend is "limited" |
 | `openai-go` for the OpenRouter transport | The SSE parsing is where the bugs live — its comment/blank-line handling is the fix for the exact `: OPENROUTER PROCESSING` crash. Module pruning keeps it to four indirect deps |
 | Prompt caching on, with no way off | Break-even is two requests sharing a prefix; a tool-using run always makes them |

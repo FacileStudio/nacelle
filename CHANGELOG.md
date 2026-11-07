@@ -6,6 +6,86 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-11-07
+
+### Added
+- **`Provider` and `NewBackend`.** A `Provider` streams one assistant turn
+  (`Turn(ctx, Request)`); `NewBackend(p)` wraps it in the agent loop, which
+  owns the iteration cap, tool execution, hooks, `Approve`, `EndTurn` and the
+  transcript. Every backend in this module is now a provider whose `Stream`
+  delegates to `NewBackend`.
+- **`KindMessage` and `Transcript`.** Each committed assistant turn and each
+  round of tool results arrives as a `KindMessage` with `Event.Message`,
+  carrying `Reasoning` that was shown, `ToolResult.Images` and the turn's
+  `Finish`. `Transcript(seq)` drains a run into those messages and its
+  `KindDone`, keeping what came before an error.
+- **`Native` part.** Provider-only content (an Anthropic signed thinking block,
+  a remote MCP exchange, a compaction block, OpenRouter `reasoning_details`)
+  travels in the transcript and is sent back only to the provider that wrote
+  it. A signed thinking block now survives a tool loop and a resumed run.
+- **`MarshalMessages` and `UnmarshalMessages`**, backed by `Message.MarshalJSON`
+  and `UnmarshalJSON`, cover every part type, `Image`, `Document` and `Native`
+  included. The part tags match the shape Bulle already stores.
+- **`ToolEvent.Images`** on `KindToolResult`.
+- **`Spec`, `Result`, `RunFunc` and `Wrap`.** A decorator built with `Wrap`
+  keeps the inner tool's read-only flag, streamed output and images.
+- **`Router`.** A tool that dispatches to another; the loop routes it before
+  hooks and `Approve`, so they see the inner tool.
+- **`mcp/client.Catalog(tools, threshold)`** mounts a large tool set behind
+  `search_tools`, `get_tool_details` and `call_tool`.
+
+### Changed
+- **Every backend plans tool calls.** Read-only calls in a round run first and
+  together, the rest after them one at a time in the model's order. The
+  Anthropic backend used to run every call concurrently and ignore `ReadOnly`;
+  the OpenAI-schema backends ran every call one at a time.
+- **OpenAI-schema backends announce calls when the turn ends**, before
+  `KindTurn`, rather than one at a time as each ran. A failed call's message
+  to the model still starts with `the tool failed: `.
+- **Tool output reaches the stream as it is reported** instead of on a 20ms
+  poll.
+- **Bridged MCP tools** return viewable images (`image/png`, `jpeg`, `gif`,
+  `webp`) as `Result.Images` instead of `[image, …, not shown]`, and a tool
+  annotated `readOnlyHint` is read-only.
+
+### Removed
+- `ToolSink`, `RunTool`, `RunToolImages`, `Invocation` and `PlanCalls`. Tools
+  run only inside the loop.
+- `Capabilities.ToolCallPlanner`. Every backend plans now.
+- `ReadOnlyTool`, `OutputTool` and `ImageTool`, and `Tool.Name`,
+  `Tool.Description` and `Tool.Schema`.
+
+### Migrating from v0.32
+- **Tools you implemented by hand.** Replace `Name`, `Description` and `Schema`
+  with `Spec() nacelle.Spec{Name, Description, Schema, ReadOnly}`, and
+  `Run(ctx, input)` with `Run(ctx, call nacelle.Call, emit func(string))
+  (nacelle.Result, error)`; read `call.Input`. Drop `IsReadOnly`, `RunOutput`
+  and `RunImages`: set `Spec.ReadOnly`, call `emit`, return `Result.Images`.
+  `NewTool`, `NewToolWithOptions`, `NewImageTool` and `NewOutputTool` are
+  unchanged.
+- **Decorators.** A struct that embedded `Tool` to override one method becomes
+  `nacelle.Wrap(inner, specRewrite, runWrapper)`; either half may be nil. Drop
+  any code that forwarded `IsReadOnly` or `RunImages`.
+- **Reading a tool's metadata.** `tool.Name()` is `tool.Spec().Name`, and so on.
+- **Calling a tool directly.** `tool.Run(ctx, nacelle.Call{Name: name, Input:
+  input}, nil)` returns a `Result`; `emit` may be nil outside the loop.
+- **Backends you wrote.** Implement `Provider.Turn` for one turn (stream the
+  deltas, a `KindToolCall` per finished call, one `KindTurn`, then a
+  `KindMessage` with the assistant message) and wrap it with
+  `nacelle.NewBackend`. A wrapper around a `Backend` (`Retry`, a hydrating
+  decorator) needs no change.
+- **Tests that ran a tool through `RunTool` and a `ToolSink`.** Script a
+  `Provider` whose turns ask for the call and run it through `NewBackend`; the
+  result is the `KindToolResult` event and the user `KindMessage`.
+- **Rebuilding the transcript from events.** Append every `KindMessage`, or call
+  `nacelle.Transcript(agent.Stream(ctx, conversation))`. Store it with
+  `MarshalMessages`, which keeps images, reasoning and `Native` parts.
+- **Consumers that count events by kind.** Streams now carry `KindMessage`; a
+  `switch` with no default is unaffected.
+- **MCP catalogs.** Replace a hand-built search/details/call set with
+  `client.Catalog(set.Tools(), threshold)`. Approve and hooks now see the inner
+  tool's name, not `call_tool`.
+
 ## [0.32.1] - 2026-11-07
 
 ### Fixed

@@ -106,7 +106,20 @@ type Capabilities struct {
 	MinBudget     int64 // smallest Thinking.Budget the API takes; 0 = no floor
 	Cost          bool
 	TokenCounting bool
+	ContextWindow int64
 }
+
+// Provider is one model API, one assistant turn per Turn call.
+type Provider interface {
+	Name() string
+	Capabilities() Capabilities
+	Turn(ctx context.Context, request Request) iter.Seq2[Event, error]
+	CountTokens(ctx context.Context, request Request) (int64, error)
+}
+
+// NewBackend drives a Provider through the agent loop: iteration cap, tool
+// execution (read-only calls first and together), hooks, Approve, EndTurn.
+func NewBackend(p Provider) Backend
 
 type Request struct {
 	System        string
@@ -116,8 +129,16 @@ type Request struct {
 	Thinking      Thinking
 	MaxTokens     int64
 	MaxIterations int
+	Approve       Approve
+	Hooks         map[HookPoint][]Hook
 }
 ```
+
+Every backend in this module is a `Provider` whose `Stream` is
+`nacelle.NewBackend(b).Stream`. A Provider's `Turn` streams `KindText`,
+`KindThinking`, a `KindToolCall` per finished call, `KindToolResult` only for a
+call it ran on its own side (remote MCP) or discarded, one `KindTurn`, and last
+a `KindMessage` carrying the assistant message. It never runs a local tool.
 
 ### Message and Part
 
@@ -151,10 +172,21 @@ type ToolResult struct {
 	Name   string
 	Result string
 	Failed bool
-	Images []Image // pictures an ImageTool returned, such as a screenshot
+	Images []Image // pictures the tool returned, such as a screenshot
 }
 
 type Finish struct{ Stop Stop }
+
+// Native is a provider's own wire form for what the parts above cannot say
+// (a signed thinking block, an MCP exchange, reasoning details). Only the
+// provider named sends it back.
+type Native struct {
+	Provider string
+	Data     json.RawMessage
+}
+
+func MarshalMessages(messages []Message) ([]byte, error)
+func UnmarshalMessages(data []byte) ([]Message, error)
 
 func UserText(text string) Message      // Message{RoleUser, []Part{Text{text}}}
 func AssistantText(text string) Message // Message{RoleAssistant, []Part{Text{text}}}
@@ -172,6 +204,7 @@ const (
 	KindToolOutput Kind = "tool_output"
 	KindToolResult Kind = "tool_result"
 	KindTurn       Kind = "turn"
+	KindMessage    Kind = "message"
 	KindDone       Kind = "done"
 )
 
@@ -184,6 +217,7 @@ const (
 	StopContext    Stop = "context"
 	StopRefusal    Stop = "refusal"
 	StopIterations Stop = "iterations"
+	StopYield      Stop = "yield"
 	StopOther      Stop = "other"
 )
 func (s Stop) Complete() bool // true only for StopEnd
@@ -194,14 +228,19 @@ type Event struct {
 	Tool  *ToolEvent // for KindToolCall, KindToolOutput and KindToolResult
 	Usage Usage      // for KindTurn (this turn) and KindDone (run total)
 	Stop  Stop       // for KindTurn and KindDone
+	Message *Message // for KindMessage: a message now in the transcript
 }
+
+// Transcript drains a run into the messages it committed and its KindDone.
+func Transcript(seq iter.Seq2[Event, error]) ([]Message, Event, error)
 
 type ToolEvent struct {
 	ID        string
 	Index     int
 	Name      string
 	Input     string // raw JSON the model produced
-	Result    string // KindToolResult only
+	Result    string  // KindToolResult only
+	Images    []Image // KindToolResult only
 	Err       error
 	Duration  time.Duration
 	Discarded bool // true when this call never ran — see architecture.md
@@ -227,51 +266,53 @@ func (u Usage) CacheHitRate() float64 // 0–1, excludes write tokens from the d
 ### Tool
 
 ```go
-type Tool interface {
-	Name() string
-	Description() string
-	Schema() map[string]any
-	Run(ctx context.Context, input json.RawMessage) (string, error)
+type Spec struct {
+	Name        string
+	Description string
+	Schema      map[string]any
+	ReadOnly    bool
 }
 
+type Result struct {
+	Text   string
+	Images []Image
+}
+
+type Tool interface {
+	Spec() Spec
+	Run(ctx context.Context, call Call, emit func(string)) (Result, error)
+}
+
+type RunFunc func(ctx context.Context, call Call, emit func(string)) (Result, error)
+
+func Wrap(t Tool, spec func(Spec) Spec, run func(next RunFunc) RunFunc) Tool
+
 func NewTool[In any](name, description string, run func(ctx context.Context, in In) (string, error)) (Tool, error)
+func NewToolWithOptions[In any](name, description string, run func(ctx context.Context, in In) (string, error), opts ToolOptions) (Tool, error)
+func NewImageTool[In any](name, description string, run func(ctx context.Context, in In) (string, []Image, error), opts ToolOptions) (Tool, error)
+func NewOutputTool[In any](name, description string, run func(ctx context.Context, in In, emit func(string)) (string, error)) (Tool, error)
+func ToolsByName(tools []Tool) map[string]Tool
 ```
 
 `In` must be a struct — a model calls a tool by naming arguments, and a bare string or slice
 has no names to give. The schema is generated from `In`'s `json` and `jsonschema` struct tags.
 
-A tool whose answer includes pictures implements `ImageTool`. `anthropic` puts the images inside
-the `tool_result` block; the OpenAI-compatible backends (`openai`, `openrouter`, `google`) send
-them in a user turn right after the tool messages, labelled with the call id, because a tool
-message there holds text only.
+Every capability a tool has is in its `Spec` or its `Result`, so a decorator built with `Wrap`
+keeps them. `emit` streams `KindToolOutput`. `Result.Images` travel beside the text: `anthropic`
+puts them inside the `tool_result` block; the OpenAI-compatible backends send them in a user
+turn right after the tool messages, labelled with the call id.
+
+### Router
 
 ```go
-type ImageTool interface {
-	Tool
-	RunImages(ctx context.Context, input json.RawMessage) (string, []Image, error)
+type Router interface {
+	Route(input json.RawMessage) (Tool, json.RawMessage, error)
 }
-
-func NewImageTool[In any](name, description string, run func(ctx context.Context, in In) (string, []Image, error), opts ToolOptions) (Tool, error)
 ```
 
-### ToolSink, Invocation, RunTool
-
-For backend implementors; not otherwise interesting to a consumer.
-
-```go
-type ToolSink struct{ /* unexported */ }
-func (s *ToolSink) Report(event Event)
-func (s *ToolSink) Drain() []Event // sorted by ToolEvent.Index, since the last call
-
-type Invocation struct {
-	ID    string
-	Index int
-}
-
-func RunTool(ctx context.Context, tool Tool, call Invocation, input json.RawMessage, sink *ToolSink) (string, error)
-func RunToolImages(ctx context.Context, tool Tool, call Invocation, input json.RawMessage, sink *ToolSink) (string, []Image, error)
-func ToolsByName(tools []Tool) map[string]Tool
-```
+A Tool that also implements `Router` dispatches to another tool. The loop routes the call before
+the hooks and `Approve` run, so they and the result event see the inner tool's name and input.
+`mcp/client.Catalog(tools, threshold)` uses it for `call_tool`.
 
 ### Retry
 

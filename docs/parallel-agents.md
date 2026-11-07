@@ -85,7 +85,7 @@ If using a shared task list:
 - `TestParallelSubAgentSharedConfig`: config not mutated ✓
 - `TestParallelSubAgentEmptyTasks`: empty list fails ✓
 - `TestParallelSubAgentMaxConcurrency`: clamped to 8 ✓
-- `TestParallelSubAgentDirectCall`: RunTool works ✓
+- `TestParallelSubAgentDirectCall`: a direct call works ✓
 
 ### nacelle-tui (pending)
 - `go build ./...` silent

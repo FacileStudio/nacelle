@@ -23,22 +23,39 @@ Four properties make that possible, and none is negotiable:
   A consumer that needs its own vocabulary here has found a bug in the abstraction, not a
   missing feature.
 
-## The `Backend` seam
+## The `Backend` and `Provider` seams
 
 ```go
 type Backend interface {
 	Name() string
 	Capabilities() Capabilities
 	Stream(ctx context.Context, request Request) iter.Seq2[Event, error]
+	CountTokens(ctx context.Context, request Request) (int64, error)
 }
+
+type Provider interface {
+	Name() string
+	Capabilities() Capabilities
+	Turn(ctx context.Context, request Request) iter.Seq2[Event, error]
+	CountTokens(ctx context.Context, request Request) (int64, error)
+}
+
+func NewBackend(p Provider) Backend
 ```
 
-The seam sits at the whole loop rather than at a single request, because the loop is exactly
-what differs between the two backends this package ships. Anthropic's SDK ships a tool-calling
-loop of its own and connects to remote MCP servers on its own side of the request; an
-OpenAI-schema backend has neither, and drives the conversation itself, turn by turn. An
-interface at the request level would have forced the Anthropic path to give up the tested loop
-it gets for free, to look symmetrical with a backend that cannot have it.
+The agent loop exists once, in `NewBackend` (`loop.go`, `execute.go`). It asks the provider for
+one turn, runs the local calls that turn made, appends both to the transcript and asks again,
+until the model answers, `MaxIterations` is reached or a tool calls `EndTurn`. Read-only calls
+in a round run first and together; the rest run after them, one at a time, in the model's
+order. Tool events wake the loop as they are reported, so `KindToolOutput` streams live.
+
+A provider owns only its wire format: building the request from the transcript, streaming one
+turn, and handing back the assistant message as a `KindMessage`. What the generic parts cannot
+carry — a signed thinking block, a remote MCP exchange, OpenRouter's reasoning details — travels
+as a `Native` part that only the provider that wrote it sends back. Anthropic still runs remote
+MCP servers on its own side, inside `Turn`.
+
+`Backend` stays at the whole run so a consumer can wrap one, as `Retry` does.
 
 `Agent.Stream` is the only entry point a consumer calls. It fills in the agent's configured
 `System`, `Tools`, `MCP`, `Thinking` and `MaxTokens` around the conversation handed
@@ -167,21 +184,21 @@ running into.
 
 ```go
 type Tool interface {
-	Name() string
-	Description() string
-	Schema() map[string]any
-	Run(ctx context.Context, input json.RawMessage) (string, error)
+	Spec() Spec
+	Run(ctx context.Context, call Call, emit func(string)) (Result, error)
 }
 ```
 
 `Tool` is this package's own interface rather than either SDK's, because a tool has to be
-callable by every backend — an Anthropic-shaped tool type in the core would mean the
-OpenRouter backend converting from a vocabulary that has nothing to do with it. `NewTool`
-builds one from a plain Go function, generating its JSON Schema from the input struct's tags.
+callable by every backend. Every capability a tool has is in its `Spec` (name, description,
+schema, read-only) or its `Result` (text, images), so a decorator built with `Wrap` cannot lose
+one. `NewTool` builds a tool from a plain Go function, generating its JSON Schema from the input
+struct's tags.
 
-A tool's error is not fatal to the run: it is reported to the caller through `ToolSink` and
-handed back to the model as the tool's result, which is usually better placed than the caller
-to decide whether the task can still be finished.
+A tool's error is not fatal to the run: it is reported on the stream and handed back to the
+model as the tool's result, which is usually better placed than the caller to decide whether
+the task can still be finished. A `Router` tool (the MCP catalog's `call_tool`) is resolved to
+the tool it names before hooks and `Approve` run.
 
 ## Retry
 
