@@ -55,25 +55,6 @@ func awaitParallelResults(got <-chan nacelle.ParallelTaskResult, count int, t *t
 	return results
 }
 
-func awaitParallelResultsWithErrors(got <-chan nacelle.ParallelTaskResult, count int, t *testing.T) []string {
-	t.Helper()
-	results := make([]string, 0, count)
-	deadline := time.After(5 * time.Second)
-	for len(results) < count {
-		select {
-		case r := <-got:
-			if r.Err != "" {
-				results = append(results, "error:"+r.Err)
-			} else {
-				results = append(results, r.Result)
-			}
-		case <-deadline:
-			t.Fatalf("timed out waiting for results, got %v", results)
-		}
-	}
-	return results
-}
-
 func TestParallelSubAgentDetachStreamsResults(t *testing.T) {
 	backend := newLoop(
 		[]step{toolStep("echo", `{}`), textStep("result1")},
