@@ -72,9 +72,7 @@ const (
 	// for tools. The work is unfinished and nothing went wrong.
 	StopIterations Stop = "iterations"
 
-	// StopYield is a tool having ended the run through EndTurn. The
-	// work is not finished: the run is waiting on something outside it,
-	// usually an answer from the user, and resumes with a new run.
+	// StopYield is a tool having ended the run through EndTurn.
 	StopYield Stop = "yield"
 
 	// StopOther is a reason this package does not have a name for. It is
@@ -141,15 +139,12 @@ type ToolEvent struct {
 	// that wants the model's order gets it without paying for that.
 	Index int
 
-	// Name is the tool's name. For a tool reached over MCP it is the name
-	// the server exposes. On KindToolResult it is the tool that ran, which
-	// differs from the call's when Approve redirected it.
+	// Name is the tool's name, as the server exposes it for MCP. On
+	// KindToolResult it is the tool that ran, after any Approve redirect.
 	Name string
 
-	// Input is the raw JSON the model produced. It is not decoded here
-	// because the core does not know any tool's schema. On KindToolResult
-	// it is the input the tool ran with, after any hook or Approve
-	// replaced it.
+	// Input is the raw JSON the model produced, undecoded because the core
+	// knows no tool's schema. On KindToolResult it is the input that ran.
 	Input string
 
 	// Result is what the tool returned, on KindToolResult only.
@@ -172,14 +167,11 @@ type ToolEvent struct {
 	// backend that discarded it never replays it either.
 	Discarded bool
 
-	// Refused reports that this call never ran because Config.Approve
-	// declined it, not because the tool itself failed. Err still carries
-	// what the model is told either way — this is only the distinction a
-	// consumer wants to render differently: a policy decision, not a bug.
+	// Refused reports that a hook or Config.Approve stopped this call
+	// before it ran: a policy decision, not a bug. Err is what the model reads.
 	Refused bool
 
-	// Source is where this tool call came from. Empty for local tools and
-	// ToolSourceMCP for MCP tools.
+	// Source is empty for local tools and ToolSourceMCP for MCP tools.
 	Source Source
 }
 

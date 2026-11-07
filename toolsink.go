@@ -55,15 +55,6 @@ func (s *ToolSink) Report(event Event) {
 	s.pending = append(s.pending, event)
 }
 
-// Yielded reports whether a tool returned EndTurn during this run. A backend
-// checks it after a round of calls has finished and, when true, ends the run
-// with StopYield instead of asking the model for another turn.
-func (s *ToolSink) Yielded() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.yielded
-}
-
 // Drain returns everything reported since the last call, in the order the
 // model asked for it.
 //

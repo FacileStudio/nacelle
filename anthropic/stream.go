@@ -69,9 +69,9 @@ func (b *Backend) Stream(ctx context.Context, request nacelle.Request) iter.Seq2
 // Each iteration streams one assistant turn, then decides by its stop reason:
 // a tool_use turn hands its local calls to execution on the next pass, and a
 // terminal turn ends the run. A round in which a tool returned EndTurn ends
-// the run with StopYield once every call in it has finished. The pending batch is checked against the
-// iteration cap before it runs, which is what turns a capped run into a
-// StopIterations instead of a finished one.
+// the run with StopYield once every call in it has finished. The pending
+// batch is checked against the iteration cap before it runs, which is what
+// turns a capped run into a StopIterations instead of a finished one.
 func (b *Backend) loop(ctx context.Context, request nacelle.Request, s *session) (outcome, bool) {
 	var run outcome
 	history := toParams(request.Messages)
@@ -83,14 +83,10 @@ func (b *Backend) loop(ctx context.Context, request nacelle.Request, s *session)
 			run.stop = stop
 			return run, true
 		}
-		if history2, ok := runPending(ctx, s, history, pending); ok {
-			history = history2
-		} else {
-			return run, false
-		}
-		if s.sink.Yielded() {
+		var ok bool
+		if history, ok = runPending(ctx, s, history, pending); !ok || s.sink.Yielded() {
 			run.stop = nacelle.StopYield
-			return run, true
+			return run, ok
 		}
 
 		iterations++

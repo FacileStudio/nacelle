@@ -58,12 +58,11 @@ func TestARedirectToAnUnknownToolIsRefused(t *testing.T) {
 // for the tool.
 func TestABeforeHookRewritesTheInput(t *testing.T) {
 	var approved string
+	rewrite := func(context.Context, nacelle.HookEvent) nacelle.HookResult {
+		return nacelle.HookResult{Input: json.RawMessage(`{"query":"hooked"}`)}
+	}
 	sink := &nacelle.ToolSink{
-		Hooks: map[nacelle.HookPoint][]nacelle.Hook{nacelle.BeforeToolCall: {
-			func(context.Context, nacelle.HookEvent) nacelle.HookResult {
-				return nacelle.HookResult{Input: json.RawMessage(`{"query":"hooked"}`)}
-			},
-		}},
+		Hooks: map[nacelle.HookPoint][]nacelle.Hook{nacelle.BeforeToolCall: {rewrite}},
 		Approve: func(_ context.Context, call nacelle.Call) nacelle.Decision {
 			approved = string(call.Input)
 			return nacelle.Decision{}

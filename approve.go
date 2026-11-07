@@ -76,9 +76,17 @@ func EndTurn(result string) error { return &endTurn{result: result} }
 
 // endedTurn reports whether err is, or wraps, an EndTurn, and its result.
 func endedTurn(err error) (string, bool) {
-	var ended *endTurn
-	if errors.As(err, &ended) {
+	if ended, ok := errors.AsType[*endTurn](err); ok {
 		return ended.result, true
 	}
 	return "", false
+}
+
+// Yielded reports whether a tool returned EndTurn during this run. A backend
+// checks it after a round of calls has finished and, when true, ends the run
+// with StopYield instead of asking the model for another turn.
+func (s *ToolSink) Yielded() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.yielded
 }
