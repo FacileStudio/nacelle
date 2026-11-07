@@ -6,6 +6,76 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-07
+
+### Added
+- **`EndTurn` and `StopYield`.** A tool returns `nacelle.EndTurn(result)` to
+  finish its call with `result` and end the run without another model
+  request. The call is recorded as a successful `KindToolResult`, the other
+  calls in the same round still finish, and the run ends with a `KindDone`
+  whose `Stop` is `StopYield`. Both loops (`anthropic` and the OpenAI-schema
+  backends) honour it. `ToolSink.Yielded` is how a backend checks for it.
+- **Approve decisions.** `Approve` takes a `Call{ID, Name, Index, Input}` and
+  returns a `Decision{Deny, Name, Input, Note}`. The zero `Decision` approves.
+  `Deny` refuses with a reason the model reads. `Name` redirects the call to
+  another registered tool, `Input` replaces its arguments, and `Note` is
+  prepended to the result. `ToolSink.Tools` is the registry a redirect
+  resolves against. `ApproveBool` adapts a yes-or-no callback.
+- **Hooks can rewrite input.** A `BeforeToolCall` hook that returns
+  `HookResult.Input` replaces the call's input for later hooks, for `Approve`
+  and for the tool.
+- **`LegacyToolNames()`** maps the pre-v0.32 built-in tool names to the new
+  ones, for replaying stored transcripts.
+- **`edit_file` `replace_all`**, and a `path` argument on `grep` and `glob`.
+
+### Changed
+- **Built-in tools use the names Claude Code, Gemini CLI and OpenCode use.**
+  `search_content` is `grep(pattern, path, glob)`, `find_files` is
+  `glob(pattern, path)`, and `run_command` is
+  `bash(command, timeout_ms, description)`. `edit_file` takes `path`,
+  `old_string`, `new_string` and `replace_all`. `parallel_agents` tasks are
+  `{description, prompt}` objects. The old argument names still decode:
+  `file_path` for `path`, `old`/`new` for `old_string`/`new_string`, `timeout`
+  in seconds for `timeout_ms`, and bare strings or `{title, task}` for tasks.
+- **`KindToolResult` reports what ran.** `ToolEvent.Name` and `ToolEvent.Input`
+  on a result are the tool and input after any hook rewrite or `Approve`
+  redirect. `KindToolCall` still reports what the model asked for.
+- **`HookEvent.Call` replaces `HookEvent.Tool` and `HookEvent.Input`.**
+
+### Removed
+- `Agent.CompactConversation` and the `BeforeCompact` and `AfterCompact` hook
+  points. Nothing called them.
+- The untyped context keys `anthropic` read to turn on compaction (`"compact"`,
+  `"compact-2026-01-12"`, `"anthropic-beta"`). `anthropic.Config.Compact` and
+  `anthropic.WithCompact` still work.
+
+### Migrating from v0.31
+- **Approve.** Wrap an existing callback:
+  `Approve: nacelle.ApproveBool(oldApprove)`. To edit a call instead, return
+  `nacelle.Decision{Input: edited, Note: "edited by the user"}`. A refusal's
+  error now reads `nacelle: "<tool>" was refused: <Deny>`.
+- **Sub-agent options.** `SubAgentOptions.Approve` and
+  `ParallelSubAgentOptions.Approve` have the new type too; wrap them the same
+  way.
+- **Hooks.** Read `ev.Call.Name` for `ev.Tool` and `string(ev.Call.Input)` for
+  `ev.Input`. Delete any `BeforeCompact` or `AfterCompact` registration.
+- **Backends you wrote.** Set `ToolSink.Tools` to `nacelle.ToolsByName(request.Tools)`
+  so redirects resolve, and after each round of calls end the run with
+  `StopYield` when `sink.Yielded()` is true.
+- **Tool names.** Anything that matches on `run_command`, `search_content` or
+  `find_files` (approval rules, UI icons, tests) matches `bash`, `grep` and
+  `glob` instead. Map names in a stored conversation through
+  `nacelle.LegacyToolNames()` before replaying it, because a provider can
+  reject a history that calls a tool the request does not declare.
+- **Tool arguments.** Code that reads `edit_file` input reads `old_string` and
+  `new_string`. `bash` takes `timeout_ms` in milliseconds.
+- **Compaction.** Replace `context.WithValue(ctx, "compact", true)` and the
+  other string keys with `anthropic.WithCompact(ctx)` or
+  `anthropic.Config{Compact: true}`. Replace `CompactConversation` with
+  `nacelle.Trim` and `Agent.CountTokens`.
+- **Exhaustive `Stop` switches** gain a `StopYield` case. `Stop.Complete`
+  reports false for it.
+
 ## [0.31.0] - 2026-11-03
 
 ### Added
