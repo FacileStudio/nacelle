@@ -6,8 +6,8 @@ package nacelle
 // every backend here accepts. It belongs on a user message only: no model API
 // takes an image back from the assistant side.
 type Image struct {
-	MediaType string
-	Data      []byte
+	MediaType string `json:"media_type"`
+	Data      []byte `json:"data"`
 }
 
 // Document is a file the caller attached, carried as its raw bytes.
