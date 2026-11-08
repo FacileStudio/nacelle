@@ -31,11 +31,11 @@
 // above it. Both become interesting when something asks for them, with a
 // shape to put them in.
 //
-// Sampling and elicitation — a server asking the client to run a completion,
-// or to put a question to the person — are not answered. They invert the
-// direction the loop runs in: a tool call would have to re-enter the agent
-// that is waiting on it, and re-entrancy is a thing to design rather than to
-// discover in a stack trace.
+// Sampling — a server asking the client to run a completion — is not
+// answered: a tool call would have to re-enter the agent that is waiting on
+// it. Elicitation is answered only through [Remote.Elicit], which hands the
+// question to the host rather than to the model, because a confirmation the
+// model could give itself confirms nothing.
 //
 // notifications/tools/list_changed is ignored. The tool set is fixed when a
 // request is built, so a server that grows a tool mid-run has nowhere to put
@@ -72,8 +72,15 @@ import (
 // calls are still in flight tears the pipe out from under them; the host owns
 // the lifetime precisely so there is one obvious place for that to happen.
 type Set struct {
-	sessions []*sdk.ClientSession
-	tools    []nacelle.Tool
+	links []link
+	tools []nacelle.Tool
+}
+
+// link is one open session and the configuration it was opened with, kept
+// together so [Set.ToolsFor] can list it again under another caller.
+type link struct {
+	session *sdk.ClientSession
+	about   details
 }
 
 // Connect starts every command and collects the tools they expose.
@@ -162,12 +169,11 @@ func (s *Set) attach(ctx context.Context, server Server, taken map[string]bool) 
 		return err
 	}
 
-	impl := &sdk.Implementation{Name: "nacelle", Version: implementationVersion}
-	session, err := sdk.NewClient(impl, nil).Connect(ctx, transport, nil)
+	session, err := open(about).Connect(ctx, transport, nil)
 	if err != nil {
 		return fmt.Errorf("nacelle/mcp/client: starting server %q: %w%s", about.name, err, notes.note())
 	}
-	s.sessions = append(s.sessions, session)
+	s.links = append(s.links, link{session: session, about: about})
 
 	bridged, err := bridge(ctx, session, about, taken)
 	if err != nil {
@@ -175,6 +181,39 @@ func (s *Set) attach(ctx context.Context, server Server, taken map[string]bool) 
 	}
 	s.tools = append(s.tools, bridged...)
 	return nil
+}
+
+// open builds the SDK client for one server: the tools/list cache in front of
+// it, and an elicitation handler only when the host can answer one, since
+// setting it is what advertises the capability.
+func open(about details) *sdk.Client {
+	options := &sdk.ClientOptions{}
+	if about.elicit != nil {
+		options.ElicitationHandler = elicitor(about.name, about.elicit)
+	}
+	client := sdk.NewClient(&sdk.Implementation{Name: "nacelle", Version: implementationVersion}, options)
+	client.AddSendingMiddleware(newListCache(about.identity).middleware)
+	return client
+}
+
+// ToolsFor lists every server's tools again under ctx and bridges them, for a
+// host whose servers answer each user with a different tool set. The lists
+// come from the cache while the servers' ttlMs allows, shared when a server
+// marks them public and per [Remote.Identity] when it marks them private.
+//
+// The tools it returns call through the same sessions as [Set.Tools], so
+// they are closed by the same Close.
+func (s *Set) ToolsFor(ctx context.Context) ([]nacelle.Tool, error) {
+	var tools []nacelle.Tool
+	taken := make(map[string]bool)
+	for _, link := range s.links {
+		bridged, err := bridge(ctx, link.session, link.about, taken)
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools, bridged...)
+	}
+	return tools, nil
 }
 
 // Tools is every bridged tool, ready to go into Config.Tools.
@@ -190,13 +229,13 @@ func (s *Set) Tools() []nacelle.Tool { return s.tools }
 // early would leave the remaining servers running — which is the leak this
 // method exists to prevent, arrived at by a different route.
 func (s *Set) Close() error {
-	failures := make([]error, 0, len(s.sessions))
-	for _, session := range s.sessions {
-		if err := session.Close(); err != nil {
+	failures := make([]error, 0, len(s.links))
+	for _, link := range s.links {
+		if err := link.session.Close(); err != nil {
 			failures = append(failures, err)
 		}
 	}
-	s.sessions = nil
+	s.links = nil
 	s.tools = nil
 	return errors.Join(failures...)
 }

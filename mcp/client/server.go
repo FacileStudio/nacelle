@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -61,9 +62,11 @@ type Server interface {
 // be widened every time a field is added, on both implementations, for
 // nothing.
 type details struct {
-	name    string
-	allowed []string
-	timeout time.Duration
+	name     string
+	allowed  []string
+	timeout  time.Duration
+	elicit   Elicit
+	identity func(context.Context) string
 }
 
 // timeoutOr is the timeout a server asked for, or the default it did not.

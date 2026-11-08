@@ -61,6 +61,7 @@ func bridge(ctx context.Context, session *sdk.ClientSession, about details, take
 			description: describeTool(remote),
 			schema:      schema,
 			readOnly:    remote.Annotations != nil && remote.Annotations.ReadOnlyHint,
+			hints:       hintsOf(remote.Annotations),
 			session:     session,
 			timeout:     about.timeout,
 		})
@@ -140,13 +141,14 @@ type tool struct {
 	description string
 	schema      map[string]any
 	readOnly    bool
+	hints       *nacelle.Hints
 	session     *sdk.ClientSession
 	timeout     time.Duration
 }
 
 // Spec describes the bridged tool under its composed name.
 func (t *tool) Spec() nacelle.Spec {
-	return nacelle.Spec{Name: t.name, Description: t.description, Schema: t.schema, ReadOnly: t.readOnly}
+	return nacelle.Spec{Name: t.name, Description: t.description, Schema: t.schema, ReadOnly: t.readOnly, Hints: t.hints}
 }
 
 // Run calls the tool on the server and renders what comes back.
@@ -171,7 +173,7 @@ func (t *tool) Run(ctx context.Context, call nacelle.Call, _ func(string)) (nace
 		}
 	}
 
-	ctx, cancel := context.WithTimeoutCause(ctx, t.timeout, errCallTimeout)
+	ctx, cancel := context.WithTimeoutCause(withCall(ctx, t.remote, arguments), t.timeout, errCallTimeout)
 	defer cancel()
 
 	result, err := t.session.CallTool(ctx, &sdk.CallToolParams{Name: t.remote, Arguments: arguments})
@@ -184,4 +186,26 @@ func (t *tool) Run(ctx context.Context, call nacelle.Call, _ func(string)) (nace
 		return nacelle.Result{}, errors.New(answer.Text)
 	}
 	return answer, nil
+}
+
+// hintsOf resolves a tool's annotations against the protocol's defaults:
+// destructive and open-world unless the server says otherwise. A read-only
+// tool destroys nothing whatever its destructiveHint says, which is how the
+// specification scopes that hint.
+func hintsOf(annotations *sdk.ToolAnnotations) *nacelle.Hints {
+	hints := &nacelle.Hints{Destructive: true, OpenWorld: true}
+	if annotations == nil {
+		return hints
+	}
+	hints.Idempotent = annotations.IdempotentHint
+	if annotations.DestructiveHint != nil {
+		hints.Destructive = *annotations.DestructiveHint
+	}
+	if annotations.OpenWorldHint != nil {
+		hints.OpenWorld = *annotations.OpenWorldHint
+	}
+	if annotations.ReadOnlyHint {
+		hints.Destructive = false
+	}
+	return hints
 }
