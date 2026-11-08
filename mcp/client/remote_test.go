@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -179,5 +180,30 @@ func TestNoStandaloneStreamIsHeldOpenForMessagesWeIgnore(t *testing.T) {
 	defer mu.Unlock()
 	if methods[http.MethodGet] != 0 {
 		t.Errorf("the transport opened %d standalone SSE stream(s), want none", methods[http.MethodGet])
+	}
+}
+
+// A private address is reachable only through an explicit PrivateHosts entry
+// for that very host, and link-local never is.
+func TestPrivateHostsAllowOnlyWhatTheyList(t *testing.T) {
+	if err := (Remote{Name: "app", URL: "http://10.0.0.1/mcp", PrivateHosts: []string{"10.0.0.2"}}).check(); err == nil {
+		t.Error("check let a private address through on another host's entry")
+	}
+	if err := (Remote{Name: "app", URL: "http://10.0.0.1/mcp", PrivateHosts: []string{"10.0.0.1"}}).check(); err != nil {
+		t.Errorf("check = %v, want the listed internal host allowed", err)
+	}
+	if err := (Remote{Name: "app", URL: "http://169.254.169.254/mcp", PrivateHosts: []string{"169.254.169.254"}}).check(); err == nil {
+		t.Error("check let a link-local address through because it was listed")
+	}
+}
+
+// A per-call token and a static Authorization header cannot both win.
+func TestATokenAndAnAuthorizationHeaderAreRefusedTogether(t *testing.T) {
+	remote := Remote{
+		Name: "app", URL: "http://127.0.0.1/mcp", Headers: map[string]string{"authorization": "Bearer x"},
+		Token: func(context.Context) (string, error) { return "y", nil },
+	}
+	if err := remote.check(); err == nil {
+		t.Error("check accepted both a Token and an Authorization header")
 	}
 }

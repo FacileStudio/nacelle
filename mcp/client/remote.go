@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
+	"strings"
 	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -68,10 +70,50 @@ type Remote struct {
 	// Timeout bounds one tools/call and the connect-time handshake.
 	// Defaults to DefaultCallTimeout.
 	Timeout time.Duration
+
+	// Token mints the bearer token for each request, from the context of the
+	// call that sends it, so one connection can carry a different user's
+	// delegated token on every call. Connect calls it with its own context.
+	// A 401 calls it once more, with [Refreshing] true, and replays the
+	// request; a second 401 is the caller's answer. Setting both Token and an
+	// Authorization header is refused.
+	Token TokenSource
+
+	// Identity names who the token for ctx belongs to. A tools/list result the
+	// server marks cacheScope "private" is cached under it, and never shared
+	// with another identity. With a Token and no Identity, private results are
+	// not cached at all, because there is nothing safe to key them by.
+	Identity func(ctx context.Context) string
+
+	// PrivateHosts are host names this server may reach at a private address,
+	// such as a first-party service on an internal network. The SSRF guard
+	// refuses every private address by default, and nothing in the mcpServers
+	// format can set this, so an internal target is always a choice made in Go
+	// for one server. Link-local addresses stay refused whatever is listed.
+	PrivateHosts []string
+
+	// Elicit answers a server that needs a person's input before it finishes
+	// a call, such as a confirmation before sending mail. Without it this
+	// client does not advertise elicitation, and a well-behaved server takes
+	// its no-confirmation path instead.
+	Elicit Elicit
 }
 
 func (r Remote) details() details {
-	return details{name: r.Name, allowed: r.AllowedTools, timeout: timeoutOr(r.Timeout)}
+	return details{
+		name: r.Name, allowed: r.AllowedTools, timeout: timeoutOr(r.Timeout),
+		elicit: r.Elicit, identity: r.identity(),
+	}
+}
+
+// identity is the key private tool lists are cached under. A server with no
+// per-call token has one principal, so the empty identity is safe for it; a
+// server with one and no Identity gets none, which turns private caching off.
+func (r Remote) identity() func(context.Context) string {
+	if r.Token == nil || r.Identity != nil {
+		return r.Identity
+	}
+	return func(context.Context) string { return uncacheable }
 }
 
 // check refuses an endpoint that cannot be dialled.
@@ -102,102 +144,64 @@ func (r Remote) check() error {
 				"the Streamable HTTP transport is the one MCP defines for a client that dials out",
 			r.Name, parsed.Scheme)
 	}
-	if err := checkTarget(parsed.Host, r.Name); err != nil {
-		return err
+	if r.Token != nil && hasAuthorization(r.Headers) {
+		return fmt.Errorf("nacelle/mcp/client: server %q sets both Token and an Authorization header; keep one", r.Name)
 	}
-	return nil
+	return checkTarget(parsed.Host, r.Name, r.PrivateHosts)
+}
+
+// hasAuthorization reports whether headers carry an Authorization header in
+// any spelling, since HTTP header names are case-insensitive.
+func hasAuthorization(headers map[string]string) bool {
+	for key := range headers {
+		if strings.EqualFold(key, "Authorization") {
+			return true
+		}
+	}
+	return false
 }
 
 // checkTarget resolves a hostname and rejects private and link-local addresses.
 //
-// Loopback is allowed — local development servers and Docker-mapped ports are
-// the most common MCP Remote targets — but cloud metadata (169.254.x.x) and
-// RFC 1918 private ranges are blocked as SSRF defence. Callers running an MCP
-// server on a private network can set it up over HTTPS with a DNS name instead
-// of a bare IP, or use the stdio transport for a fully local setup.
+// Loopback is allowed: local development servers and Docker-mapped ports are
+// the most common targets. Cloud metadata (169.254.x.x) and the RFC 1918 and
+// ULA private ranges are refused as SSRF defence, unless the host is one the
+// caller listed in private. Link-local is refused even then, because no
+// first-party MCP server lives at a metadata address.
 //
-// The host may be a bare IP, a name, or name:port. resolve strips the port.
-func checkTarget(hostport, name string) error {
+// The host may be a bare IP, a name, or name:port.
+func checkTarget(hostport, name string, private []string) error {
 	host, _, err := net.SplitHostPort(hostport)
 	if err != nil {
 		host = hostport
 	}
+	trusted := slices.ContainsFunc(private, func(listed string) bool { return strings.EqualFold(listed, host) })
 
 	ips, _ := net.DefaultResolver.LookupNetIP(context.Background(), "ip", host)
-
 	for _, ip := range ips {
-		if ip.IsLoopback() {
-			continue
-		}
-		if ip.IsPrivate() {
-			return fmt.Errorf(
-				"nacelle/mcp/client: server %q at %q resolves to %s, which is a private address — "+
-					"SSRF risk; use a DNS name or the stdio transport", name, host, ip)
-		}
-		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		switch {
+		case ip.IsLoopback():
+		case ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast():
 			return fmt.Errorf(
 				"nacelle/mcp/client: server %q at %q resolves to %s, which is a link-local address — "+
 					"SSRF risk to cloud metadata endpoints", name, host, ip)
+		case ip.IsPrivate() && !trusted:
+			return fmt.Errorf(
+				"nacelle/mcp/client: server %q at %q resolves to %s, which is a private address — "+
+					"SSRF risk; list the host in PrivateHosts if it is a first-party internal server", name, host, ip)
 		}
 	}
 	return nil
 }
 
-// dial builds the Streamable HTTP transport, with SSRF-hardened transport.
+// dial builds the Streamable HTTP transport over the SSRF guard, the
+// configured headers and the per-call token, in that order outward.
 func (r Remote) dial() (sdk.Transport, *diagnostics, error) {
-	transport := &sdk.StreamableClientTransport{Endpoint: r.URL, DisableStandaloneSSE: true}
-	wrap := &secured{}
-	if len(r.Headers) > 0 {
-		wrap.headers = r.Headers
+	var chain http.RoundTripper = authorized{base: http.DefaultTransport, token: r.Token, server: r.Name}
+	chain = headed{base: chain, headers: r.Headers}
+	chain = secured{base: chain, server: r.Name, private: r.PrivateHosts}
+	transport := &sdk.StreamableClientTransport{
+		Endpoint: r.URL, DisableStandaloneSSE: true, HTTPClient: &http.Client{Transport: chain},
 	}
-	transport.HTTPClient = &http.Client{Transport: wrap}
 	return transport, &diagnostics{}, nil
-}
-
-// secured is an [http.RoundTripper] that SSRF-hardens every connection by
-// validating the target IP on every dial, catching DNS rebinding and TOCTOU
-// between the check-time resolution in checkTarget and the actual connect.
-//
-// It also injects the server's custom headers, through the same headed
-// mechanism — a RoundTripper sees every request, including retries the
-// transport handles internally.
-type secured struct {
-	base    http.RoundTripper
-	headers map[string]string
-}
-
-// RoundTrip validates the target IP and injects custom headers.
-func (s *secured) RoundTrip(request *http.Request) (*http.Response, error) {
-	if request.URL != nil && request.URL.Host != "" {
-		if err := checkTarget(request.URL.Host, ""); err != nil {
-			return nil, err
-		}
-	}
-	return (&headed{base: s.base, headers: s.headers}).RoundTrip(request)
-}
-
-// headed adds this server's headers to every request.
-//
-// A RoundTripper is where this has to happen. StreamableClientTransport
-// takes an *http.Client and drives the requests itself — there is no hook
-// that sees each one on the way out — and the transport reconnects a dropped
-// stream on its own, so a header set once at handshake time would go missing
-// on exactly the retry that needed it.
-type headed struct {
-	base    http.RoundTripper
-	headers map[string]string
-}
-
-// RoundTrip copies the request before touching it, because the contract says
-// a RoundTripper must not modify the one it is given.
-func (h headed) RoundTrip(request *http.Request) (*http.Response, error) {
-	cloned := request.Clone(request.Context())
-	for key, value := range h.headers {
-		cloned.Header.Set(key, value)
-	}
-	base := h.base
-	if base == nil {
-		base = http.DefaultTransport
-	}
-	return base.RoundTrip(cloned)
 }

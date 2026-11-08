@@ -12,12 +12,29 @@ import (
 // that has never seen the codebase, and say what the tool is for rather than
 // what it returns. Schema is the JSON Schema of the input, as a decoded
 // object. ReadOnly declares that the tool never changes anything, which lets
-// the loop run it beside other read-only calls.
+// the loop run it beside other read-only calls. Hints carries the rest of what
+// the tool's author claimed about it, and is nil when nobody claimed anything.
 type Spec struct {
 	Name        string
 	Description string
 	Schema      map[string]any
 	ReadOnly    bool
+	Hints       *Hints
+}
+
+// Hints are the behaviour claims an MCP server makes about a tool, its
+// annotations, resolved against the protocol's defaults: a server that says
+// nothing is destructive and open-world. They are claims, not guarantees, so a
+// host trusts them only from a server it trusts.
+//
+// Destructive means a write may delete or overwrite. Idempotent means calling
+// twice with the same arguments does nothing more than calling once.
+// OpenWorld means the tool reaches beyond its own system, such as the web or
+// a mailbox, so what it returns is untrusted input.
+type Hints struct {
+	Destructive bool
+	Idempotent  bool
+	OpenWorld   bool
 }
 
 // Result is what a tool returned: the text the model reads and any pictures
