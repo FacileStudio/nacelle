@@ -271,6 +271,13 @@ type Spec struct {
 	Description string
 	Schema      map[string]any
 	ReadOnly    bool
+	Hints       *Hints // nil unless an MCP server annotated the tool
+}
+
+type Hints struct { // MCP annotations, resolved against the protocol defaults
+	Destructive bool
+	Idempotent  bool
+	OpenWorld   bool
 }
 
 type Result struct {
@@ -403,18 +410,61 @@ type Command struct { // stdio, as a subprocess
 type Remote struct { // Streamable HTTP, dialled from here
 	Name         string            // required; namespaces this server's tools
 	URL          string            // required; absolute, http or https
-	Headers      map[string]string // sent with every request; where a bearer token goes
+	Headers      map[string]string // sent with every request; a static bearer token goes here
 	AllowedTools []string
 	Timeout      time.Duration
+	Token        TokenSource                    // per-call bearer token, from the call's ctx
+	Identity     func(ctx context.Context) string // who the token is for; keys private tool lists
+	PrivateHosts []string                       // hosts allowed to resolve to a private address
+	Elicit       Elicit                         // answers input_required; nil advertises no elicitation
 }
+
+type TokenSource func(ctx context.Context) (string, error)
+func Refreshing(ctx context.Context) bool // true on the one retry after a 401
+
+type Elicitation struct {
+	Server    string
+	Tool      string         // the server's own tool name
+	Arguments map[string]any
+	Request   *mcp.ElicitParams
+}
+type Answer struct { // the zero value declines
+	Accept  bool
+	Content map[string]any
+}
+type Elicit func(ctx context.Context, request Elicitation) (Answer, error)
 
 type Set struct{ /* ... */ }
 
 func Load(paths ...string) ([]Server, error)
 func Connect(ctx context.Context, servers ...Server) (*Set, error)
 func (s *Set) Tools() []nacelle.Tool
+func (s *Set) ToolsFor(ctx context.Context) ([]nacelle.Tool, error) // lists again under ctx, through the ttl cache
 func (s *Set) Close() error
 ```
+
+**Protocol.** go-sdk v1.8 speaks MCP 2026-07-28 to a stateless server (`server/discover`, no
+session) and falls back to the 2025-11-25 `initialize` handshake for an older one. Nothing to
+configure.
+
+**Per-user tokens.** One `Set` can serve many users. `Token` is called for every HTTP request
+with the context of the call that sends it, so a host puts the user in ctx and returns that
+user's delegated token. A 401 calls it once more with `Refreshing(ctx)` true and replays the
+request; a second 401 stands. `Token` and an `Authorization` header together are refused.
+
+**tools/list caching.** `ToolsFor(ctx)` re-lists every server under ctx. A result is kept for
+its `ttlMs`: shared when the server says `cacheScope: "public"`, per `Identity(ctx)` when it says
+`"private"`. With a `Token` and no `Identity`, private lists are never cached. The SDK session's
+own cursor-keyed cache is bypassed, because it would hand one user's private list to the next.
+
+**Internal servers.** The SSRF guard refuses private addresses. `PrivateHosts` lifts that for the
+named hosts only, link-local stays refused, and no `mcpServers` key can set it.
+
+**Confirmations (MRTR).** When a server answers a call with `input_required` (or, before
+2026-07-28, sends `elicitation/create`), `Elicit` gets the server, tool, arguments and the
+server's question. Its `Answer` goes back as `inputResponses` and the call is retried. The zero
+`Answer` declines. On a legacy server `Tool` and `Arguments` are empty, because the request
+arrives outside the call's context.
 
 The **client** half: an MCP server this process opens a session to, its tools handed back as
 ordinary `nacelle.Tool` values. That bridge is the whole design — a tool from here passes

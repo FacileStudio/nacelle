@@ -6,6 +6,36 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-11-08
+
+### Added
+- **MCP 2026-07-28.** go-sdk is now v1.8.0. A `Remote` speaks the stateless
+  2026-07-28 protocol to a server that offers it and falls back to the
+  2025-11-25 handshake for one that does not.
+- **`Remote.Token`, a per-call `TokenSource`.** It mints the bearer token from
+  the context of the call that sends each request, so one connection carries
+  each user's delegated token. A 401 asks once more with `Refreshing(ctx)`
+  true and replays the request; a second 401 stands.
+- **`Set.ToolsFor(ctx)` and tools/list caching.** Lists are kept for the
+  server's `ttlMs`, shared when `cacheScope` is public and per
+  `Remote.Identity(ctx)` when it is private. Without an identity a private
+  list is never cached.
+- **`Remote.PrivateHosts`.** An explicit per-server allowlist for first-party
+  internal hosts that resolve to private addresses. Nothing allows them by
+  default, and link-local stays refused.
+- **`Remote.Elicit`, the MRTR hook.** A tools/call that returns
+  `input_required` hands the host an `Elicitation` (server, tool, arguments,
+  the server's request). The `Answer` goes back as `inputResponses` and the
+  call is retried; the zero `Answer` declines. Elicitation is advertised only
+  when the hook is set.
+- **`Spec.Hints`.** Bridged MCP tools carry `Destructive`, `Idempotent` and
+  `OpenWorld` from their annotations, resolved against the protocol defaults,
+  beside `ReadOnly`.
+
+### Changed
+- A `Remote` that sets both `Token` and an `Authorization` header is refused
+  at `Connect`.
+
 ## [0.33.0] - 2026-11-07
 
 ### Added
