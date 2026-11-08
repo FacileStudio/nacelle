@@ -5,7 +5,7 @@ go 1.26
 require (
 	github.com/anthropics/anthropic-sdk-go v1.63.1
 	github.com/invopop/jsonschema v0.14.0
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/openai/openai-go/v3 v3.52.0
 	golang.org/x/net v0.58.0
 )
