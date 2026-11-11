@@ -6,6 +6,13 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+## [0.34.1] - 2026-11-11
+
+### Security
+
+- build: Go 1.26.11 (`go` directive, CI pin, mise pin and lock). It fixes GO-2026-6848 to GO-2026-6859 in the standard library and toolchain, which douane reported as unscored gaps and which failed the gate.
+- build(deps): `golang.org/x/net` v0.58.0 to v0.62.0 (GO-2026-6612, critical; GO-2026-6860, GO-2026-6866), which raises `golang.org/x/sys` to v0.49.0.
+
 ## [0.34.0] - 2026-11-08
 
 ### Added
@@ -493,7 +500,6 @@ BREAKING CHANGE: `tools.WebSearch` and the `web_search` tool are removed; `tools
   (`https://api.openai.com/v1`). Authenticates via `OPENAI_API_KEY`, defaults to `gpt-5.4`, and
   supports reasoning effort and tool calling.
 
-
 ### Removed
 
 - **`tools.Mycelium()` is gone, and with it the `list_flows`, `run_flow` and `search_memory`
@@ -533,7 +539,6 @@ BREAKING CHANGE: `tools.WebSearch` and the `web_search` tool are removed; `tools
   exists; nothing outside this repository ever imported it.
 
 ### Added
-
 
 - **Lifecycle hooks around local tool calls** (`hooks.go`, `toolsink.go`). Two closed hook
   points, `BeforeToolCall` and `AfterToolCall`; a hook is `func(ctx, HookEvent) HookResult`
