@@ -6,6 +6,8 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-11-12
+
 ### Added
 - **`client.RateLimitError`.** A `Remote` reads a 429, or a 503 that carries
   `Retry-After`, as a typed error with the server, the JSON-RPC method, the
