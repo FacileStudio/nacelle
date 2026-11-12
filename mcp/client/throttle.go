@@ -24,10 +24,10 @@ var sleep = pause
 // bare status text and drops the header, so this is the only place a caller
 // learns how long the server asked it to wait.
 //
-// It is a refusal, not an outage: the connection stays usable, and nothing
-// the request asked for has happened. Connect, tools/list and the resumption
-// of a call that a person confirmed are already retried here; a first
-// tools/call is never retried, and is the caller's to send again.
+// It is a refusal, not an outage: the connection stays usable. Connect,
+// tools/list and the round carrying a person's answer are already retried
+// here; a first tools/call never is, and [RateLimitError.Retryable] says
+// whether the caller may send it again.
 type RateLimitError struct {
 	Server string
 	Method string
@@ -40,6 +40,8 @@ type RateLimitError struct {
 	// Retries is how many times this package already sent the request
 	// again before giving up.
 	Retries int
+
+	answered bool
 }
 
 // Error says who refused what and how long they asked for.
@@ -52,10 +54,16 @@ func (e *RateLimitError) Error() string {
 		e.Server, e.Method, e.Status, http.StatusText(e.Status), wait)
 }
 
-// Retryable reports whether sending the request again is still worth it,
-// which it is not once this package has retried it already: a second retry
-// layer would multiply the requests a refusing server receives.
-func (e *RateLimitError) Retryable() bool { return e.Retries == 0 }
+// Retryable reports whether the caller may send the same call again. It is
+// false once this package has retried it, since a second retry layer
+// multiplies what a refusing server receives; for the round carrying a
+// person's answer, since sending the call again asks the person again; and
+// for a tools/call refused with 503, which a proxy can send after the tool
+// ran. A 429 on a first tools/call is retryable: the server refused it before
+// running anything.
+func (e *RateLimitError) Retryable() bool {
+	return e.Retries == 0 && !e.answered && (e.Method != "tools/call" || e.Status == http.StatusTooManyRequests)
+}
 
 // throttled sends again what is safe to send again after a [RateLimitError],
 // honouring Retry-After, and returns the refusal it gives up on as the error.
@@ -94,7 +102,7 @@ func (t throttled) RoundTrip(request *http.Request) (*http.Response, error) {
 // would outlast the request's deadline.
 func again(request *http.Request, refusal *RateLimitError, retries int) *http.Request {
 	call := peek(request)
-	refusal.Method, refusal.Retries = call.Method, retries
+	refusal.Method, refusal.Retries, refusal.answered = call.Method, retries, call.resumes()
 	wait, ok := call.delay(refusal)
 	if !ok || !fits(request.Context(), wait) {
 		return nil

@@ -114,8 +114,8 @@ func TestA503OnAResumptionIsNotSentAgain(t *testing.T) {
 
 	_, err := callTool(t.Context(), find(t, tools, "app_send"), json.RawMessage(`{"to":"ana"}`))
 	refusal, ok := errors.AsType[*RateLimitError](err)
-	if !ok || refusal.Status != http.StatusServiceUnavailable {
-		t.Fatalf("Run = %v, want the 503 as a *RateLimitError", err)
+	if !ok || refusal.Status != http.StatusServiceUnavailable || refusal.Retryable() {
+		t.Fatalf("Run = %v, want the 503 as a *RateLimitError the caller must not resend", err)
 	}
 	if got := seen.count("tools/call+answers"); got != 1 {
 		t.Errorf("the answer was sent %d times, want once", got)
@@ -136,6 +136,23 @@ func TestAWaitPastTheDeadlineIsNotSlept(t *testing.T) {
 	}
 	if got := seen.slept(); len(got) != 0 {
 		t.Errorf("waits = %v, want none", got)
+	}
+}
+
+// Only a refusal nothing ran behind, and nobody was asked about, is the
+// caller's to send again.
+func TestRetryableIsOnlyACallNothingRanBehind(t *testing.T) {
+	cases := map[*RateLimitError]bool{
+		{Method: "tools/call", Status: http.StatusTooManyRequests}:                 true,
+		{Method: "tools/list", Status: http.StatusServiceUnavailable}:              true,
+		{Method: "tools/call", Status: http.StatusServiceUnavailable}:              false,
+		{Method: "tools/call", Status: http.StatusTooManyRequests, answered: true}: false,
+		{Method: "tools/list", Status: http.StatusTooManyRequests, Retries: 3}:     false,
+	}
+	for refusal, want := range cases {
+		if got := refusal.Retryable(); got != want {
+			t.Errorf("%+v.Retryable() = %v, want %v", *refusal, got, want)
+		}
 	}
 }
 
