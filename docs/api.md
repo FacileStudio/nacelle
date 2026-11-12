@@ -434,6 +434,15 @@ type Answer struct { // the zero value declines
 }
 type Elicit func(ctx context.Context, request Elicitation) (Answer, error)
 
+type RateLimitError struct { // a 429, or a 503 with Retry-After; errors.As finds it
+	Server     string
+	Method     string        // the JSON-RPC method refused, such as "tools/call"
+	Status     int
+	RetryAfter time.Duration // the server's Retry-After, capped at 30 s; zero when it named none
+	Retries    int           // how often nacelle already sent it again
+}
+func (e *RateLimitError) Retryable() bool // true only when nacelle did not retry it
+
 type Set struct{ /* ... */ }
 
 func Load(paths ...string) ([]Server, error)
@@ -465,6 +474,15 @@ named hosts only, link-local stays refused, and no `mcpServers` key can set it.
 server's question. Its `Answer` goes back as `inputResponses` and the call is retried. The zero
 `Answer` declines. On a legacy server `Tool` and `Arguments` are empty, because the request
 arrives outside the call's context.
+
+**Rate limits.** A `Remote` reads a 429, or a 503 that carries `Retry-After`, as a
+`*RateLimitError`; the go-sdk transport alone reports the status text and drops the header. The
+connect handshake, `tools/list` and the MRTR round that carries a person's answer are sent again
+up to three times, waiting the server's `Retry-After` (seconds or an HTTP-date, capped at 30 s) or
+1, 2 then 4 s, and never past the request's deadline. The answer round is retried after a 429
+only, since a 503 can come from a proxy after the tool ran, so the person is asked once. A first
+`tools/call` is never sent again: the error carries the wait, and the caller decides. The error
+is a refusal, not an outage, and the session stays usable.
 
 The **client** half: an MCP server this process opens a session to, its tools handed back as
 ordinary `nacelle.Tool` values. That bridge is the whole design — a tool from here passes
