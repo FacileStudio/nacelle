@@ -194,12 +194,14 @@ func checkTarget(hostport, name string, private []string) error {
 	return nil
 }
 
-// dial builds the Streamable HTTP transport over the SSRF guard, the
-// configured headers and the per-call token, in that order outward.
+// dial builds the Streamable HTTP transport over the rate-limit retry, the
+// SSRF guard, the configured headers and the per-call token, in that order
+// inward, so a request sent again is checked and authorised again.
 func (r Remote) dial() (sdk.Transport, *diagnostics, error) {
 	var chain http.RoundTripper = authorized{base: http.DefaultTransport, token: r.Token, server: r.Name}
 	chain = headed{base: chain, headers: r.Headers}
 	chain = secured{base: chain, server: r.Name, private: r.PrivateHosts}
+	chain = throttled{base: chain, server: r.Name}
 	transport := &sdk.StreamableClientTransport{
 		Endpoint: r.URL, DisableStandaloneSSE: true, HTTPClient: &http.Client{Transport: chain},
 	}

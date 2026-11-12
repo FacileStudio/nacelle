@@ -6,6 +6,24 @@ while on `v0`, a breaking change bumps the minor.
 
 ## [Unreleased]
 
+### Added
+- **`client.RateLimitError`.** A `Remote` reads a 429, or a 503 that carries
+  `Retry-After`, as a typed error with the server, the JSON-RPC method, the
+  status and the wait (`Retry-After` in seconds or as an HTTP-date, capped at
+  30 s). go-sdk v1.8.0 reports both as a status text and drops the header; a
+  round tripper now keeps them. `Retryable()` is false once nacelle has
+  retried the request itself.
+
+### Fixed
+- **A rate-limited server no longer drops out of a run.** The connect
+  handshake (`server/discover`, `initialize`), `tools/list` and the MRTR round
+  that carries a person's answer are sent again up to three times, waiting the
+  server's `Retry-After` or 1, 2 then 4 s, never past the request's deadline.
+  A 429 on `server/discover` no longer drops the session to the 2025-11-25
+  handshake, and a 429 on the answer round no longer asks the person twice.
+  A first `tools/call` is never sent again, and the answer round is not sent
+  again after a 503, because either may have run.
+
 ## [0.34.1] - 2026-11-11
 
 ### Security
